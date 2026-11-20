@@ -5,7 +5,6 @@ import path from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { after, before, describe, test } from 'node:test';
 import { pathToFileURL } from 'node:url';
-import type { ReflectionOperation } from '../src/domain/reflection.js';
 
 type DbModule = typeof import('../server/db.ts');
 
@@ -32,7 +31,6 @@ describe('learner isolation', { concurrency: false }, () => {
 
     dbModule.bootstrapLearner({ learnerId: 'learner-a', displayName: 'Learner A' });
     dbModule.bootstrapLearner({ learnerId: 'learner-b', displayName: 'Learner B' });
-
 
     sqlite = new DatabaseSync(path.join(dataDir, 'app.db'));
     sqlite.function('current_learner_id', () => rawLearnerId);
@@ -102,48 +100,34 @@ describe('learner isolation', { concurrency: false }, () => {
   });
 
   test('permits the same private logical id for two learners without overwriting', () => {
-    dbModule.runWithLearnerId('learner-a', () => dbModule.upsertStudySessionRecord({
-      id: 'same-session-id',
-      startedAt: '2026-08-21T01:00:00.000Z',
-      endedAt: null,
-      processingState: 'open',
-      processedAt: null,
-    }));
-    dbModule.runWithLearnerId('learner-b', () => dbModule.upsertStudySessionRecord({
-      id: 'same-session-id',
-      startedAt: '2026-08-21T02:00:00.000Z',
-      endedAt: null,
-      processingState: 'open',
-      processedAt: null,
-    }));
+    for (const [learnerId, startedAt] of [
+      ['learner-a', '2026-08-21T01:00:00.000Z'],
+      ['learner-b', '2026-08-21T02:00:00.000Z'],
+    ] as const) {
+      rawLearnerId = learnerId;
+      insertOpenSession('same-session-id', startedAt);
+    }
 
-    assert.equal(
-      dbModule.runWithLearnerId('learner-a', () => dbModule.getStudySessionRecord('same-session-id'))?.startedAt,
-      '2026-08-21T01:00:00.000Z',
-    );
-    assert.equal(
-      dbModule.runWithLearnerId('learner-b', () => dbModule.getStudySessionRecord('same-session-id'))?.startedAt,
-      '2026-08-21T02:00:00.000Z',
-    );
+    for (const [learnerId, startedAt] of [
+      ['learner-a', '2026-08-21T01:00:00.000Z'],
+      ['learner-b', '2026-08-21T02:00:00.000Z'],
+    ] as const) {
+      rawLearnerId = learnerId;
+      assert.equal(
+        sqlite.prepare(`SELECT started_at FROM study_sessions WHERE id = 'same-session-id'`).get()?.started_at,
+        startedAt,
+      );
+    }
   });
 
   test('hides private contrast content and rejects cross-learner session references', () => {
-    dbModule.runWithLearnerId('learner-a', () => {
-      dbModule.createContrastCluster({ id: 'a-cluster', title: 'A private cluster' });
-      dbModule.upsertStudySessionRecord({
-        id: 'a-only-session',
-        startedAt: '2026-08-21T03:00:00.000Z',
-        endedAt: null,
-        processingState: 'open',
-        processedAt: null,
-      });
-    });
-    assert.deepEqual(
-      dbModule.runWithLearnerId('learner-b', () => dbModule.getContrastClusters()),
-      [],
-    );
-
+    rawLearnerId = 'learner-a';
+    sqlite.prepare(`INSERT INTO contrast_clusters (id, title, note) VALUES ('a-cluster', 'A private cluster', '')`).run();
+    insertOpenSession('a-only-session', '2026-08-21T03:00:00.000Z');
+    assert.deepEqual(sqlite.prepare('SELECT id FROM contrast_clusters').all().map((row) => row.id), ['a-cluster']);
     rawLearnerId = 'learner-b';
+    assert.deepEqual(sqlite.prepare('SELECT id FROM contrast_clusters').all(), []);
+
     assert.throws(
       () => sqlite.prepare(`
         INSERT INTO study_events (
@@ -161,250 +145,60 @@ describe('learner isolation', { concurrency: false }, () => {
     );
   });
 
-  test('shares authorized cue publications without exposing source provenance or reports', () => {
+  test('shares cue publications without exposing source provenance or reports, and keeps their audit immutable', () => {
+    const taskId = 'production-task:shared-word:default_production';
+    const cueId = 'shared-cue';
+    const publicationId = 'shared-cue-publication';
+    const at = '2026-08-21T04:02:00.000Z';
+
+    // Learner A's authorized invocation published a shared cue; its provenance stays private to A.
     rawLearnerId = 'learner-a';
-    insertInvocation('learner-a-cue-create', cueRepairOperation({
-      changes: [{
-        kind: 'create',
-        cue: {
-          cueType: 'definition_gloss',
-          text: 'something held in common',
-          acceptedWordIds: ['shared-word'],
-        },
-      }, {
-        kind: 'create',
-        cue: {
-          cueType: 'circumstance',
-          text: 'when describing something jointly held',
-          acceptedWordIds: ['shared-word'],
-        },
-      }],
-    }));
-    const created = dbModule.runWithLearnerId(
-      'learner-a',
-      () => dbModule.applyReflectionInvocation(
-        'learner-a-cue-create',
-        '2026-08-21T04:01:00.000Z',
-      ),
-    );
-    assert.equal(created.application.state.kind, 'applied');
-    const originalCueIds = created.application.state.kind === 'applied'
-      ? created.application.state.effectRefs
-        .filter((ref) => ref.type === 'production_cue')
-        .map((ref) => ref.id)
-      : [];
-    assert.equal(originalCueIds.length, 2);
-    const originalCueId = originalCueIds[0]!;
-    const otherOriginalCueId = originalCueIds[1]!;
-
-    const sourceCue = dbModule.runWithLearnerId(
-      'learner-a',
-      () => dbModule.getProductionCue(originalCueId),
-    );
-    const originalPublication = dbModule.getSharedContentPublicationForContent(
-      'production_cue',
-      originalCueId,
-    );
-    const otherOriginalPublication = dbModule.getSharedContentPublicationForContent(
-      'production_cue',
-      otherOriginalCueId,
-    );
-    assert.ok(originalPublication);
-    assert.ok(otherOriginalPublication);
-    assert.deepEqual(sourceCue?.attribution, {
-      origin: 'reflection',
-      invocationId: 'learner-a-cue-create',
-    });
-    assert.equal(
-      dbModule.runWithLearnerId(
-        'learner-a',
-        () => dbModule.getSharedContentPublication(originalPublication.publicationId)?.publicationStatus,
-      ),
-      'shared_trial',
-    );
-
-    const otherLearnerCue = dbModule.runWithLearnerId(
-      'learner-b',
-      () => dbModule.getProductionCue(originalCueId),
-    );
-    assert.deepEqual(otherLearnerCue, {
-      cueId: originalCueId,
-      taskId: 'production-task:shared-word:default_production',
-      cueType: 'definition_gloss',
-      text: 'something held in common',
-      acceptedWordIds: ['shared-word'],
-      createdAt: '2026-08-21T04:01:00.000Z',
-      attribution: { origin: 'manual', invocationId: null },
-      active: true,
-    });
-    assert.equal(
-      dbModule.runWithLearnerId(
-        'learner-b',
-        () => dbModule.getSharedContentPublicationProvenance(originalPublication.publicationId),
-      ),
-      null,
-    );
-
-    rawLearnerId = 'learner-a';
-    insertInvocation('learner-a-cue-replace', cueRepairOperation({
-      changes: [{
-        kind: 'replace',
-        cueId: originalCueId,
-        replacements: [{
-          cueType: 'definition_gloss',
-          text: 'something owned or used by more than one person',
-          acceptedWordIds: ['shared-word'],
-        }],
-      }, {
-        kind: 'replace',
-        cueId: otherOriginalCueId,
-        replacements: [{
-          cueType: 'circumstance',
-          text: 'when two people hold something together',
-          acceptedWordIds: ['shared-word'],
-        }],
-      }, {
-        kind: 'create',
-        cue: {
-          cueType: 'minimal_context',
-          text: 'a standalone shared-context cue',
-          acceptedWordIds: ['shared-word'],
-        },
-      }],
-    }));
-    const replaced = dbModule.runWithLearnerId(
-      'learner-a',
-      () => dbModule.applyReflectionInvocation(
-        'learner-a-cue-replace',
-        '2026-08-21T04:02:00.000Z',
-      ),
-    );
-    assert.equal(replaced.application.state.kind, 'applied');
-    const replacementCueIds = replaced.application.state.kind === 'applied'
-      ? replaced.application.state.effectRefs
-        .filter((ref) => ref.type === 'production_cue')
-        .map((ref) => ref.id)
-      : [];
-    assert.equal(replacementCueIds.length, 3);
-    const replacementCueId = replacementCueIds[0]!;
-    const otherReplacementCueId = replacementCueIds[1]!;
-    const standaloneCueId = replacementCueIds[2]!;
-    const replacementPublication = dbModule.getSharedContentPublicationForContent(
-      'production_cue',
-      replacementCueId,
-    );
-    assert.ok(replacementPublication);
-    assert.equal(
-      dbModule.getSharedContentPublication(originalPublication.publicationId)?.publicationStatus,
-      'retired',
-    );
-    assert.equal(
-      dbModule.getSharedContentPublication(otherOriginalPublication.publicationId)?.publicationStatus,
-      'retired',
-    );
-    assert.equal(
-      dbModule.getSharedContentPublication(replacementPublication.publicationId)?.publicationStatus,
-      'shared_trial',
-    );
-    assert.ok(dbModule.getSharedContentPublicationForContent('production_cue', otherReplacementCueId));
-    assert.ok(dbModule.getSharedContentPublicationForContent('production_cue', standaloneCueId));
-    assert.equal(
-      dbModule.runWithLearnerId(
-        'learner-b',
-        () => dbModule.getProductionCue(originalCueId)?.active,
-      ),
-      false,
-    );
-    assert.equal(
-      dbModule.runWithLearnerId(
-        'learner-a',
-        () => dbModule.getProductionCue(originalCueId)?.active,
-      ),
-      false,
-    );
-    assert.deepEqual(
-      { ...sqlite.prepare(`
-        SELECT actor_kind, actor_id, reason
-        FROM shared_content_publication_events
-        WHERE publication_id = ? AND to_status = 'retired'
-      `).get(originalPublication.publicationId) as Record<string, unknown> },
-      {
-        actor_kind: 'source_authorization',
-        actor_id: null,
-        reason: 'validated learner-authorized production-cue retirement',
-      },
-    );
-    dbModule.runWithLearnerId('learner-b', () => dbModule.upsertStudySessionRecord({
-      id: 'shared-version-session',
-      startedAt: '2026-08-21T04:02:30.000Z',
-      endedAt: null,
-      processingState: 'open',
-      processedAt: null,
-    }));
-    rawLearnerId = 'learner-b';
-    const historicalMetadata = JSON.stringify({
-      production: {
-        taskId: 'production-task:shared-word:default_production',
-        cueId: replacementCueId,
-        cueType: 'definition_gloss',
-        text: 'something owned or used by more than one person',
-        acceptedWordIds: ['shared-word'],
-        anchorWordId: 'shared-word',
-        submittedText: '共享',
-        submittedWordId: 'shared-word',
-        result: 'accepted_anchor',
-      },
-    });
     sqlite.prepare(`
-      INSERT INTO study_attempt_events (
-        id, occurred_at, session_id, session_action_id, session_event_sequence,
-        action_attempt_sequence, action_kind, target_word_id, sampled_skill_ids_json,
-        response, outcome, rating, content_ref_json, metadata_json, projected_at
-      ) VALUES (
-        'shared-version-attempt', '2026-08-21T04:02:45.000Z',
-        'shared-version-session', 'shared-version-action', 1, 1, 'production',
-        'shared-word', '["production"]', '共享', 'correct', 'good', ?, ?,
-        '2026-08-21T04:02:45.000Z'
-      )
-    `).run(
-      JSON.stringify({
-        type: 'production_cue',
-        taskId: 'production-task:shared-word:default_production',
-        cueId: replacementCueId,
-      }),
-      historicalMetadata,
-    );
-    const report = dbModule.runWithLearnerId('learner-b', () => (
-      dbModule.reportSharedContentPublication({
-        publicationId: replacementPublication.publicationId,
-        category: 'misleading',
-        note: 'This cue needs operator review.',
-        createdAt: '2026-08-21T04:03:00.000Z',
-      })
-    ));
-    assert.equal(
-      dbModule.runWithLearnerId(
-        'learner-a',
-        () => dbModule.getSharedContentReport(report.reportId),
-      ),
-      null,
-    );
-    assert.equal(
-      dbModule.getSharedContentPublication(replacementPublication.publicationId)?.publicationStatus,
-      'shared_trial',
-    );
-    assert.deepEqual(dbModule.listOpenSharedContentReportsForOperator(), [{
-      reportId: report.reportId,
-      reportingLearnerId: 'learner-b',
-      publicationId: replacementPublication.publicationId,
-      category: 'misleading',
-      note: 'This cue needs operator review.',
-      createdAt: '2026-08-21T04:03:00.000Z',
-      resolution: 'open',
-      resolvedAt: null,
-      contentKind: 'production_cue',
-      contentId: replacementCueId,
-    }]);
+      INSERT INTO reflection_operation_invocations (
+        invocation_id, created_at, origin_kind, operation_kind, operation_version, operation_json,
+        application_state, application_updated_at, effect_refs_json, satisfying_effect_refs_json
+      ) VALUES ('learner-a-cue-replace', ?, 'manual', 'repair_production_cue', 2, '{}', 'pending', ?, '[]', '[]')
+    `).run(at, at);
+    sqlite.prepare(`
+      INSERT INTO scoped_production_cues (
+        cue_id, task_id, cue_type, cue_text, created_at, origin_kind, origin_invocation_id, content_scope, owner_learner_id
+      ) VALUES (?, ?, 'definition_gloss', 'something owned or used by more than one person', ?, 'manual', NULL, 'shared', NULL)
+    `).run(cueId, taskId, at);
+    sqlite.prepare(`INSERT INTO scoped_production_cue_accepted_words (cue_id, word_id, position) VALUES (?, 'shared-word', 0)`)
+      .run(cueId);
+    sqlite.prepare(`
+      INSERT INTO shared_content_publications (
+        publication_id, content_kind, content_id, learning_purpose_key, publication_status, published_at, status_updated_at
+      ) VALUES (?, 'production_cue', ?, ?, 'shared_trial', ?, ?)
+    `).run(publicationId, cueId, taskId, at, at);
+    sqlite.prepare(`
+      INSERT INTO shared_content_publication_events (
+        event_id, publication_id, from_status, to_status, actor_kind, actor_id, reason, occurred_at
+      ) VALUES ('shared-cue-published', ?, NULL, 'shared_trial', 'source_authorization', NULL, 'fixture', ?)
+    `).run(publicationId, at);
+    sqlite.prepare(`
+      INSERT INTO shared_content_publication_provenance (publication_id, source_content_id, source_invocation_id, authorized_at)
+      VALUES (?, 'learner-a-private-source', 'learner-a-cue-replace', ?)
+    `).run(publicationId, at);
+
+    const cueProvenance = sqlite.prepare('SELECT source_invocation_id FROM shared_content_publication_provenance WHERE publication_id = ?');
+    assert.equal(cueProvenance.get(publicationId)?.source_invocation_id, 'learner-a-cue-replace');
+
+    // Learner B reports the shared cue; the report stays private to B.
+    rawLearnerId = 'learner-b';
+    assert.equal(sqlite.prepare('SELECT cue_text FROM production_cues WHERE cue_id = ?').get(cueId)?.cue_text,
+      'something owned or used by more than one person');
+    assert.equal(cueProvenance.get(publicationId), undefined);
+    sqlite.prepare(`
+      INSERT INTO shared_content_reports (report_id, publication_id, category, note, created_at)
+      VALUES ('learner-b-report', ?, 'misleading', 'This cue needs operator review.', '2026-08-21T04:03:00.000Z')
+    `).run(publicationId);
+    const ownReport = sqlite.prepare("SELECT note FROM shared_content_reports WHERE report_id = 'learner-b-report'");
+    assert.equal(ownReport.get()?.note, 'This cue needs operator review.');
+    rawLearnerId = 'learner-a';
+    assert.equal(ownReport.get(), undefined);
+
+    rawLearnerId = 'learner-b';
     assert.throws(
       () => sqlite.prepare(`
         UPDATE shared_content_reports
@@ -412,19 +206,18 @@ describe('learner isolation', { concurrency: false }, () => {
             resolved_at = '2026-08-21T04:03:20.000Z',
             resolved_by_operator_id = 'forged-operator'
         WHERE report_id = ?
-      `).run(report.reportId),
+      `).run('learner-b-report'),
       /reports are immutable through learner paths/,
     );
     assert.throws(
-      () => sqlite.prepare(`DELETE FROM shared_content_reports WHERE report_id = ?`)
-        .run(report.reportId),
+      () => sqlite.prepare(`DELETE FROM shared_content_reports WHERE report_id = ?`).run('learner-b-report'),
       /shared content reports cannot be deleted/,
     );
     assert.throws(
       () => sqlite.prepare(`
         DELETE FROM learner_owned_shared_content_publication_provenance
         WHERE publication_id = ?
-      `).run(replacementPublication.publicationId),
+      `).run(publicationId),
       /publication provenance cannot be deleted/,
     );
     assert.throws(
@@ -439,106 +232,21 @@ describe('learner isolation', { concurrency: false }, () => {
         UPDATE shared_content_publications
         SET publication_status = 'available', status_updated_at = '2026-08-21T04:03:30.000Z'
         WHERE publication_id = ?
-      `).run(replacementPublication.publicationId),
+      `).run(publicationId),
       /status changes require an attributable publication event/,
     );
-
-    const quarantined = dbModule.runWithLearnerId('learner-b', () => (
-      dbModule.quarantineSharedContentPublicationFromReport({
-        reportId: report.reportId,
-        operatorId: 'operator-1',
-        occurredAt: '2026-08-21T04:04:00.000Z',
-      })
-    ));
-    assert.equal(quarantined.publicationStatus, 'quarantined');
-    assert.equal(
-      dbModule.runWithLearnerId(
-        'learner-b',
-        () => dbModule.getProductionCue(replacementCueId)?.active,
-      ),
-      false,
-    );
-    assert.equal(
-      (sqlite.prepare(`
-        SELECT metadata_json
-        FROM learner_owned_study_attempt_events
-        WHERE learner_id = 'learner-b' AND id = 'shared-version-attempt'
-      `).get() as { metadata_json: string }).metadata_json,
-      historicalMetadata,
-    );
-    assert.deepEqual(dbModule.listOpenSharedContentReportsForOperator(), []);
     assert.throws(
-      () => sqlite.prepare(`DELETE FROM shared_content_publications WHERE publication_id = ?`)
-        .run(replacementPublication.publicationId),
+      () => sqlite.prepare(`DELETE FROM shared_content_publications WHERE publication_id = ?`).run(publicationId),
       /shared content publications cannot be deleted/,
     );
   });
 });
 
-function cueRepairOperation(input: {
-  changes: Extract<ReflectionOperation, {
-    kind: 'repair_production_cue';
-    version: 2;
-  }>['changes'];
-}): Extract<ReflectionOperation, { kind: 'repair_production_cue'; version: 2 }> {
-  return {
-    kind: 'repair_production_cue',
-    version: 2,
-    wordId: 'shared-word',
-    taskId: 'production-task:shared-word:default_production',
-    changes: input.changes,
-    sourceAttemptJudgments: [],
-  };
-}
-
-function insertInvocation(invocationId: string, operation: ReflectionOperation): void {
-  const generatedAt = '2026-08-21T04:00:00.000Z';
-  const sessionId = `source-${invocationId}`;
+function insertOpenSession(id: string, startedAt: string): void {
   sqlite.prepare(`
     INSERT INTO study_sessions (id, started_at, ended_at, processing_state, processed_at)
-    VALUES (?, ?, ?, 'processed', ?)
-  `).run(sessionId, generatedAt, generatedAt, generatedAt);
-  const artifact = dbModule.runWithLearnerId(rawLearnerId, () => dbModule.materializeReflectionArtifact({
-    sourceSessionId: sessionId,
-    reflectionFlowVersion: 'initial_post_session_reflection.v6',
-    generatedAt,
-    provider: 'openai',
-    model: 'gpt-5.6-luna-high',
-    promptVersion: 'reflection-staged-v4',
-    evidenceBundle: {
-      schemaVersion: 'session_reflection_bundle.v6',
-      generatedAt,
-      session: { sessionId, startedAt: generatedAt, endedAt: generatedAt, studyProfile: 'mandarin' },
-      items: [{
-        itemId: 'item', source: 'production_mistake', sourceActionKind: 'production',
-        sessionActionId: `action-${invocationId}`, sourceAttemptId: `attempt-${invocationId}`,
-        occurredAt: generatedAt,
-        targetWord: { wordId: 'shared-word', hanzi: '共享', pinyin: 'gòngxiǎng', meanings: ['shared'] },
-        sessionNote: null, existingContent: { contrastClusters: [], knownAcceptedAlternates: [] },
-        servedCue: { cueId: null, cueType: 'definition_gloss', text: 'shared', acceptedWordIds: ['shared-word'], supplement: null },
-        promotionEvidence: null, rawResponse: '?', responseKind: 'unmatched_text', submittedWord: null,
-      }],
-    },
-    result: {
-      schemaVersion: 'session_reflection_result.v10',
-      itemResults: [{ itemId: 'item', diagnosisTags: ['ordinary_retrieval_noise'], learnerExplanation: 'Review the cue.', proposals: [], questions: [] }],
-    },
-  }).artifact);
-  sqlite.prepare(`
-    INSERT INTO reflection_operation_invocations (
-      invocation_id, created_at, origin_kind, origin_proposal_id,
-      origin_superseded_proposal_id, operation_kind, operation_version,
-      operation_json, application_state, application_updated_at,
-      unsupported_reason, applied_at, application_error, stale_reason,
-      effect_refs_json, satisfying_effect_refs_json
-    ) VALUES (?, '2026-08-21T04:00:00.000Z', 'manual', NULL, NULL, ?, ?, ?,
-      'pending', '2026-08-21T04:00:00.000Z', NULL, NULL, NULL, NULL, '[]', '[]')
-  `).run(invocationId, operation.kind, operation.version, JSON.stringify({
-    schemaVersion: 'reflection_invocation_operation.v1',
-    sourceArtifactId: artifact.artifactId,
-    sourceItemId: 'item',
-    operation,
-  }));
+    VALUES (?, ?, NULL, 'open', NULL)
+  `).run(id, startedAt);
 }
 
 function restoreEnv(name: string, value: string | undefined): void {

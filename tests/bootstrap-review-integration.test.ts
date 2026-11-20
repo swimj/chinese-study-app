@@ -7,22 +7,19 @@ import { after, before, test } from 'node:test';
 import { pathToFileURL } from 'node:url';
 import { normalizeReviewExercises } from '../server/word-content/review-authoring.ts';
 import { wordContentFixtures } from './fixtures/word-content.ts';
-import { isPureCueSessionReviewItem, type SessionStudyItem } from '../src/domain/study-actions.ts';
-import { resolveAcceptedProductionResponse } from '../src/domain/production-response.ts';
 import { assertSchemaCurrent, migrateDatabase, schemaMigrations } from '../server/db/migrations.ts';
 import { createBaselineFixture } from './helpers/baseline-database.ts';
-import { CURRENT_INITIAL_REFLECTION_FLOW_VERSION, STAGED_REFLECTION_DIAGNOSIS_PROMPT_VERSION } from '../src/domain/reflection-contracts.ts';
-import type { ReflectionOperation } from '../src/domain/reflection.ts';
 
 type Db = typeof import('../server/db.ts');
 type ReviewDb = typeof import('../server/db/review-content.ts');
+type IntroductionDb = typeof import('../server/db/word-introductions.ts');
 let db: Db;
 let review: ReviewDb;
+let introductions: IntroductionDb;
 let sqlite: DatabaseSync;
 let dir = '';
 const learner = 'review-learner';
 const createdAt = '2026-09-25T00:00:00.000Z';
-const today = new Date().toISOString().slice(0, 10);
 const call = <T>(fn: () => T): T => db.runWithLearnerId(learner, fn);
 
 before(async () => {
@@ -32,6 +29,7 @@ before(async () => {
   try {
     db = await import(`${pathToFileURL(path.resolve('server/db.ts')).href}?bootstrap-review=${Date.now()}`);
     review = await import('../server/db/review-content.ts');
+    introductions = await import('../server/db/word-introductions.ts');
   } finally {
     for (const [key, value] of Object.entries(previous)) {
       if (value === undefined) delete process.env[key]; else process.env[key] = value;
@@ -82,10 +80,10 @@ function prepare(suffix: string, retainTargetOccurrence = false) {
   call(() => {
     const current = new Date().toISOString();
     const expires = new Date(Date.now() + 300_000).toISOString();
-    db.claimWordIntroductionStage(wordId, 'bootstrap', `bootstrap-${suffix}`, current, expires);
-    db.finishWordIntroductionBootstrap(wordId, `bootstrap-${suffix}`, fixture.content, 'fake');
-    db.claimWordIntroductionStage(wordId, 'teaching', `teaching-${suffix}`, current, expires);
-    db.finishWordIntroductionTeaching(wordId, `teaching-${suffix}`, fixture.teaching, 'fake');
+    introductions.claimSharedWordIntroductionStage(wordId, 'bootstrap', `bootstrap-${suffix}`, current, expires);
+    introductions.finishSharedWordIntroductionBootstrap(wordId, `bootstrap-${suffix}`, fixture.content, 'fake');
+    introductions.claimSharedWordIntroductionStage(wordId, 'teaching', `teaching-${suffix}`, current, expires);
+    introductions.finishSharedWordIntroductionTeaching(wordId, `teaching-${suffix}`, fixture.teaching, 'fake');
     db.pinWordTeachingPackage(wordId, fixture.teaching.id);
   });
   const exercises = normalizeReviewExercises({ exercises: [{
@@ -102,120 +100,46 @@ function prepare(suffix: string, retainTargetOccurrence = false) {
   return { ...fixture, wordId, cueId: exercises[0]!.exercise.id };
 }
 
-function production(wordId: string, learnerId = learner): SessionStudyItem {
-  const payload = db.runWithLearnerId(learnerId, () => db.getSessionPayload(today, { random: () => 0 }));
-  const item = payload.buckets.review.find((item): item is SessionStudyItem => (
-    !isPureCueSessionReviewItem(item) && item.targetWordId === wordId && item.actionKind === 'production'
-  ));
-  assert.ok(item, `No review production action for ${wordId}`);
-  return item;
+function publicationFor(contentKind: string, contentId: string) {
+  return sqlite.prepare(`SELECT publication_id, publication_status FROM shared_content_publications
+    WHERE content_kind = ? AND content_id = ?`).get(contentKind, contentId) as
+    { publication_id: string; publication_status: string } | undefined;
 }
 
-function recognitionFor(wordId: string): SessionStudyItem {
-  sqlite.prepare("UPDATE learner_owned_word_skill_state SET enabled=0 WHERE learner_id=? AND word_id=? AND skill_id='production'").run(learner, wordId);
-  try {
-    const item = call(() => db.getSessionPayload(today)).buckets.review.find((candidate): candidate is SessionStudyItem =>
-      !isPureCueSessionReviewItem(candidate) && candidate.targetWordId === wordId && candidate.actionKind === 'recognition');
-    assert.ok(item);
-    return item;
-  } finally {
-    sqlite.prepare("UPDATE learner_owned_word_skill_state SET enabled=1 WHERE learner_id=? AND word_id=? AND skill_id='production'").run(learner, wordId);
-  }
+/** Operator quarantine: the publication status transition and its audit event. */
+function quarantine(publicationId: string) {
+  const occurredAt = new Date().toISOString();
+  sqlite.prepare(`INSERT INTO shared_content_publication_events
+    (event_id, publication_id, from_status, to_status, actor_kind, actor_id, reason, occurred_at)
+    VALUES (?, ?, 'shared_trial', 'quarantined', 'operator', 'operator', 'Incorrect source', ?)`)
+    .run(`quarantine-${publicationId}`, publicationId, occurredAt);
+  sqlite.prepare(`UPDATE shared_content_publications SET publication_status = 'quarantined', status_updated_at = ?
+    WHERE publication_id = ?`).run(occurredAt, publicationId);
 }
 
-test('published bootstrap exercise serves as ordinary shared production with exact source', () => {
+test('published bootstrap review exercise keeps its exact canonical source', () => {
   const source = prepare('serve', true);
-  const item = production(source.wordId);
-  assert.equal(item.production?.cueId, source.cueId);
-  assert.equal(item.production?.cueType, 'minimal_context');
-  assert.match(item.production!.text, /____.*上次也报备过。/s);
-  assert.ok(!item.production!.text.includes('dry dictionary fallback'));
-  assert.deepEqual(item.contentRef, { type: 'production_cue', taskId: item.production!.taskId, cueId: source.cueId });
-  assert.equal(item.rehearsal, undefined);
-  const recognition = recognitionFor(source.wordId);
-  assert.equal(recognition.wordContent?.id, source.content.id);
-  assert.equal(production(source.wordId, 'second-learner').production?.cueId, source.cueId);
   const canonical = call(() => review.getCanonicalReviewContent('production_cue', source.cueId));
   assert.equal(canonical?.sourceWordContentId, source.content.id);
   assert.equal(canonical?.kind, 'production_cue');
   if (canonical?.kind !== 'production_cue') throw new Error('Missing source');
   assert.equal(canonical.exercise.contract.kind, 'targeted_review');
   assert.deepEqual(canonical.contents, [source.content]);
-  const published = db.getSharedContentPublicationForContent('production_cue', source.cueId);
-  assert.equal(published?.publicationStatus, 'shared_trial');
+  assert.equal(publicationFor('production_cue', source.cueId)?.publication_status, 'shared_trial');
 });
 
-test('quarantining bootstrap source excludes future serving but preserves historical review identity', () => {
+test('quarantining bootstrap source makes its review cue unavailable but preserves historical review identity', () => {
   const source = prepare('quarantine');
-  const frozen = production(source.wordId).production!;
-  const publication = db.getSharedContentPublicationForContent('word_content', source.content.id)!;
-  db.quarantineSharedContentPublication({ publicationId: publication.publicationId, operatorId: 'operator', reason: 'Incorrect source' });
-  assert.equal(call(() => review.isCanonicalReviewSourceEligible('production_cue', source.cueId)), false);
+  quarantine(publicationFor('word_content', source.content.id)!.publication_id);
   const diagnostics = call(() => db.getContentDiagnostics({ kind: 'production_cue', query: source.cueId }));
   const cue = diagnostics.items.find(item => item.id === source.cueId);
   assert.ok(cue?.kind === 'production_cue');
   assert.equal(cue.availabilityStatus, 'source_unavailable');
   assert.equal(cue.active, false);
-  assert.equal(call(() => db.getProductionCue(source.cueId))!.active, false);
   const words = call(() => db.getContentDiagnostics({ kind: 'word', query: source.wordId }));
   const word = words.items.find(item => item.id === source.wordId);
   assert.ok(word?.kind === 'word');
   assert.equal(word.productionTask!.activeCueCount, 0);
-  assert.equal(production(source.wordId).production?.cueId, null);
-  assert.equal(frozen.cueId, source.cueId);
-  const recognition = recognitionFor(source.wordId);
-  assert.equal(recognition.wordContent, undefined);
-  assert.ok(call(() => review.getCanonicalReviewContent('production_cue', source.cueId)));
-});
-
-function authorizeRepair(source: ReturnType<typeof prepare>) {
-  const item = production(source.wordId);
-  const sessionId = `repair-session-${source.wordId}`;
-  const operation: ReflectionOperation = { kind: 'repair_production_cue', version: 2,
-    wordId: source.wordId, taskId: item.production!.taskId,
-    changes: [{ kind: 'replace', cueId: source.cueId, replacements: [{
-      cueType: 'circumstance', text: 'Formally notify the responsible office of a changed itinerary so the details are on record.',
-      acceptedWordIds: [source.wordId],
-    }] }], sourceAttemptJudgments: [],
-  };
-  sqlite.prepare(`INSERT INTO study_sessions (id,started_at,ended_at,processing_state,processed_at)
-    VALUES (?,?,?,'processed',?)`).run(sessionId, createdAt, createdAt, createdAt);
-  return call(() => {
-    const { artifact } = db.materializeReflectionArtifact({ sourceSessionId: sessionId,
-      reflectionFlowVersion: CURRENT_INITIAL_REFLECTION_FLOW_VERSION, generatedAt: createdAt,
-      provider: 'openai', model: 'fake', promptVersion: STAGED_REFLECTION_DIAGNOSIS_PROMPT_VERSION,
-      evidenceBundle: { schemaVersion: 'session_reflection_bundle.v6', generatedAt: createdAt,
-        session: { sessionId, startedAt: createdAt, endedAt: createdAt, studyProfile: 'mandarin' },
-        items: [{ itemId: 'item', source: 'production_mistake', sourceActionKind: 'production',
-          sessionActionId: item.sessionActionId, sourceAttemptId: 'attempt', occurredAt: createdAt,
-          targetWord: { wordId: source.wordId, hanzi: source.content.word.hanzi, pinyin: source.content.word.pinyin, meanings: ['notify for the record'] },
-          sessionNote: null, existingContent: { contrastClusters: [], knownAcceptedAlternates: [] },
-          servedCue: { cueId: source.cueId, cueType: item.production!.cueType, text: item.production!.text, acceptedWordIds: [source.wordId], supplement: null },
-          promotionEvidence: null, rawResponse: '通知', submittedWord: null, responseKind: 'unmatched_text',
-        }],
-      },
-      result: { schemaVersion: 'session_reflection_result.v10', itemResults: [{
-        itemId: 'item', diagnosisTags: ['ordinary_retrieval_noise'], learnerExplanation: 'Clarify the intended register.',
-        proposals: [{ proposalGroupKey: null, rationale: 'Clarify the cue.', operation }], questions: [],
-      }] },
-    });
-    const invocationId = `repair-${source.wordId}`;
-    db.acceptReflectionProposal({ proposalId: artifact.proposals[0]!.review.proposalId, operation, invocationId, createdAt });
-    return db.applyReflectionInvocation(invocationId, new Date().toISOString());
-  });
-}
-
-test('learner-authorized review repair leaves pinned teaching unchanged and ready preparation cannot resurrect retired cue', () => {
-  const source = prepare('repair');
-  const before = call(() => db.getWordIntroductionLibrary(source.wordId));
-  const applied = authorizeRepair(source);
-  assert.equal(applied.application.state.kind, 'applied');
-  assert.deepEqual(call(() => db.getWordIntroductionLibrary(source.wordId)), before);
-  assert.notEqual(production(source.wordId).production?.cueId, source.cueId);
-  const now = new Date().toISOString();
-  const later = new Date(Date.now() + 300_000).toISOString();
-  assert.equal(call(() => review.claimWordReviewPreparation(source.wordId, source.content.id, 'retry', now, later)), 'ready');
-  assert.notEqual(production(source.wordId).production?.cueId, source.cueId);
   assert.ok(call(() => review.getCanonicalReviewContent('production_cue', source.cueId)));
 });
 
@@ -283,16 +207,7 @@ test('canonical review keeps original answer forms after lexical edits', () => {
   }];
   sqlite.prepare('UPDATE lexical_words SET hanzi=?, traditional=? WHERE id=?')
     .run('登记', '登記', source.wordId);
-  const item = production(source.wordId);
-  assert.equal(item.word.hanzi, '登记');
-  assert.equal(item.production?.cueId, source.cueId);
-  assert.deepEqual(item.production!.acceptedAnswers, originalForms);
-  const submittedText = source.content.word.traditional!;
-  const resolution = resolveAcceptedProductionResponse({
-    submittedText, anchorWordId: source.wordId, acceptedAnswers: item.production!.acceptedAnswers, profileId: 'mandarin',
-  });
-  assert.equal(resolution.result, 'accepted_anchor');
-  assert.equal(resolveAcceptedProductionResponse({
-    submittedText: '登记', anchorWordId: source.wordId, acceptedAnswers: item.production!.acceptedAnswers, profileId: 'mandarin',
-  }).result, 'rejected');
+  const canonical = call(() => review.getCanonicalReviewContent('production_cue', source.cueId));
+  if (canonical?.kind !== 'production_cue') throw new Error('Missing canonical review exercise');
+  assert.deepEqual(canonical.exercise.acceptedAnswers, originalForms);
 });

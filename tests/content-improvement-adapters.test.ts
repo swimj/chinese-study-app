@@ -59,11 +59,9 @@ test('private cue replacement preserves scope, target, activation disposition an
     assert.equal(sql.prepare('SELECT count(*) n FROM shared_content_publications WHERE content_id=?').get(id)!.n, 0);
     assert.throws(() => apply(saved), /draft changed|resolved/);
     assert.equal(api.getImprovementHistory(saved.id, 'editor').length, 3);
-    assert.equal(db.runWithLearnerId('owner', () => db.getProductionCue('private'))!.active, false);
-    assert.equal(db.runWithLearnerId('owner', () => db.getProductionCue(id))!.active, true);
     assertCueAvailability('owner', 'private', 'replaced', id);
     assertCueAvailability('owner', id, 'active');
-    assert.equal(db.runWithLearnerId('other', () => db.getProductionCue(id)), null);
+    assert.equal(db.runWithLearnerId('other', () => db.getContentDiagnostics({ kind: 'production_cue', query: id })).items.length, 0);
     assert.throws(() => api.createImprovementCase({ kind: 'production_cue', sourceId: id }, 'other'), /Operator access/);
 });
 test('shared cue replacement retires original and preserves attached reveal content', () => {
@@ -74,7 +72,6 @@ test('shared cue replacement retires original and preserves attached reveal cont
     const id = result.outcome!.replacementSourceId!;
     assert.equal(sql.prepare('SELECT publication_status FROM shared_content_publications WHERE content_id=\'shared\'').get()!.publication_status, 'retired');
     assert.equal(sql.prepare('SELECT example_sentence FROM scoped_production_cue_supplements WHERE cue_id=?').get(id)!.example_sentence, '你好！');
-    assert.equal(db.runWithLearnerId('other', () => db.getActiveProductionCuesForWord('a')).some(c => c.cueId === id), true);
     assertCueAvailability('other', 'shared', 'replaced', id);
     assertCueAvailability('other', id, 'active');
     const invalid = draft('production_cue', id, { cueText: 'Either greeting', acceptedWordIds: ['a', 'b'] });
@@ -89,7 +86,6 @@ function assertCueAvailability(learnerId: string, cueId: string,
     assert.equal(item.availabilityStatus, status);
     assert.equal(item.replacementCueId, replacementCueId);
     assert.equal(item.active, status === 'active');
-    assert.equal(db.runWithLearnerId(learnerId, () => db.getProductionCue(cueId))!.active, item.active);
 }
 test('cue availability combines publication, replacement and learner preference without changing history', () => {
     cue('preference-original', true);
@@ -116,13 +112,14 @@ test('cue availability combines publication, replacement and learner preference 
     cue('unactivated-private', false);
     sql.prepare("UPDATE learner_owned_production_cue_activation_state SET active=0 WHERE cue_id='unactivated-private'").run();
     assertCueAvailability('owner', 'unactivated-private', 'deactivated');
-    for (const learnerId of ['owner', 'other']) {
-        const visible = db.runWithLearnerId(learnerId, () => db.getProductionCuesForTask('production-task:a:default_production'));
+    // Cues visible on this task after the earlier tests: every shared cue plus the learner's own
+    // private cues. Two replacement successors are active for each learner.
+    for (const [learnerId, cueCount, activeCueCount] of [['owner', 10, 2], ['other', 7, 2]] as const) {
         const words = db.runWithLearnerId(learnerId, () => db.getContentDiagnostics({ kind: 'word', query: '你好' }));
         const word = words.items.find(item => item.id === 'a');
         assert.ok(word?.kind === 'word');
-        assert.equal(word.productionTask!.cueCount, visible.length);
-        assert.equal(word.productionTask!.activeCueCount, visible.filter(cue => cue.active).length);
+        assert.equal(word.productionTask!.cueCount, cueCount);
+        assert.equal(word.productionTask!.activeCueCount, activeCueCount);
     }
     const hidden = db.runWithLearnerId('other', () => db.getContentDiagnostics({ kind: 'production_cue', query: 'unactivated-private' }));
     assert.equal(hidden.items.length, 0);
@@ -134,10 +131,7 @@ test('supplement successor frees only its live attachment slot and keeps prior b
     const result = apply(draft('supplement', 'editable-supp', { englishFrame: 'Say hello', exampleSentence: '你好，朋友！', exampleTranslation: 'Hello, friend!' }));
     assert.equal(sql.prepare(`SELECT example_sentence FROM scoped_production_cue_supplements WHERE supplement_id='editable-supp'`).get()!.example_sentence, '你好！');
     assert.equal(sql.prepare('SELECT example_sentence FROM scoped_production_cue_supplements WHERE supplement_id=?').get(result.outcome!.replacementSourceId!)!.example_sentence, '你好，朋友！');
-    const current = db.runWithLearnerId('owner', () => db.getProductionCueSupplement('production-task:a:default_production', 'supp-parent'));
-    const historical = db.runWithLearnerId('owner', () => db.getProductionCueSupplement('production-task:a:default_production', 'supp-parent', 'editable-supp'));
-    assert.equal(current!.supplementId, result.outcome!.replacementSourceId);
-    assert.equal(historical!.exampleSentence, '你好！');
+    assert.equal(sql.prepare(`SELECT cue_id FROM scoped_production_cue_supplements WHERE supplement_id=?`).get(result.outcome!.replacementSourceId!)!.cue_id, 'supp-parent');
     assert.throws(() => sql.prepare(`INSERT INTO scoped_production_cue_supplements VALUES ('duplicate','production-task:a:default_production','supp-parent','bad','你好','hello',?,NULL,'shared',NULL)`).run(now), /already has live/);
 });
 test('pure cue wording repair retains identity and served snapshot while attributing revision', () => {
@@ -147,7 +141,12 @@ test('pure cue wording repair retains identity and served snapshot while attribu
     publish('pure_cue', 'pure', 'greetings');
     sql.prepare(`INSERT INTO learner_pure_cue_state VALUES ('owner','pure',24,2.5,NULL,?,NULL,0,?)`).run(now, now);
     const schedule = { ...sql.prepare(`SELECT * FROM learner_pure_cue_state WHERE pure_cue_id='pure'`).get() };
-    const snapshot = db.runWithLearnerId('owner', () => db.issuePureCueServedSnapshot({ pureCueId: 'pure', servedAt: now }));
+    sql.prepare(`INSERT INTO pure_cue_served_snapshots
+        (learner_id,snapshot_id,pure_cue_id,served_at,stimulus,axis_note,teaching_note,accepted_answers_json)
+        VALUES ('owner','pure-snapshot','pure',?,'Say hello','greetings','Original note',?)`)
+        .run(now, JSON.stringify([{ wordId: 'a', hanzi: '你好', traditional: null }, { wordId: 'b', hanzi: '您好', traditional: null }]));
+    const snapshot = db.runWithLearnerId('owner', () => db.getPureCueServedSnapshot('pure-snapshot'));
+    assert.ok(snapshot);
     const result = apply(draft('pure_cue', 'pure', { stimulus: 'Offer a greeting', teachingNote: 'Choose the level of politeness.' }));
     assert.equal(result.outcome!.replacementSourceId, 'pure');
     assert.deepEqual(db.runWithLearnerId('owner', () => db.getPureCueServedSnapshot(snapshot.snapshotId)), snapshot);

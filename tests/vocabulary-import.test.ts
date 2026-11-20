@@ -1,11 +1,8 @@
 import { mergePureCueSchedulerState } from '../server/db/vocabulary-schedule-columns.ts';
-import { allowsProductionUnderProxyPolicy } from '../src/domain/production-proxy.ts';
 import { productionProxyCases } from './helpers/production-proxy-cases.ts';
 import { selectPureCuesForSession, type PureCue } from '../src/domain/pure-cues.ts';
 import { setDb } from '../server/db/connection.ts';
 import { runWithLearnerId } from '../server/db/learner-context.ts';
-import { isWordProductionProxied } from '../server/db/pure-cues.ts';
-import { getActiveProductionCuesForWord } from '../server/db/production-cues.ts';
 import { createVocabularyContent } from '../server/db/vocabulary-content.ts';
 import { selectVocabularyPureCueCandidates, adoptVocabularyPureCues } from '../server/vocabulary/pure-cue-serving.ts';
 import { selectVocabularyReviewSkills } from '../server/vocabulary/review-selection.ts';
@@ -186,15 +183,6 @@ for (const scenario of productionProxyCases) {
       pure: db.prepare('SELECT * FROM learner_pure_cue_state ORDER BY learner_id,pure_cue_id').all(),
     });
     const before = legacyState();
-    // These are the actual legacy coverage and usable-cue adapters used by
-    // persistence.ts's review relevance gate, before any vocabulary conversion.
-    const legacy = runWithLearnerId('a',() => ({
-      proxied: isWordProductionProxied('w1'),
-      targeted: getActiveProductionCuesForWord('w1').length > 0,
-    }));
-    assert.equal(legacy.proxied,scenario.proxied);
-    const legacyProductionAdmitted = allowsProductionUnderProxyPolicy({ proxied: legacy.proxied, hasUsableTargetedCue: legacy.targeted });
-    assert.equal(legacyProductionAdmitted,scenario.skills.some(skill => skill === 'production'));
 
     convert(); migrateDatabase(db);
     assert.deepEqual(legacyState(),before,'conversion preserves scheduler evidence and explicit relevance');

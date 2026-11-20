@@ -2,15 +2,6 @@ import type {
   ContrastCluster,
   ContrastClusterMember,
   ContrastPrompt,
-  SessionStudyItem,
-  SessionStudyItemBuckets,
-  StudyActionKind,
-  StudyAttemptOutcome,
-  StudyContentRef,
-  StudyEvent,
-  StudyEventType,
-  StudyManagementActionKind,
-  StudySessionRecord,
   WordSkillRelevanceState,
 } from '../../src/domain/study-actions.ts';
 
@@ -65,29 +56,6 @@ export type ReviewFailureRateDay = {
   rolling7DayFailureRate: number | null;
 };
 
-export type ContrastClusterContent = ContrastCluster & {
-  members: Array<ContrastClusterMember & {
-    word: Word;
-    productionSuppressed: boolean;
-  }>;
-  prompts: ContrastPrompt[];
-};
-
-export type ReviewRating = 'forgot' | 'hard' | 'good' | 'easy';
-export type ReviewPassRating = 'hard' | 'good' | 'easy';
-export type StudySessionProcessingState = StudySessionRecord['processingState'];
-
-export type ReviewAttemptCommitIntent = {
-  reinforcementSkipped?: boolean;
-  type: 'commit-review-action-session';
-  sessionActionId: string;
-  targetWordId: string;
-  actionKind: Extract<StudyActionKind, 'recognition' | 'production'>;
-  sampledSkillIds: StudySkillId[];
-  failureCount: number;
-  terminalRating: ReviewPassRating | null;
-};
-
 export type WordRow = {
   id: string;
   hanzi: string;
@@ -137,14 +105,6 @@ export type ReviewSessionResultRow = {
   failed_count: number;
 };
 
-export type StudySessionRow = {
-  id: string;
-  started_at: string;
-  ended_at: string | null;
-  processing_state: StudySessionProcessingState;
-  processed_at: string | null;
-};
-
 export type StudySkillId = 'recognition' | 'production' | 'contextual_selection';
 export type WordStudyPhase = 'review';
 
@@ -164,12 +124,6 @@ export type WordSkillState = {
   easeFactor: number;
 };
 
-export type WordStudyAdmissionStateRow = {
-  word_id: string;
-  study_phase: WordStudyPhase;
-  earliest_next_study_at: string | null;
-};
-
 export type WordSkillStateRow = {
   word_id: string;
   skill_id: StudySkillId;
@@ -180,95 +134,12 @@ export type WordSkillStateRow = {
   ease_factor: number;
 };
 
-export type StudyAttemptEventRow = {
-  id: string;
-  occurred_at: string;
-  session_id: string;
-  session_action_id: string;
-  session_event_sequence: number;
-  action_attempt_sequence: number;
-  action_kind: StudyActionKind;
-  target_word_id: string;
-  sampled_skill_ids_json: string;
-  response: string | null;
-  outcome: StudyAttemptOutcome;
-  rating: ReviewRating | null;
-  content_ref_json: string | null;
-  metadata_json: string;
-  projected_at: string | null;
-};
-
-export type StudyEventRow = {
-  id: string;
-  occurred_at: string;
-  session_id: string | null;
-  session_action_id: string | null;
-  session_event_sequence: number | null;
-  event_type: StudyEventType;
-  target_word_id: string | null;
-  action_kind: StudyActionKind | null;
-  sampled_skill_ids_json: string;
-  content_ref_json: string | null;
-  payload_json: string;
-  projected_at: string | null;
-};
-
 export type WordSkillRelevance = {
   wordId: string;
   skillId: StudySkillId;
   relevanceState: WordSkillRelevanceState;
   updatedAt: string;
   sourceEventId: string | null;
-};
-
-export type WordSkillRelevanceRow = {
-  word_id: string;
-  skill_id: StudySkillId;
-  relevance_state: WordSkillRelevanceState;
-  updated_at: string;
-  source_event_id: string | null;
-};
-
-export type RecordStudyManagementActionInput = {
-  sessionId: string;
-  sessionActionId: string;
-  targetWordId: string;
-  actionKind: Extract<StudyActionKind, 'production'>;
-  sampledSkillIds: StudySkillId[];
-  contentRef: StudyContentRef | null;
-  managementAction: StudyManagementActionKind;
-};
-
-export type ContrastClusterRow = {
-  id: string;
-  title: string;
-  note: string;
-};
-
-export type ContrastClusterMemberRow = {
-  cluster_id: string;
-  word_id: string;
-  nuance_note: string;
-  display_order: number | null;
-};
-
-export type ContrastPromptRow = {
-  id: string;
-  cluster_id: string;
-  target_word_id: string;
-  prompt_text: string;
-  explanation: string;
-};
-
-export type StudySchedulerStateInvariantViolation = {
-  wordId: string;
-  skillId: StudySkillId | null;
-  problem: string;
-};
-
-export type DailyNewWordIntakeRow = {
-  day_key: string;
-  new_study_count: number;
 };
 
 export type SeedData = {
@@ -281,46 +152,6 @@ export type SeedData = {
   contrastClusters: ContrastCluster[];
   contrastClusterMembers: ContrastClusterMember[];
   contrastPrompts: ContrastPrompt[];
-};
-
-export type SessionPayload = {
-  buckets: SessionStudyItemBuckets;
-};
-
-export type WordSessionRow = {
-  id: string;
-  hanzi: string;
-  traditional: string | null;
-  pinyin: string;
-  meaning: string;
-  meanings_json: string;
-  personal_notes: string;
-  examples_json: string;
-  status: WordStatus;
-  priority: number;
-  created_at: string;
-  learning_streak: number;
-  last_learning_success_on: string | null;
-  last_learning_covered_on: string | null;
-};
-
-export type ReviewSessionItemWithSkillRow = WordSessionRow & {
-  skill_id: StudySkillId;
-  skill_enabled: number;
-  skill_interval_hours: number;
-  skill_last_studied_at: string;
-  skill_next_due_at: string | null;
-  skill_ease_factor: number;
-  earliest_next_study_at: string | null;
-  skill_relevance_state: WordSkillRelevanceState | null;
-};
-
-export type ReviewSessionItemCandidate = {
-  item: SessionStudyItem;
-  wordId: string;
-  skillId: StudySkillId;
-  urgency: number;
-  nextDueAt: string | null;
 };
 
 export type PriorityWordRow = WordRow & {
@@ -336,7 +167,6 @@ export const INITIAL_REVIEW_EASE_FACTOR = 2.5;
 export const INITIAL_CONTEXTUAL_SELECTION_INTERVAL_HOURS = 6;
 export const PRIORITY_TIER_TOP = 1;
 export const PRIORITY_TIER_REGULAR = 0;
-export const PRIORITY_TIER_SUNK = -1;
 export const REVIEW_PHASE_RECENCY_GUARD_HOURS = 6;
 export const REVIEW_SKILL_URGENCY_TIE_EPSILON = 0.000001;
 
@@ -344,7 +174,5 @@ export type {
   ContrastCluster,
   ContrastClusterMember,
   ContrastPrompt,
-  StudyEvent,
-  StudyManagementActionKind,
   WordSkillRelevanceState,
 };

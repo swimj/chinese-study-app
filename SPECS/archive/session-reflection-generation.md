@@ -20,7 +20,7 @@ Related documents:
 - [`session-progress-and-completion.md`](session-progress-and-completion.md)
 - [`study-action-model.md`](study-action-model.md)
 - [`reflection-proposals-and-handles.md`](reflection-proposals-and-handles.md)
-- [`docs/reflection-frontend-architecture.md`](../../docs/reflection-frontend-architecture.md)
+- `docs/reflection-frontend-architecture.md` (removed with the legacy frontend)
 
 ## 1. Scope And Authority
 

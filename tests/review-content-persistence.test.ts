@@ -43,7 +43,17 @@ before(async () => {
     (id,hanzi,traditional,pinyin,meaning,meanings_json,examples_json,priority,created_at)
     VALUES (?,'你好',NULL,'nǐ hǎo','hello','["hello"]','[]',10,'2026-09-25T00:00:00.000Z')`)
     .run(wordId);
-  db.runWithLearnerId('learner-a', () => db.saveWordContentDocument(content, 'fake'));
+  // Rows match what the retired learner-scoped save path published for shared-trial word content.
+  const now = new Date().toISOString();
+  sqlite.prepare(`INSERT INTO shared_content_publications
+    (publication_id,content_kind,content_id,learning_purpose_key,publication_status,published_at,status_updated_at)
+    VALUES ('review-source-publication','word_content',?,?,'shared_trial',?,?)`).run(content.id, wordId, now, now);
+  sqlite.prepare(`INSERT INTO shared_content_publication_events
+    (event_id,publication_id,from_status,to_status,actor_kind,actor_id,reason,occurred_at)
+    VALUES ('review-source-publication-event','review-source-publication',NULL,'shared_trial','source_authorization',NULL,
+      'fixture word introduction publication',?)`).run(now);
+  sqlite.prepare(`INSERT INTO word_content_documents (content_id,word_id,content_json,model,created_at,publication_id)
+    VALUES (?,?,?,'fake',?,'review-source-publication')`).run(content.id, wordId, JSON.stringify(content), now);
 });
 
 after(() => { sqlite?.close(); if (dir) fs.rmSync(dir, { recursive: true, force: true }); });
@@ -74,7 +84,7 @@ test('review claim publishes canonical shared exercise and supplement atomically
     supplementIds: ['review-definition:supplement'],
   });
   assert.equal(call(() => db.claimWordReviewPreparation(wordId, content.id, 'worker-c', now, expiry)), 'ready');
-  assert.equal(call(() => db.getWordReviewPreparation(wordId))?.ready, true);
+  assert.equal(db.getSharedWordReviewPreparation(wordId)?.ready, true);
   const other = db.runWithLearnerId('learner-b', () =>
     db.getCanonicalReviewContent('production_cue', 'review-definition'));
   assert.equal(other?.kind, 'production_cue');
@@ -84,11 +94,13 @@ test('review claim publishes canonical shared exercise and supplement atomically
     db.getCanonicalReviewContent('production_cue_supplement', 'review-definition:supplement'))?.kind,
   'production_cue_supplement');
   assert.throws(() => sqlite.exec(`UPDATE scoped_review_content_records SET model = 'changed'`), /immutable/);
-  const publication = db.getSharedContentPublicationForContent('word_content', content.id);
-  assert.ok(publication);
-  db.quarantineSharedContentPublication({ publicationId: publication.publicationId,
-    operatorId: 'operator-a', reason: 'incorrect' });
-  assert.equal(call(() => db.isCanonicalReviewSourceEligible('production_cue', 'review-definition')), false);
+  const quarantinedAt = new Date().toISOString();
+  sqlite.prepare(`INSERT INTO shared_content_publication_events
+    (event_id,publication_id,from_status,to_status,actor_kind,actor_id,reason,occurred_at)
+    VALUES ('review-source-quarantine','review-source-publication','shared_trial','quarantined','operator','operator-a','incorrect',?)`)
+    .run(quarantinedAt);
+  sqlite.prepare(`UPDATE shared_content_publications SET publication_status = 'quarantined', status_updated_at = ?
+    WHERE publication_id = 'review-source-publication'`).run(quarantinedAt);
   assert.equal(call(() => db.getCanonicalReviewContent('production_cue', 'review-definition'))?.kind,
     'production_cue');
   assert.equal(call(() => db.claimWordReviewPreparation(wordId, content.id, 'worker-d', now, expiry)), 'ready');
@@ -107,12 +119,14 @@ test('private embedded supplement source is invisible across learners', () => {
      created_at,origin_invocation_id,content_scope,owner_learner_id)
     VALUES (?,?,NULL,'Say hello:','你好，朋友。','Hello, friend.',?,NULL,'learner','learner-a')`)
     .run('private-supplement', task.task_id, new Date().toISOString());
-  db.runWithLearnerId('learner-a', () => db.appendCanonicalReviewSupplement({
-    supplementId: 'private-supplement',
-    source: { kind: 'example', supplementId: 'private-supplement', englishFrame: 'Say hello:',
-      example: { contentId: privateContent.id, exampleId: 'private-example' } },
-    contents: [privateContent],
-  }));
+  // Canonical record shape the retired learner-scoped append path wrote for this projected supplement.
+  sqlite.prepare(`INSERT INTO scoped_review_content_records
+    (record_id,kind,content_id,exercise_id,revision,word_id,source_word_content_id,document_json,created_at,model)
+    VALUES ('private-supplement-record','production_cue_supplement','private-supplement',NULL,1,?,NULL,?,?,NULL)`)
+    .run(wordId, JSON.stringify({ schemaVersion: 1,
+      source: { kind: 'example', supplementId: 'private-supplement', englishFrame: 'Say hello:',
+        example: { contentId: privateContent.id, exampleId: 'private-example' } },
+      contents: [privateContent] }), new Date().toISOString());
   assert.equal(db.runWithLearnerId('learner-a', () =>
     db.getCanonicalReviewContent('production_cue_supplement', 'private-supplement'))?.kind,
   'production_cue_supplement');

@@ -38,5 +38,3 @@ export type SessionActiveTimeMetrics = {
   rolling3DayAverageActiveDurationMs: number;
   rolling7DayAverageActiveDurationMs: number;
 };
-
-export type ReviewRating = 'forgot' | 'hard' | 'good' | 'easy';

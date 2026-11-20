@@ -1,13 +1,11 @@
 import type { BootstrapRevealSnapshot } from './word-content/reveal';
 import type { ContentExerciseSnapshot, WordContentDocument } from './word-content/types';
-import type { WordIntroductionResponse } from './word-content/application';
-import type { ReviewRating, Word } from '../types';
+import type { Word } from '../types';
 import {
   assertTargetedCueAcceptsOnlyOwner,
   type AcceptedCueAnswer,
   type TargetedCueFormat,
 } from './cues';
-import type { PureCueServedSnapshot } from './pure-cues';
 
 export type StudySkillId = 'recognition' | 'production' | 'contextual_selection';
 
@@ -22,10 +20,6 @@ export type StudyContentRef =
   | { type: 'production_cue'; taskId: string; cueId: string };
 
 export type ProductionCueType = TargetedCueFormat;
-
-export type ProductionAttemptResult =
-  | 'accepted_anchor'
-  | 'rejected';
 
 export type ProductionCueSupplementSnapshot = {
   supplementId: string;
@@ -58,18 +52,6 @@ export function assertStrictTargetOnlyProductionSnapshot(
 ): void {
   assertTargetedCueAcceptsOnlyOwner(production, targetWordId);
 }
-
-export type ProductionResponseResolution =
-  | {
-      responseKind?: 'typed';
-      submittedText: string;
-      result: ProductionAttemptResult;
-    }
-  | {
-      responseKind: 'no_clue';
-      submittedText: null;
-      result: 'rejected';
-    };
 
 export type ContrastCluster = {
   id: string;
@@ -107,16 +89,6 @@ export type ContrastSelectionContent = {
   choices: ContrastSelectionChoice[];
 };
 
-export type StudyAction = {
-  sessionActionId: string;
-  kind: StudyActionKind;
-  targetWordId: string;
-  sampledSkillIds: StudySkillId[];
-  contentRef: StudyContentRef | null;
-};
-
-export type SessionStudyItemSource = 'unstudied' | 'learning' | 'review';
-
 export type LearningRehearsalSnapshot = ContentExerciseSnapshot & {
   readonly packageId: string;
   readonly wordContentId: string;
@@ -140,312 +112,5 @@ export type SessionStudyItem = {
   recognitionSupplement?: ProductionCueSupplementSnapshot;
 };
 
-/**
- * A standalone production elicitation.  Unlike SessionStudyItem it is not
- * admitted from, anchored to, or projected onto a word scheduler row.
- */
-export type PureCueSessionReviewItem = {
-  itemType: 'pure_cue_production';
-  sessionActionId: string;
-  snapshot: PureCueServedSnapshot;
-  tier: 'fragile' | 'strong';
-};
-
-// Keep the established word item shape available to all word-only callers.
-// Only the review queue carries the wider union.
-export type SessionReviewItem = SessionStudyItem | PureCueSessionReviewItem;
-
-export function isPureCueSessionReviewItem(item: SessionReviewItem): item is PureCueSessionReviewItem {
-  return 'itemType' in item && item.itemType === 'pure_cue_production';
-}
-
-export type SessionStudyItemBuckets = {
-  introductions?: Record<string, WordIntroductionResponse>;
-  learningRehearsals?: Record<string, LearningRehearsalSnapshot>;
-  learningContent?: Record<string, WordContentDocument>;
-  review: SessionReviewItem[];
-  learning: Word[];
-  unstudied: Word[];
-};
-
-export type WordStudyAdmissionState = {
-  wordId: string;
-  earliestNextStudyAt: string | null;
-};
-
-export type WordSkillState = {
-  wordId: string;
-  skillId: StudySkillId;
-  enabled: boolean;
-  intervalHours: number;
-  lastStudiedAt: string;
-  nextDueAt: string | null;
-  easeFactor: number;
-};
-
-export type StudyAttemptOutcome = 'correct' | 'incorrect';
-
-export type StudyEventType =
-  | 'skill_relevance_changed'
-  | 'contrast_candidate_requested'
-  | 'skill_relevance_changed_with_contrast_candidate'
-  | 'bad_prompt_reported';
-
 // 'deprioritized' unused currently, saved for future enrichment
 export type WordSkillRelevanceState = 'normal' | 'deprioritized' | 'suppressed';
-
-export type StudyManagementActionKind = 'suppress_skill';
-
-export type StudyEvent = {
-  id: string;
-  occurredAt: string;
-  sessionId: string | null;
-  sessionActionId: string | null;
-  sessionEventSequence: number | null;
-  eventType: StudyEventType;
-  targetWordId: string | null;
-  actionKind: StudyActionKind | null;
-  sampledSkillIds: StudySkillId[];
-  contentRef: StudyContentRef | null;
-  payload: Record<string, unknown>;
-  projectedAt: string | null;
-};
-
-export type StudyAttemptEvent = {
-  id: string;
-  occurredAt: string;
-  sessionId: string;
-  sessionActionId: string;
-  sessionEventSequence: number;
-  actionAttemptSequence: number;
-  actionKind: StudyActionKind;
-  targetWordId: string;
-  sampledSkillIds: StudySkillId[];
-  response: string | null;
-  outcome: StudyAttemptOutcome;
-  rating: ReviewRating | null;
-  contentRef: StudyContentRef | null;
-  metadata: Record<string, unknown>;
-};
-
-export type ReviewCommitFields = {
-  failureCount: number;
-  terminalRating: Exclude<ReviewRating, 'forgot'> | null;
-};
-
-export type ContrastSelectionCommitIntent = {
-  type: 'commit-contrast-selection-action-session';
-  sessionActionId: string;
-  targetWordId: string;
-  actionKind: 'contrast_selection';
-  sampledSkillIds: ['contextual_selection'];
-  selectedWordId: string;
-  promptTargetWordId: string;
-  choiceWordIds: string[];
-  rating: ReviewRating;
-  practiceMore: boolean;
-};
-
-export type StudySessionRecord = {
-  id: string;
-  startedAt: string;
-  endedAt: string | null;
-  processingState: 'open' | 'ready_to_process' | 'processed';
-  processedAt: string | null;
-};
-
-export function mapStudySkillToDefaultActionKind(skillId: StudySkillId): StudyActionKind {
-  switch (skillId) {
-    case 'recognition':
-      return 'recognition';
-    case 'production':
-      return 'production';
-    case 'contextual_selection':
-      return 'contrast_selection';
-    default:
-      return assertUnreachableStudySkill(skillId);
-  }
-}
-
-export function buildReviewSessionStudyItem({
-  wordSkillState,
-  word,
-  sessionActionId = buildSessionActionId('review', word.id, wordSkillState.skillId),
-  contentRef = null,
-  contrastSelection = null,
-  production = null,
-}: {
-  wordSkillState: WordSkillState;
-  word: Word;
-  sessionActionId?: string;
-  contentRef?: StudyContentRef | null;
-  contrastSelection?: ContrastSelectionContent | null;
-  production?: ProductionExerciseSnapshot | null;
-}): SessionStudyItem {
-  if (wordSkillState.wordId !== word.id) {
-    throw new Error(
-      `Session study item invariant violated: word skill state word "${wordSkillState.wordId}" must match word "${word.id}".`,
-    );
-  }
-
-  if (word.status !== 'review') {
-    throw new Error(
-      `Session study item invariant violated: review session item word "${word.id}" must have review status.`,
-    );
-  }
-
-  if (production !== null) {
-    assertStrictTargetOnlyProductionSnapshot(production, word.id);
-  }
-
-  return {
-    sessionActionId,
-    actionKind: mapStudySkillToDefaultActionKind(wordSkillState.skillId),
-    targetWordId: word.id,
-    sampledSkillIds: [wordSkillState.skillId],
-    contentRef,
-    intervalHours: wordSkillState.intervalHours,
-    word,
-    contrastSelection,
-    production,
-  };
-}
-
-export function deriveReviewCommitFieldsFromAttemptEvents(
-  events: StudyAttemptEvent[],
-  { reinforcementSkipped = false }: { reinforcementSkipped?: boolean } = {},
-): ReviewCommitFields {
-  if (typeof reinforcementSkipped !== 'boolean') throw new Error('Expected boolean reinforcementSkipped');
-  if (events.length === 0) {
-    throw new Error('Cannot derive review commit fields from an empty attempt event batch.');
-  }
-
-  const orderedEvents = [...events].sort((left, right) => left.actionAttemptSequence - right.actionAttemptSequence);
-  const firstEvent = orderedEvents[0] ?? assertAttemptEventsPresent();
-
-  assertReviewAttemptEvent(firstEvent);
-
-  let expectedActionAttemptSequence = 1;
-  let previousSessionEventSequence = 0;
-  let failureCount = 0;
-  let reinforcementStreak = 0;
-  let commitFields: ReviewCommitFields | null = null;
-
-  for (const event of orderedEvents) {
-    assertSameReviewActionEvent(firstEvent, event);
-
-    if (commitFields !== null) {
-      throw new Error('Review attempt event batch includes events after the review action was covered.');
-    }
-
-    if (event.actionAttemptSequence !== expectedActionAttemptSequence) {
-      throw new Error(
-        `Review attempt event invariant violated: expected actionAttemptSequence ${expectedActionAttemptSequence}, got ${event.actionAttemptSequence}.`,
-      );
-    }
-    expectedActionAttemptSequence += 1;
-
-    if (event.sessionEventSequence <= previousSessionEventSequence) {
-      throw new Error(
-        `Review attempt event invariant violated: sessionEventSequence must increase with actionAttemptSequence.`,
-      );
-    }
-    previousSessionEventSequence = event.sessionEventSequence;
-
-    const rating = event.rating ?? assertReviewAttemptRating(event);
-    assertReviewAttemptOutcomeMatchesRating(event, rating);
-
-    if (failureCount === 0 && rating !== 'forgot') {
-      commitFields = {
-        failureCount: 0,
-        terminalRating: rating,
-      };
-      continue;
-    }
-
-    if (rating === 'forgot') {
-      failureCount += 1;
-      reinforcementStreak = 0;
-    } else {
-      reinforcementStreak += 1;
-    }
-
-    if (reinforcementStreak >= 3) {
-      commitFields = {
-        failureCount,
-        terminalRating: null,
-      };
-    }
-  }
-
-  if (reinforcementSkipped) {
-    if (commitFields !== null || failureCount === 0) {
-      throw new Error('Expected unfinished lapsed review when reinforcementSkipped is true');
-    }
-    commitFields = { failureCount, terminalRating: null };
-  }
-
-  if (commitFields === null) {
-    throw new Error('Review attempt events do not represent a covered review action.');
-  }
-
-  return commitFields;
-}
-
-function assertReviewAttemptEvent(event: StudyAttemptEvent) {
-  if (event.actionKind !== 'recognition' && event.actionKind !== 'production') {
-    throw new Error(`Expected recognition or production review attempt event, got "${event.actionKind}".`);
-  }
-
-  const requiredSkill = event.actionKind === 'recognition' ? 'recognition' : 'production';
-  if (!event.sampledSkillIds.includes(requiredSkill)) {
-    throw new Error(
-      `Review attempt event invariant violated: ${event.actionKind} action must sample ${requiredSkill}.`,
-    );
-  }
-}
-
-function assertSameReviewActionEvent(firstEvent: StudyAttemptEvent, event: StudyAttemptEvent) {
-  assertReviewAttemptEvent(event);
-
-  if (event.sessionId !== firstEvent.sessionId) {
-    throw new Error('Review attempt event batch must belong to one session.');
-  }
-
-  if (event.sessionActionId !== firstEvent.sessionActionId) {
-    throw new Error('Review attempt event batch must belong to one session action.');
-  }
-
-  if (event.actionKind !== firstEvent.actionKind) {
-    throw new Error('Review attempt event batch must use one action kind.');
-  }
-
-  if (event.targetWordId !== firstEvent.targetWordId) {
-    throw new Error('Review attempt event batch must target one word.');
-  }
-}
-
-function assertReviewAttemptRating(event: StudyAttemptEvent): never {
-  throw new Error(`Review attempt event "${event.id}" must include a rating.`);
-}
-
-function assertReviewAttemptOutcomeMatchesRating(event: StudyAttemptEvent, rating: ReviewRating) {
-  const expectedOutcome = rating === 'forgot' ? 'incorrect' : 'correct';
-  if (event.outcome !== expectedOutcome) {
-    throw new Error(
-      `Review attempt event "${event.id}" has outcome "${event.outcome}" inconsistent with rating "${rating}".`,
-    );
-  }
-}
-
-function buildSessionActionId(source: SessionStudyItemSource, wordId: string, skillId: StudySkillId) {
-  return `${source}/${wordId}/${skillId}`;
-}
-
-function assertAttemptEventsPresent(): never {
-  throw new Error('Cannot derive review commit fields from an empty attempt event batch.');
-}
-
-function assertUnreachableStudySkill(skillId: never): never {
-  throw new Error(`Unsupported study skill "${String(skillId)}".`);
-}

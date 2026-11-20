@@ -73,9 +73,9 @@ describe('My words collections', { concurrency: false }, () => {
     insert('waiting'); insert('required'); insert('removed'); insert('dismissed'); insert('ordinary', 'learning');
     for (const id of ['waiting', 'removed', 'dismissed']) db.updateWordUserPriority(id, { bumpDelta: 1 });
     db.updateWordUserPriority('required', { requiredForNextSession: true });
-    db.completeUnstudiedWordSession('required', '2026-09-13');
+    introduce('required', '2026-09-13');
     db.updateWordUserPriority('removed', { reset: true });
-    db.dismissWordFromStudy('dismissed');
+    sink('dismissed');
     assert.deepEqual(new Set(db.getMyWords({ view: 'personal' }).words.map((entry) => entry.word.id)), new Set(['waiting', 'required']));
     assert.deepEqual(new Set(db.getMyWords().words.map((entry) => entry.word.id)), new Set(['required', 'ordinary']));
   });
@@ -222,7 +222,7 @@ describe('My words collections', { concurrency: false }, () => {
     insertDeckWord('normalized', '她', '  TĀ  ');
     insertDeckWord('dismissed', '是', 'shì');
     db.updateWordUserPriority('personal', { bumpDelta: 1 });
-    db.dismissWordFromStudy('dismissed');
+    sink('dismissed');
     place({ 'hsk2-l1': 1 });
     const before = db.getStoredDietProfile();
     const result = db.getMyWords({ view: 'deck' });
@@ -373,6 +373,23 @@ describe('My words collections', { concurrency: false }, () => {
 
 function place(weights: Record<string, number>) {
   db.saveDietProfile({ version: 1, weights, provenance: [], updatedAt: '2026-09-13T00:00:00Z' });
+}
+
+/** The durable rows a completed introduction leaves for the word and its priority overlay. */
+function introduce(id: string, studyDayKey: string) {
+  sqlite.prepare(`UPDATE words SET status = 'learning', last_learning_covered_on = ? WHERE id = ?`).run(studyDayKey, id);
+  sqlite.prepare(`UPDATE user_word_priority SET required_for_next_session = 0, updated_at = ? WHERE word_id = ?`)
+    .run(new Date().toISOString(), id);
+}
+
+/** Dismissing an unstudied word sinks its priority overlay (sunk tier is -1). */
+function sink(id: string) {
+  sqlite.prepare(`INSERT INTO learner_owned_user_word_priority
+      (learner_id, word_id, bump_count, force_top, priority_tier, required_for_next_session, updated_at)
+    VALUES (?, ?, 0, 0, -1, 0, ?)
+    ON CONFLICT(learner_id, word_id) DO UPDATE SET bump_count = 0, force_top = 0, priority_tier = -1,
+      required_for_next_session = 0, updated_at = excluded.updated_at`)
+    .run(rawLearner, id, new Date().toISOString());
 }
 
 function insertDeckWord(id: string, hanzi: string, pinyin: string, status: 'unstudied' | 'learning' | 'review' = 'unstudied') {

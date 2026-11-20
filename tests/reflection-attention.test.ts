@@ -1,11 +1,6 @@
 import assert from 'node:assert/strict';
 import { describe, test } from 'node:test';
-import {
-  hasUnseenFailedReflectionRuns,
-  isFailedReflectionRunUnseen,
-  nextFailedReflectionRunsSeenThroughAt,
-  reflectionNavBadge,
-} from '../src/features/attention/reflection-attention.ts';
+import { reflectionNavBadge } from '../src/features/attention/reflection-attention.ts';
 
 describe('reflection attention badges', () => {
   test('hides the nav count while the Reflections tab is current', () => {
@@ -89,32 +84,6 @@ describe('reflection attention badges', () => {
         isGenerating: true,
       }),
       { kind: 'none' },
-    );
-  });
-
-  test('treats failed runs at or before the seen-through cursor as acknowledged across reload', () => {
-    const seenThrough = '2026-08-18T08:05:00.000Z';
-    assert.equal(isFailedReflectionRunUnseen('2026-08-18T08:05:00.000Z', null), true);
-    assert.equal(isFailedReflectionRunUnseen('2026-08-18T08:05:00.000Z', seenThrough), false);
-    assert.equal(isFailedReflectionRunUnseen('2026-08-18T09:00:00.000Z', seenThrough), true);
-    assert.equal(
-      hasUnseenFailedReflectionRuns(['2026-08-18T08:05:00.000Z'], seenThrough),
-      false,
-    );
-    assert.equal(
-      hasUnseenFailedReflectionRuns(
-        ['2026-08-18T08:05:00.000Z', '2026-08-18T09:00:00.000Z'],
-        seenThrough,
-      ),
-      true,
-    );
-    assert.equal(
-      nextFailedReflectionRunsSeenThroughAt(seenThrough, '2026-08-18T08:00:00.000Z'),
-      seenThrough,
-    );
-    assert.equal(
-      nextFailedReflectionRunsSeenThroughAt(seenThrough, '2026-08-18T09:00:00.000Z'),
-      '2026-08-18T09:00:00.000Z',
     );
   });
 });

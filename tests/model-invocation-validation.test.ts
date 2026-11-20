@@ -11,7 +11,6 @@ import { listModelInvocations } from '../server/db/model-invocations.ts';
 import { installModelInvocationLedger } from '../server/llm/invocation-ledger.ts';
 import { createSessionDebriefProvider } from '../server/session-debrief/provider.ts';
 import { createWordIntroductionProvider } from '../server/word-content/provider.ts';
-import { createWordReviewPreparationService, type WordReviewStore } from '../server/word-content/review-service.ts';
 import { createIntroductionLabService } from '../server/word-content-lab/service.ts';
 import { createSharedWordPreparation } from '../server/word-content/shared-preparation.ts';
 import type { SessionDebriefInput } from '../src/domain/session-debrief.ts';
@@ -56,16 +55,6 @@ test('debrief retains spend for JSON, schema, domain and truncation failures', a
 const content = wordContentFixtures[0]!.content;
 const validReview = { exercises: [{ id: 'context', cueType: 'circumstance', stimulus: { kind: 'direct_text',
   text: 'Before a visitor arrives, formally notify the office so it has a record of the visit.' }, supplement: null }] };
-function reviewService(output: unknown, failPublication = false) {
-  const store: WordReviewStore = {
-    library: () => ({ wordId: content.word.wordId, contents: [{ content, createdAt: '2026-10-06T00:00:00.000Z' }], packages: [], selectedPackageId: null, completed: false }),
-    preparation: () => ({ contentId: content.id, packageId: null, activeStage: null }),
-    claim: () => 'claimed', release: () => undefined,
-    finish: () => { if (failPublication) throw new Error('Persistence unavailable'); return { cueIds: [], supplementIds: [] }; },
-  };
-  return createWordReviewPreparationService({ store, provider: createWordIntroductionProvider(providerOptions(JSON.stringify(output))), providerWork: async (work) => work() });
-}
-
 test('word schema rejection and shared bootstrap domain rejection invalidate their invocation', async () => {
   await rejectedInvocation(() => createWordIntroductionProvider(providerOptions('{}')).generateReview(content));
   const word = content.word;
@@ -81,23 +70,6 @@ test('word schema rejection and shared bootstrap domain rejection invalidate the
   const shared = createSharedWordPreparation(createWordIntroductionProvider(providerOptions(JSON.stringify(output))));
   await rejectedInvocation(() => shared.generate('validation-bootstrap', 'bootstrap', 'unclaimed-token'));
 });
-
-test('concurrent word domain rejection targets its own row; publication failure keeps valid output completed', async () => {
-  const existing = new Set(listModelInvocations().rows.map((row) => row.id));
-  const invalidReview = { exercises: [{ ...validReview.exercises[0], stimulus: {
-    kind: 'example_cloze', exampleId: 'missing', occurrenceIndexes: [0], frame: null,
-  } }] };
-  await Promise.all([
-    assert.rejects(() => owner(() => reviewService(invalidReview).prepare(content.word.wordId)), /unknown|example/i),
-    assert.rejects(() => runWithLearnerId('validation-b', () => reviewService(validReview, true).prepare(content.word.wordId)), /Persistence unavailable/),
-  ]);
-  const rows = listModelInvocations().rows.filter((row) => !existing.has(row.id));
-  assert.equal(rows.length, 2);
-  assert.equal(rows.find((row) => row.learnerId === 'validation-a')!.status, 'invalid_response');
-  assert.equal(rows.find((row) => row.learnerId === 'validation-b')!.status, 'completed');
-  assert.ok(rows.every((row) => row.spendUsd! > 0 && row.latencyMs! >= 0));
-});
-
 
 test('shared teaching and review domain validation invalidate calls after schema validation succeeds', async () => {
   const bootstrap = createSharedWordPreparation(createWordIntroductionProvider(providerOptions(JSON.stringify({

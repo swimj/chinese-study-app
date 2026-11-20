@@ -45,20 +45,19 @@ Report manual fixture results separately from automated suite results.
 
 ## Coverage retained across the vocabulary cutover
 
-Legacy tests remain in the top-level test glob, but a legacy-only test does not
-establish coverage of the new Mandarin path. Preserve shared semantic cases at
-the common policy/component boundary, and exercise new persistence adapters
-separately. Changed lifecycle rules are not forced through legacy controllers.
+Select the shared policy cases and the vocabulary suite that calls the policy
+from the affected learner flow. Historical conversion tests start with populated
+legacy tables so they can check both the source records and the vocabulary result.
 
 | Shared or adapted boundary | Coverage |
 | --- | --- |
-| Review interval/ease and urgency/ranking | `review-policy.test.ts` plus old `study-actions` / `session-composition` tests and new `vocabulary-selected-skill-scheduling` / `vocabulary-composition` tests |
-| Physical bracket reactions and event guards | `content-quality-keyboard.test.ts`, `vocabulary-keyboard.test.ts`; Chinese punctuation vectors exercise both resolvers |
-| Home start, card inbox chrome, summary disclosures, deadline | Existing Home/completion tests, vocabulary Home/completion tests, and `shared-inbox-chrome.test.ts` |
-| Words collections and shared page | `my-words-page.test.ts`, legacy `my-words.test.ts`, and `vocabulary-words.test.ts`; vocabulary mode authority requires the new adapter suite |
-| Preparation-wide outage classification and pause | `preparation-provider-failure.test.ts`, old `word-preparation-worker.test.ts`, new `vocabulary-preparation.test.ts`; item budgets and running sibling publication remain separate |
-| Pure-cue stimulus repair | Old repair tests and `vocabulary-pure-cue-improvement.test.ts` use the shared nonempty/changed/trimmed stimulus invariant |
-| Pure-cue proxy admission | `production-proxy.test.ts` and `vocabulary-import.test.ts` run shared cases through the common policy and both storage adapters; `pure-cues.test.ts` exercises the legacy composer; `vocabulary-composition.test.ts` covers current content eligibility and `vocabulary-study.test.ts` covers preview/Start and persisted fallback serving |
+| Review interval, ease and urgency | `review-policy.test.ts` covers recall credit, lapse, urgency and tie breakers. `vocabulary-selected-skill-scheduling.test.ts` checks the schedule written at closure for each selected skill. `vocabulary-composition.test.ts` checks selection. |
+| Physical bracket reactions and event guards | `content-quality-keyboard.test.ts` and `vocabulary-keyboard.test.ts` exercise reaction shortcuts, Chinese punctuation and typing guards. |
+| Home Start, inbox controls, summary disclosures and deadline | `vocabulary-home-overview.test.ts`, `shared-inbox-chrome.test.ts` and `vocabulary-completion-panel.test.ts` cover availability, paging, clock skew and rendered summary states. |
+| Words collections and shared page | `my-words.test.ts` exercises the historical collection endpoint. `vocabulary-words.test.ts` covers vocabulary membership and mode authority. `my-words-page.test.ts` checks presentation. |
+| Preparation-wide outage classification and pause | `preparation-provider-failure.test.ts` covers error classification. `word-preparation-worker.test.ts` and `vocabulary-preparation.test.ts` exercise pause, attempt budgets and recovery through their workers. |
+| Pure-cue stimulus repair | `vocabulary-pure-cue-improvement.test.ts` rejects empty, unchanged and untrimmed stimuli and checks that repairs preserve answer and reveal fields. |
+| Pure-cue proxy admission | `production-proxy.test.ts` checks the common policy. `vocabulary-import.test.ts` runs the same cases through offline conversion and vocabulary selection, preserving source schedules and relevance. `vocabulary-composition.test.ts` and `vocabulary-study.test.ts` exercise eligibility, preview, Start and fallback serving. |
 | Queued operator approvals | `vocabulary-reflection.test.ts` covers persisted admission, exact authorization, restart replay, stale revisions, overlap rollback, maintenance/retries, torn journal records, compaction, and crash after commit; `vocabulary-reflection-http.test.ts` covers ACK/auth/request identity; `vocabulary-operator-approval-state.test.ts` covers frontend receipt merging and attention resolution |
 | Durable completion and proposal receipts | `vocabulary-session-persistence.test.ts` and `vocabulary-reflection.test.ts` include pending/approved and applied database-reopen cases with idempotent replay |
 | General-exercise authoring and reflection adaptation | `vocabulary-general-exercise-authoring.test.ts`, `vocabulary-preparation.test.ts` and `vocabulary-improvement-admission.test.ts` cover shared guards, empty-result operator attention, exercise retirement, trusted selected senses, coverage-independent mapping, and publication/proposal adapters; `vocabulary-reflection.test.ts` covers application and scope |
@@ -67,15 +66,10 @@ When replacing an admission path, inventory its eligibility gates as well as its
 ranking and schedule calculations. For each preserved gate, identify the owning
 contract, the old behavioral test, and an assertion through the replacement
 selector or controller. Derived content policies need populated-content fixtures;
-copied schedule fields alone cannot establish admission equivalence. In particular,
-the proxy migration tests compare legacy adapters with new selection, while the
-legacy composer test separately covers their old orchestration. A passing legacy
-suite is not evidence that the new path invokes those gates.
+copied schedule fields alone cannot establish admission equivalence.
 
-Do not infer full hook or browser coverage from shared chrome tests. The old and
-new completion protocols, feedback selection identities and content application
-models remain separate. Manual browser fixtures still cover their interaction
-wiring; full automated mounted-controller/fetch-race coverage is not implied.
+Browser fixtures exercise mounted interactions and asynchronous acknowledgements.
+The shared chrome tests exercise component markup and deadline calculations.
 
 ## Browser regression checks
 
@@ -222,57 +216,44 @@ All HTTP is intercepted, so these fixtures do not modify learner data.
 | `new-learner-preview.test.ts` | Fresh learner setup, existing-data protection, reset-link output, and welcome-only browser marker reset | Preview command + temporary SQLite |
 | `ui-annotation-fixtures.test.ts` | Relative UTC dates in the annotation seed that the vocabulary fixture imports | `server/seeds/ui-annotation-data.ts` |
 | `vocabulary-session-fixtures.test.ts` | Full 12-word vocabulary composition, Solidify threshold range, persisted prior override, and summary choice through real finalization | Fresh fixture command + temporary SQLite |
-| `session-composition.test.ts` | Session payload / scheduling composition | Dynamic `server/db.ts` |
+| `session-composition.test.ts` | Daily new-word limit, admission source and character settings | Learning policy through `server/db.ts` |
 | `diet-intake-placement-api.test.ts` | Retired placement endpoints and removed intake status gate | `server/index.ts` registered routes + temporary SQLite |
 | `diet-profile.test.ts` | Default diet selection, profile round-trip, nudge/jump behavior, and historical intake compatibility | `server/db/diet-profile.ts` + temporary SQLite |
 | `unstudied-admission.test.ts` | Experimental dual-pool unstudied admission selector, including stash-only source | `server/db/unstudied-admission.ts` |
-| `session-completion.test.ts` | Session completion commits | Dynamic `server/db.ts` |
-| `durable-session-completion.test.ts` | Fixed deadline, cancel/expiry, atomic final acceptance, outcome reporting, and restart for retained completion persistence | Completion persistence with temporary SQLite |
+| `session-completion.test.ts` | Review failure rates, active-time aggregates, summary duration replacement and personal notes | Summary and learner persistence through `server/db.ts` |
 | `card-characters.test.ts` | Study-card simplified/traditional character formatting | `src/domain/card-characters.ts` |
 | `sentence-characters.test.ts` | Script conversion, Taiwan variants, comparison preservation, and contextual cloze alignment | OpenCC + sentence display helpers |
 | `sentence-character-settings.test.ts` | Private sentence preferences, retention, status, and HTTP validation | Temporary SQLite + Express app |
 | `session-character-settings-panel.test.ts` | Conditional sentence selector and remembered script | Settings panel server render |
 | `cloze-prompt.test.ts` | Display normalization of manual blank markers, reveal, and ambiguous-text fallback | `ClozePrompt.tsx` server render |
-| `study-actions.test.ts` | Study action adapters / event derivation | `src/domain/study-actions.ts` |
-| `study-attempt-events.test.ts` | Attempt event persistence | Dynamic `server/db.ts` |
-| `study-management.test.ts` | Suppress / bad-prompt / management actions | Dynamic `server/db.ts` |
-| `study-scheduler-state.test.ts` | Scheduler invariants | Dynamic `server/db.ts` |
-| `contrast-content.test.ts` | Contrast clusters and prompts | Dynamic `server/db.ts` |
-| `reflection-domain.test.ts` | V3 result/operation validation, registry, exact/revised classification, lifecycle transitions | `src/domain/reflection.ts` |
-| `reflection-evidence-validation.test.ts` | Strict supplement/full-bundle shapes, validation-only attempt links, retired attempt/management metadata rejection, and initial-milestone evidence boundary | `src/domain/reflection-evidence.ts` |
+| `study-attempt-events.test.ts`, `study-management.test.ts` | Historical study-session, attempt and management schema | Temporary SQLite |
 | `reflection-run-pricing.test.ts` | Pinned token-category pricing math, partial usage handling, and unknown-rate unavailability | `server/reflection/run-pricing.ts` |
 | `model-invocation-cost-backfill.test.ts` | Read-only preview, exact-plan confirmation, shared live/backfill cache accounting, preserved evidence/known spend, skipped unsupported usage, atomic rollback and repeatability | Temporary SQLite + `hosted:backfill-luna-costs` CLI |
-| `reflection-store.test.ts` | Seven-table schema, session-backed and sessionless provenance, retained failed-run bundles/retryability, immutable run-price reconstruction, atomic artifact/review persistence, queue/detail, review/invocation lifecycle | Dynamic `server/db.ts` |
-| `reflection-application.test.ts` | Suppression/contrast/cue adapters, effect attribution, application outcomes, and requested-correct reflection through generation, acceptance, and application | Dynamic `server/db.ts`, real provider with mocked transport |
-| `reflection-persistence-reload.test.ts` | Queue/detail/review/application/effect reconstruction across fresh Node processes | Shared temporary `APP_DATA_DIR` |
-| `reflection-api.test.ts` | Attention badges, Help-card inbox-seen stamps, and durable failed-run acknowledgement over HTTP | `server/index.ts` attention routes + temporary SQLite |
-| `reflection-quality.test.ts` | Item quality tag-set upsert, multi-tag coexistence, model-arm disposition + tag stats | `server/db/reflection-quality.ts` + temporary SQLite |
-| `reflection-help-inbox.test.ts` | Explanation-only Help inbox seed at materialize, Done delete, manual authorization, independence from proposal disposition, 404 | `server/db/reflection-help-inbox.ts` + temporary SQLite |
+| `reflection-store.test.ts`, `reflection-application.test.ts` | Historical reflection schema validation, production task creation trigger and immutable cue facts | Temporary SQLite |
+| `reflection-api.test.ts` | Attention badge reads, marking a proposal seen and failed-run acknowledgement | Registered Express handlers + temporary SQLite |
 | `whats-new-blog.test.ts` | Migration/seeding, authored preview backfill and preserved revisions, atomic revisions, draft visibility, publication ordering, live connection updates, input bounds and legacy sequence attention | Temporary SQLite + shared parser |
 | `whats-new-api.test.ts` | Published feed, operator permissions, invalid writes, stale revisions and sequence endpoint | Express app + temporary SQLite |
 | `whats-new-attention.test.ts` | Per-post badge exposure/expiry and reads, legacy cursor preservation, learner isolation, exact snapshots, restart/concurrent connections, migration preservation and schema equivalence | Temporary SQLite + fresh Node processes |
 | `trivial-unstudied-words-migration.test.ts` | `0076` pruning rule: trivial unstudied rows, schedules and default legacy state deleted; stash, dismissal, intended use, studied modes, non-default schedules, every attachment kind and session references kept; dictionary untouched; per-table attachment rows; frozen classification of 0076's learner/word tables; rollback on a violated postcondition; repeat run | Temporary SQLite |
 | `whats-new-command.test.ts` | Live command writes, actor history, conflict rejection, missing targets, old schema refusal and no bootstrap | CLI subprocess + temporary SQLite |
 | `whats-new-frontend.test.ts` | Independent expiry windows, foreground/viewport exposure, safe previews and full-text rendering, unloaded-feed acknowledgement | Pure selectors + visibility observer + React server render |
-| `attention-badges.test.ts` | Unseen Help count, sticky `inbox_seen_at`, dismiss/reopen, durable failed-run seen-through cursor, What’s New cursor | `server/db/attention.ts` + temporary SQLite |
+| `attention-badges.test.ts` | Unseen pending proposals and open explanations, inbox immutability, failed-run acknowledgement and What’s New cursor | `server/db/attention.ts` + temporary SQLite |
 | `reflection-attention.test.ts` | Reflections nav badge hiding, failure-over-count priority, and failed-run seen-through comparison | `src/features/attention/reflection-attention.ts` |
 | `session-debrief-cooldown.test.ts` | Two-session rolling 72-hour cooldown, distinct-session counting, learner isolation, exact expiry, frozen retries, alternatives and all-filtered completion | `server/db/session-debrief.ts` |
 | `session-debrief-loader.test.ts` | Pending-only polling, request abort/fencing, retry races and lost response recovery | `session-debrief-loader.ts` |
 | `home-connections.test.ts` | Completed-session presentation preferences, deferred ready introduction, exact previews, bounded ring navigation, arrow-key guards, loop cue, waiting/failure/empty states | Home connections state/keyboard models + server-rendered component |
 | `content-reactions.test.ts` | Reaction input validation, one current reaction per subject, append-only history, ownership, Saved collection window and operator summary, HTTP routes | DB module + API against a disposable database |
 | `content-reactions-ui.test.ts` | Exclusive Save / Not for me toggles, reasons and notes, S/X guards, Home reaction rendering, Saved grouping, filtering and visit-stable membership | Reaction state, controls and Saved list helpers |
-| `session-debrief-ui.test.ts` | Exact stepped text, empty/loading/failure, safe keyboard navigation, blank optional interests and French exclusion | Debrief card and settings server render + keyboard model |
-| `llm-provider-runner.test.ts` | Spike compatibility shims, provider adapters, fixtures, current V3 validation/viewer behavior | `spikes/llm-provider/` |
+| `session-debrief-ui.test.ts` | Exact stepped text, empty/loading/failure, safe keyboard navigation, blank optional interests and settings visibility | Debrief card and settings server render + keyboard model |
 | `user-priority.test.ts` | User priority patches | Dynamic `server/db.ts` |
 | `my-words.test.ts` | Learner collection membership, study dates, stage/lapses filters, search/pagination, isolation, HTTP validation | Dynamic `server/db.ts`, `server/index.ts` |
 | `my-words-page.test.ts` | Word detail, stage chips, and collection empty/error presentation | `MyWordsPage.tsx` server render |
 | `priority-page-model.test.ts` | Stash manage-list overlay recency sort | `src/features/priority/priority-page-model.ts` |
 | `priority-match-selection.test.ts` | Stash add-by-target multi-match chooser helpers and picker markup | `priority-match-selection.ts`, `PriorityPage.tsx` |
-| `priority-aliases.test.ts` | French alias lookup | Dynamic `server/db.ts` |
+| `priority-aliases.test.ts` | Mandarin priority lookup and alias schema | Dynamic `server/db.ts` |
 | `word-meanings.test.ts` | Word meanings CRUD | Dynamic `server/db.ts` |
 | `dev-db-bootstrap.test.ts` | Dev DB bootstrap | Dynamic `server/db.ts` |
 | `learner-isolation.test.ts` | Fresh local/external learner defaults, preserved settings, shared lexical visibility, private overlays/content, duplicate private ids, cross-owner references | Dynamic `server/db.ts` + raw scoped connection |
-| `study-profile.test.ts` | Study profile helpers | `src/study-profile.ts` |
 | `clerk-auth-gate.test.ts` | Clerk loading vs sign-in vs invite sign-up vs app gate; invitation tickets mount SignUp | `src/auth/clerk-auth-gate.ts`, `ClerkAuthGateViews.tsx` |
 | `canonical-words.test.ts` | Canonical wordlist scripts | `scripts/lib/canonical-words.ts` |
 | `cc-cedict.test.ts` | CC-CEDICT parsing | `scripts/lib/cc-cedict.ts` |
@@ -425,15 +406,13 @@ multiword rollback, idempotence, preparation refresh, and preserved learner hist
 | Area | Run first |
 | --- | --- |
 | New-learner defaults / diet profile | `diet-profile.test.ts`, `diet-intake-placement-api.test.ts`, `learner-isolation.test.ts` |
-| Session composition / SQL scheduling | `session-composition.test.ts`, `unstudied-admission.test.ts` |
-| Session end / word lifecycle commits | `session-completion.test.ts`, `durable-session-completion.test.ts` |
-| Contrast content | `contrast-content.test.ts` |
-| Study management / suppression | `study-management.test.ts` |
+| Vocabulary composition and scheduling | `vocabulary-composition.test.ts`, `vocabulary-composition-reads.test.ts`, `vocabulary-selected-skill-scheduling.test.ts` |
+| Session closure and word lifecycle effects | `vocabulary-session-persistence.test.ts`, `vocabulary-study.test.ts` |
+| Contrast conversion and contextual selection | `vocabulary-import.test.ts`, `vocabulary-selected-skill-scheduling.test.ts` |
 | Priority / aliases | `user-priority.test.ts`, `priority-aliases.test.ts` |
 | Clerk frontend session gate | `clerk-auth-gate.test.ts` |
 | Hosted Clerk invitations | `hosted-clerk-invite.test.ts` |
-| Reflection contracts / validation | `reflection-domain.test.ts`, `reflection-evidence-validation.test.ts`, `reflection-v7-schema.test.ts` |
-| Reflection persistence / application | `reflection-store.test.ts`, `reflection-application.test.ts`, `reflection-persistence-reload.test.ts`, `reflection-quality.test.ts`, `reflection-help-inbox.test.ts` |
+| Vocabulary feedback and proposal application | `vocabulary-reflection.test.ts`, `vocabulary-reflection-http.test.ts` |
 | Attention badges HTTP | `reflection-api.test.ts` |
 | Schema or bootstrap | `dev-db-bootstrap.test.ts` + any db-touching tests above |
 | Hosted metrics / Grafana export | `observability.test.ts`, `request-timing.test.ts`, `hosted-runtime.test.ts` |
@@ -448,13 +427,10 @@ Tests that dynamic-import `server/db.ts` set `APP_MODE=study` and
 `APP_DATA_DIR` to a temp directory before import. Node's test context selects
 the stable `test-learner` unless a test supplies `APP_LEARNER_ID` explicitly.
 
-The reflection API suite invokes the actual handlers registered in Express
-without binding a TCP port, which keeps the automated suite compatible with
-restricted sandboxes. Provider tests inject transport responses and never
-require real credentials or external network access. The steel-thread
-demonstration still requires a separate manual study-mode run with a real
-completed session and `OPENAI_API_KEY`; secrets must not enter fixtures, logs,
-or artifacts.
+The reflection attention API suite invokes the handlers registered in Express
+without binding a TCP port. Provider tests inject transport responses. The
+[vocabulary backend provider trials](#vocabulary-backend-provider-trials)
+exercise real model generation when a live comparison is needed.
 
 ## Other focused coverage
 
@@ -488,8 +464,8 @@ schedule. Hand-built vocabulary fixtures apply 0077 through
 learner-scoped summary counts, unknown legacy history, completed-session UTC
 attribution, saved snapshot correction, admission preservation, repeated
 migration, and fresh/upgrade schema equivalence. `usage-pulse.test.ts` exercises
-write-time totals, evening EDT, midnight sessions, retries, Undo, and late
-completion snapshot refresh.
+summary totals, evening EDT, midnight sessions, idempotent retries, and snapshot
+rollback and refresh.
 
 ### Learner feedback preview
 

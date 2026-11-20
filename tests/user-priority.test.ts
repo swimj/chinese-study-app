@@ -10,7 +10,6 @@ import { normalizeMandarinHanziLookup } from '../server/db/hanzi-lookup.ts';
 
 type WordStatus = 'unstudied' | 'learning' | 'review';
 type DbModule = typeof import('../server/db.ts');
-const studyDayKey = '2026-01-10';
 
 let dataDir = '';
 let dbPath = '';
@@ -203,26 +202,13 @@ describe('user priority layer', { concurrency: false }, () => {
 
     dbModule.updateWordUserPriority('required-only', { requiredForNextSession: true });
     dbModule.updateWordUserPriority('sunk-boosted', { bumpDelta: 1 });
-    dbModule.dismissWordFromStudy('sunk-boosted');
+    sqlite.prepare('UPDATE user_word_priority SET priority_tier = -1 WHERE word_id = ?').run('sunk-boosted');
 
     const prioritized = dbModule.getPrioritizedUnstudiedWords().words;
 
     assert.deepEqual(prioritized.map((entry) => entry.word.id), ['required-only']);
     assert.equal(prioritized[0]?.bumpCount, 0);
     assert.equal(prioritized[0]?.requiredForNextSession, true);
-  });
-
-  test('dismiss clears required state while sinking the word', () => {
-    insertWord('required-dismissed', 50, 'unstudied', '2026-01-01T00:00:00.000Z');
-
-    dbModule.updateWordUserPriority('required-dismissed', { requiredForNextSession: true });
-    dbModule.dismissWordFromStudy('required-dismissed');
-
-    const priorityRow = sqlite
-      .prepare('SELECT priority_tier, required_for_next_session FROM user_word_priority WHERE word_id = ?')
-      .get('required-dismissed') as { priority_tier: number; required_for_next_session: number };
-    assert.equal(priorityRow.priority_tier, -1);
-    assert.equal(priorityRow.required_for_next_session, 0);
   });
 
   test('manage-list stash order is tops newest-first then overlay recency, not corpus frequency', () => {
@@ -242,28 +228,6 @@ describe('user priority layer', { concurrency: false }, () => {
 
     const ordered = dbModule.getPrioritizedUnstudiedWords().words.map((entry) => entry.word.id);
     assert.deepEqual(ordered, ['newer-top', 'older-top', 'newer-bump', 'older-bump']);
-  });
-
-  test('new learner intake respects the cap and selects only stash words', () => {
-    const { dailyNewWordLimit } = dbModule.getLearningPolicy(studyDayKey);
-
-    insertWord('old-base', 60, 'unstudied', '2026-01-01T00:00:00.000Z');
-    insertWord('boosted', 55, 'unstudied', '2026-01-02T00:00:00.000Z');
-    insertWord('forced', 1, 'unstudied', '2026-01-03T00:00:00.000Z');
-    insertWord('very-low', -100, 'unstudied', '2026-01-04T00:00:00.000Z');
-
-    dbModule.updateWordUserPriority('boosted', { bumpDelta: 1 });
-    dbModule.updateWordUserPriority('forced', { forceTop: true });
-
-    const sessionIds = getSessionItemIds(dbModule);
-    const sessionIdSet = new Set(sessionIds);
-    const expectedIdSet = new Set([
-      'unstudied/forced',
-      'unstudied/boosted',
-    ].slice(0, dailyNewWordLimit));
-
-    assert.equal(sessionIds.length, expectedIdSet.size);
-    assert.deepEqual(sessionIdSet, expectedIdSet);
   });
 
   test('non-unstudied words cannot be updated', () => {
@@ -312,14 +276,5 @@ function insertWord(id: string, priority: number, status: WordStatus, createdAt:
     SET normalized_hanzi = ?
     WHERE id = ?
   `).run(normalizeMandarinHanziLookup(hanzi), id);
-  if (status === 'unstudied') prepareWordFixture(sqlite, dbModule, id);
-}
-
-function getSessionItemIds(db: DbModule): string[] {
-  const payload = db.getSessionPayload(studyDayKey);
-  return [
-    ...payload.buckets.review.map((item) => item.sessionActionId),
-    ...payload.buckets.learning.map((word) => `learning/${word.id}`),
-    ...payload.buckets.unstudied.map((word) => `unstudied/${word.id}`),
-  ];
+  if (status === 'unstudied') prepareWordFixture(sqlite, id);
 }

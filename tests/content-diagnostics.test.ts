@@ -3,6 +3,7 @@ import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { WordDetail } from '../src/pages/ContentDiagnosticsPage.tsx';
 import { wordContentFixtures } from './fixtures/word-content.ts';
+import { insertPublishedWordContent } from './helpers/prepared-word-fixtures.ts';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
@@ -35,30 +36,24 @@ describe('content diagnostics', { concurrency: false }, () => {
 
     insertWord('check', '考查', 'kǎochá', 'to check');
     insertWord('inspect', '考察', 'kǎochá', 'to inspect');
-    dbModule.createContrastCluster({
-      id: 'kaocha-cluster',
-      title: '考查 / 考察',
-      note: 'Similar sound, different scope.',
-    });
-    dbModule.addContrastClusterMember({
-      clusterId: 'kaocha-cluster',
-      wordId: 'check',
-      nuanceNote: 'Check knowledge.',
-      displayOrder: 1,
-    });
-    dbModule.addContrastClusterMember({
-      clusterId: 'kaocha-cluster',
-      wordId: 'inspect',
-      nuanceNote: 'Inspect conditions.',
-      displayOrder: 2,
-    });
-    dbModule.createContrastPrompt({
-      id: 'check-prompt',
-      clusterId: 'kaocha-cluster',
-      targetWordId: 'check',
-      promptText: '老师要____理解。',
-      explanation: 'Knowledge is being checked.',
-    });
+    // The rows contrast authoring left: the cluster, its members and prompt, and contextual eligibility.
+    const now = new Date().toISOString();
+    sqlite.exec(`
+      INSERT INTO contrast_clusters (id, title, note)
+        VALUES ('kaocha-cluster', '考查 / 考察', 'Similar sound, different scope.');
+      INSERT INTO contrast_cluster_members (cluster_id, word_id, nuance_note, display_order) VALUES
+        ('kaocha-cluster', 'check', 'Check knowledge.', 1),
+        ('kaocha-cluster', 'inspect', 'Inspect conditions.', 2);
+      INSERT INTO contrast_prompts (id, cluster_id, target_word_id, prompt_text, explanation)
+        VALUES ('check-prompt', 'kaocha-cluster', 'check', '老师要____理解。', 'Knowledge is being checked.');
+    `);
+    for (const wordId of ['check', 'inspect']) {
+      sqlite.prepare(`INSERT INTO word_skill_relevance (word_id, skill_id, relevance_state, updated_at, source_event_id)
+        VALUES (?, 'contextual_selection', 'normal', ?, NULL)`).run(wordId, now);
+      sqlite.prepare(`INSERT INTO word_skill_state
+        (word_id, skill_id, enabled, interval_hours, last_studied_at, next_due_at, ease_factor)
+        VALUES (?, 'contextual_selection', 1, 6, ?, ?, 2.5)`).run(wordId, now, now);
+    }
     insertCue();
   });
 
@@ -73,7 +68,7 @@ describe('content diagnostics', { concurrency: false }, () => {
     const content = { ...fixture.content, id: 'diagnostic-content', word: {
       wordId: 'check', hanzi: '考查', traditional: null, pinyin: 'kǎochá',
     } };
-    dbModule.saveWordContentDocument({ ...content, id: 'diagnostic-old-content' }, 'fixture');
+    const oldCreatedAt = '2026-01-01T00:00:00.000Z';
     const teaching: TeachingPackage = {
       ...fixture.teaching,
       wordContentId: 'diagnostic-old-content',
@@ -86,9 +81,10 @@ describe('content diagnostics', { concurrency: false }, () => {
         acceptedAnswers: [{ wordId: 'check', hanzi: '考查', traditional: null }],
       }],
     };
-    dbModule.saveWordTeachingPackage({ ...teaching, id: 'diagnostic-old' }, 'fixture');
+    insertPublishedWordContent(sqlite, { content: { ...content, id: 'diagnostic-old-content' },
+      teaching: { ...teaching, id: 'diagnostic-old' }, model: 'fixture', createdAt: oldCreatedAt });
     t.mock.timers.setTime(new Date('2026-01-02T00:00:00.000Z').getTime());
-    dbModule.saveWordContentDocument(content, 'fixture');
+    insertPublishedWordContent(sqlite, { content, model: 'fixture', createdAt: '2026-01-02T00:00:00.000Z' });
     const item = dbModule.getContentDiagnostics({ kind: 'word', query: '考查' }).items[0];
     assert.equal(item.kind, 'word');
     if (item.kind !== 'word') throw new Error('Expected word');

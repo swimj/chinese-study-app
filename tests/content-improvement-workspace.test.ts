@@ -10,13 +10,12 @@ import type { ImprovementCase, ImprovementCheck } from '../src/domain/content-im
 let dir: string, server: http.Server, base: string;
 let db: ReturnType<typeof import('../server/db/connection.ts')['getDb']>;
 let api: typeof import('../server/db/content-improvements.ts');
-let appDb: typeof import('../server/db.ts');
 const keys = ['APP_MODE','APP_DATA_DIR','APP_LEARNER_ID','APP_AUTH_MODE','APP_OPERATOR_CLERK_USER_IDS'] as const;
 const previous = Object.fromEntries(keys.map(key => [key,process.env[key]]));
 before(async () => {
   dir = fs.mkdtempSync(path.join(os.tmpdir(),'content-improvement-'));
   Object.assign(process.env,{APP_MODE:'study',APP_DATA_DIR:dir,APP_LEARNER_ID:'editor',APP_AUTH_MODE:'trusted_local',APP_OPERATOR_CLERK_USER_IDS:'editor'});
-  appDb = await import('../server/db.ts');
+  await import('../server/db.ts');
   const {registerContentImprovementRoutes} = await import('../server/content-improvement-routes.ts');
   const {runWithLearnerId} = await import('../server/db/learner-context.ts');
   db = (await import('../server/db/connection.ts')).getDb();
@@ -86,7 +85,10 @@ test('flagged correction retains evidence, requires approval, replaces future se
   const result = await applied.json() as ImprovementCase;
   assert.equal(result.status,'applied');assert(result.outcome?.replacementSourceId);
   assert.equal(db.prepare('SELECT prompt_text FROM scoped_contrast_prompts WHERE id=?').get('flagged')!.prompt_text,'老师要____学生。');
-  const selected = appDb.getContrastPromptsForCluster('cluster');
+  // Future selection excludes contrast prompts that have a recorded successor.
+  const selected = db.prepare(`SELECT id FROM contrast_prompts WHERE cluster_id=? AND NOT EXISTS (
+    SELECT 1 FROM content_improvement_replacements r WHERE r.kind='contrast_prompt' AND r.source_id=contrast_prompts.id)
+    ORDER BY id`).all('cluster') as Array<{id:string}>;
   assert(!selected.some(p => p.id === 'flagged'));assert(selected.some(p => p.id === result.outcome!.replacementSourceId));
   assert.equal(db.prepare('SELECT rating FROM learner_content_quality_ratings WHERE content_key=?').get(rating.contentKey)!.rating,'down');
   const history = await (await request(`/${item.id}/history`)).json() as ImprovementCase[];

@@ -7,8 +7,7 @@ import {
   type PureCueContent,
   type TargetedCueContent,
 } from '../src/domain/cues.ts';
-import { resolvePureCueResponse, type PureCue, type PureCueServedSnapshot } from '../src/domain/pure-cues.ts';
-import { resolveAcceptedProductionResponse } from '../src/domain/production-response.ts';
+import type { PureCue } from '../src/domain/pure-cues.ts';
 
 const targetAnswer = { wordId: 'target', hanzi: '学习', traditional: '學習' };
 const alternateAnswer = { wordId: 'alternate', hanzi: '研习', traditional: '研習' };
@@ -71,35 +70,8 @@ test('shared frozen-answer matching is profile-aware and returns stable identity
   }, 'ETUDIER', 'french')?.wordId, 'french-target');
 });
 
-test('word-owned and pure response resolution share matching without sharing ownership policy', () => {
-  assert.deepEqual(resolveAcceptedProductionResponse({
-    submittedText: '學習',
-    anchorWordId: 'target',
-    acceptedAnswers: [targetAnswer],
-  }), {
-    submittedText: '學習',
-    result: 'accepted_anchor',
-  });
-  const pureSnapshot: PureCueServedSnapshot = {
-    snapshotId: 'snapshot-pure',
-    pureCueId: 'pure-cue',
-    servedAt: '2026-09-20T00:00:00.000Z',
-    stimulus: 'They ___ the subject in depth.',
-    axisNote: 'Neutral or formal ways to study a subject.',
-    teachingNote: 'Both words describe studying a subject.',
-    acceptedAnswers: [targetAnswer, alternateAnswer],
-  };
-  assert.deepEqual(resolvePureCueResponse(pureSnapshot, '研習'), {
-    outcome: 'accepted',
-    submittedWordId: 'alternate',
-  });
-
+test('targeted cues accept only their owner word', () => {
   assert.throws(() => assertTargetedCueAcceptsOnlyOwner({
     acceptedAnswers: [targetAnswer, alternateAnswer],
   }, 'target'), /exactly one accepted answer/);
-  assert.throws(() => resolveAcceptedProductionResponse({
-    submittedText: '研習',
-    anchorWordId: 'target',
-    acceptedAnswers: [targetAnswer, alternateAnswer],
-  }), /exactly one accepted answer/);
 });

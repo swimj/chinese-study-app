@@ -6,11 +6,10 @@ import os from 'node:os';
 import path from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { after,afterEach,before,beforeEach,test } from 'node:test';
+import { insertPublishedWordContent } from './helpers/prepared-word-fixtures.ts';
 import { createBaselineFixture } from './helpers/baseline-database.ts';
 import { migrateDatabase } from '../server/db/migrations.ts';
 import { setDb } from '../server/db/connection.ts';
-import { runWithLearnerId } from '../server/db/learner-context.ts';
-import { saveWordContentDocument } from '../server/db/word-introductions.ts';
 import { createVocabularySense,establishVocabularySenseCatalog,getVocabularySenseCatalog,getVocabularySenses } from '../server/db/vocabulary-content.ts';
 import { installModelInvocationLedger } from '../server/llm/invocation-ledger.ts';
 import { createOpenAiCompatibleAdapter } from '../server/llm/openai-compatible.ts';
@@ -44,7 +43,7 @@ beforeEach(() => {
 });
 afterEach(() => db.close());
 function bootstrap(): void {
-  runWithLearnerId('a',() => saveWordContentDocument(fixture,'legacy-model'));
+  insertPublishedWordContent(db, { content: fixture, model: 'legacy-model' });
   db.prepare("INSERT INTO word_introduction_preparation(word_id,content_id) VALUES ('w1','bootstrap')").run();
 }
 

@@ -17,7 +17,6 @@ import {
   failWordPreparationAttempt, markWordPreparationReady,
 } from '../server/db/preparation-work.ts';
 import { getSharedWordIntroductionPreparation, claimSharedWordIntroductionStage } from '../server/db/word-introductions.ts';
-import { quarantineSharedContentPublication } from '../server/db/shared-content.ts';
 import { createSharedWordPreparation } from '../server/word-content/shared-preparation.ts';
 import { createWordPreparationWorker } from '../server/word-content/preparation-worker.ts';
 import { retryPreparationWithReadiness } from '../server/word-content/retry-preparation.ts';
@@ -498,9 +497,17 @@ test('withdrawn published content pauses once without spending or starving later
     assert.equal(shared.claim('withdrawn', stage, token, start, expires), 'claimed');
     await shared.generate('withdrawn', stage, token);
   }
-  const publication = sqlite.prepare(`SELECT publication_id FROM shared_content_publications
-    WHERE content_kind = 'teaching_package' AND learning_purpose_key = 'withdrawn'`).get() as { publication_id: string };
-  quarantineSharedContentPublication({ publicationId: publication.publication_id, operatorId: 'test-operator', reason: 'incorrect' });
+  const publication = sqlite.prepare(`SELECT publication_id, publication_status FROM shared_content_publications
+    WHERE content_kind = 'teaching_package' AND learning_purpose_key = 'withdrawn'`).get() as
+    { publication_id: string; publication_status: string };
+  // Same attributable status transition the retired operator quarantine helper wrote.
+  const quarantinedAt = new Date().toISOString();
+  sqlite.prepare(`INSERT INTO shared_content_publication_events
+    (event_id, publication_id, from_status, to_status, actor_kind, actor_id, reason, occurred_at)
+    VALUES (?, ?, ?, 'quarantined', 'operator', 'test-operator', 'incorrect', ?)`)
+    .run(`quarantine:${publication.publication_id}`, publication.publication_id, publication.publication_status, quarantinedAt);
+  sqlite.prepare(`UPDATE shared_content_publications SET publication_status = 'quarantined', status_updated_at = ?
+    WHERE publication_id = ?`).run(quarantinedAt, publication.publication_id);
   enqueueWordPreparation('withdrawn', 'teaching', start);
   enqueueWordPreparation('after-withdrawn', 'teaching', start);
   const worker = createWordPreparationWorker({ controls, providerWork, concurrency: 1, provider: fake() });

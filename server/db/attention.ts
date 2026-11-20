@@ -129,19 +129,6 @@ export function markReflectionInboxSeen(
   return markExplanationInboxSeen(target.artifactId, target.itemId, seenAt);
 }
 
-export function stampProposalInboxSeenIfLeavingPending(
-  proposalId: string,
-  seenAt: string,
-): void {
-  assertNonEmpty(proposalId, 'proposal id');
-  assertIsoTimestamp(seenAt, 'inbox seen timestamp');
-  getDb().prepare(`
-    UPDATE reflection_proposal_reviews
-    SET inbox_seen_at = COALESCE(inbox_seen_at, ?)
-    WHERE proposal_id = ?
-  `).run(seenAt, proposalId);
-}
-
 export function getWhatsNewSeenThroughDate(): string | null {
   const parsed = getLearnerParam(WHATS_NEW_SEEN_THROUGH_KEY);
   if (parsed === null) return null;

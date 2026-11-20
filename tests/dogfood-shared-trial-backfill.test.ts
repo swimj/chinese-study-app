@@ -143,8 +143,11 @@ describe('dogfood shared-trial backfill', { concurrency: false }, () => {
       }],
     );
     assert.equal(
-      dbModule.getSharedContentPublicationForContent('production_cue', 'inactive-cue'),
-      null,
+      sqlite.prepare(`
+        SELECT 1 FROM shared_content_publications
+        WHERE content_kind = 'production_cue' AND content_id = 'inactive-cue'
+      `).get(),
+      undefined,
     );
 
     assert.deepEqual(

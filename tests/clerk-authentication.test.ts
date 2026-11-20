@@ -5,7 +5,7 @@ import path from 'node:path';
 import { after, before, describe, test } from 'node:test';
 import { pathToFileURL } from 'node:url';
 import type { NextFunction, Request, Response } from 'express';
-import type { SessionReflectionBundleV1 } from '../src/domain/reflection.ts';
+import { getDb } from '../server/db/connection.ts';
 
 type DbModule = typeof import('../server/db.ts');
 type AuthenticationModule = typeof import('../server/authentication.ts');
@@ -150,64 +150,43 @@ describe('Clerk learner authentication', { concurrency: false }, () => {
     invokeForSubject('user_clerk_a', () => recordFixtureReflectionRun('a-run', 'a-session'));
     invokeForSubject('user_clerk_c', () => recordFixtureReflectionRun('c-run', 'c-session'));
 
-    let aRuns: ReturnType<DbModule['listReflectionGenerationRuns']> = [];
-    let cRuns: ReturnType<DbModule['listReflectionGenerationRuns']> = [];
-    invokeForSubject('user_clerk_a', () => { aRuns = dbModule.listReflectionGenerationRuns(); });
-    invokeForSubject('user_clerk_c', () => { cRuns = dbModule.listReflectionGenerationRuns(); });
+    let aRuns: Array<{ runId: string; sourceSessionId: string }> = [];
+    let cRuns: Array<{ runId: string; sourceSessionId: string }> = [];
+    const listRuns = () => getDb().prepare(`
+      SELECT run_id AS runId, source_session_id AS sourceSessionId FROM reflection_generation_runs ORDER BY run_id
+    `).all() as Array<{ runId: string; sourceSessionId: string }>;
+    let aFailed: string[] = [];
+    let cFailed: string[] = [];
+    invokeForSubject('user_clerk_a', () => { aRuns = listRuns(); aFailed = dbModule.listFailedReflectionRunIds(); });
+    invokeForSubject('user_clerk_c', () => { cRuns = listRuns(); cFailed = dbModule.listFailedReflectionRunIds(); });
 
     assert.deepEqual(aRuns.map((run) => run.runId), ['a-run']);
     assert.deepEqual(cRuns.map((run) => run.runId), ['c-run']);
     assert.equal(aRuns[0]?.sourceSessionId, 'a-session');
     assert.equal(cRuns[0]?.sourceSessionId, 'c-session');
+    assert.deepEqual(aFailed, ['a-run']);
+    assert.deepEqual(cFailed, ['c-run']);
   });
 });
 
+/** Inserts the session and failed run rows a recorded generation run leaves, in the current learner context. */
 function recordFixtureReflectionRun(runId: string, sessionId: string): void {
   const at = '2026-08-23T00:00:00.000Z';
-  dbModule.upsertStudySessionRecord({
-    id: sessionId,
-    startedAt: at,
-    endedAt: at,
-    processingState: 'processed',
-    processedAt: at,
-  });
-  dbModule.recordReflectionGenerationRun({
-    runId,
-    sourceSessionId: sessionId,
-    reflectionFlowVersion: 'clerk-fixture-flow.v1',
-    startedAt: at,
-    completedAt: at,
-    provider: 'fixture',
-    model: 'fixture-model',
-    providerModel: 'fixture-model',
-    promptVersion: 'fixture-v1',
-    responseId: null,
-    clientRequestId: null,
-    finishReason: null,
-    bundleSchemaVersion: 'session_reflection_bundle.v1',
-    resultSchemaVersion: 'session_reflection_result.v4',
-    diagnostic: null,
-    state: 'failed',
-    failureCode: 'fixture_failure',
-    eligibleItemCount: 1,
-    includedItemCount: 1,
-    usage: {
-      inputTokens: null,
-      cachedInputTokens: null,
-      cacheWriteInputTokens: null,
-      outputTokens: null,
-      reasoningTokens: null,
-      totalTokens: null,
-    },
-    pricingSnapshotId: null,
-    pricingAsOf: null,
-    pricingBasis: null,
-    estimatedCostUsd: null,
-    evidenceBundle: fixtureBundle(sessionId),
-  });
+  getDb().prepare(`
+    INSERT INTO study_sessions (id, started_at, ended_at, processing_state, processed_at)
+    VALUES (?, ?, ?, 'processed', ?)
+  `).run(sessionId, at, at, at);
+  getDb().prepare(`
+    INSERT INTO reflection_generation_runs (
+      run_id, source_session_id, reflection_flow_version, started_at, completed_at,
+      provider, model, provider_model, prompt_version, bundle_schema_version, result_schema_version,
+      state, failure_code, eligible_item_count, included_item_count, evidence_bundle_json
+    ) VALUES (?, ?, 'clerk-fixture-flow.v1', ?, ?, 'fixture', 'fixture-model', 'fixture-model', 'fixture-v1',
+      'session_reflection_bundle.v1', 'session_reflection_result.v4', 'failed', 'fixture_failure', 1, 1, ?)
+  `).run(runId, sessionId, at, at, JSON.stringify(fixtureBundle(sessionId)));
 }
 
-function fixtureBundle(sessionId: string): SessionReflectionBundleV1 {
+function fixtureBundle(sessionId: string) {
   return {
     schemaVersion: 'session_reflection_bundle.v1',
     generatedAt: '2026-08-23T00:00:00.000Z',

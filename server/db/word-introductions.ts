@@ -4,7 +4,6 @@ import { getVocabularySenseCatalog,getVocabularySenses } from './vocabulary-cont
 import { VOCABULARY_PREPARATION_EPOCH } from './preparation-compatibility.ts';
 import { importLegacyVocabularyWord } from './vocabulary-import.ts';
 import { linkVocabularyPublicationOutput } from './vocabulary-provenance.ts';
-import { isBootstrapRevealSnapshot } from '../../src/domain/word-content/reveal.ts';
 import { randomUUID } from 'node:crypto';
 import type { SavedTeachingPackage, SavedWordContent, WordIntroductionLibrary } from '../../src/domain/word-content/application.ts';
 import { materializeTeachingPackage } from '../../src/domain/word-content/materialize.ts';
@@ -99,14 +98,6 @@ function packageFromRow(row: PackageRow): SavedTeachingPackage {
   return { createdAt: row.created_at, teaching: parseTeachingPackage(JSON.parse(row.package_json)) };
 }
 
-export function saveWordContentDocument(input: WordContentDocument, model: string): SavedWordContent {
-  requireLearnerId();
-  const content = parseWordContent(input);
-  const sourceModel = modelName(model);
-  assertWordIdentity(content);
-  return transaction(() => insertContent(content, sourceModel));
-}
-
 function insertContent(content: WordContentDocument, sourceModel: string, teachingSetKey = DEFAULT_TEACHING_SET): SavedWordContent {
   const json = JSON.stringify(content);
   const existing = getDb().prepare(`
@@ -127,13 +118,6 @@ function insertContent(content: WordContentDocument, sourceModel: string, teachi
       ) VALUES (?, ?, ?, ?, ?, ?, ?)
     `).run(content.id, content.word.wordId, json, sourceModel, now, publicationId, teachingSetKey);
   return { createdAt: now, content };
-}
-
-export function saveWordTeachingPackage(input: TeachingPackage, model: string): SavedTeachingPackage {
-  requireLearnerId();
-  const teaching = parseTeachingPackage(input);
-  const sourceModel = modelName(model);
-  return transaction(() => insertTeaching(teaching, sourceModel));
 }
 
 function insertTeaching(teaching: TeachingPackage, sourceModel: string): SavedTeachingPackage {
@@ -556,11 +540,6 @@ export function completeWordTeachingPackage(wordId: string, packageId: string): 
   });
 }
 
-export function getIntroductionLexicalWord(wordId: string) {
-  requireLearnerId();
-  return getSharedIntroductionLexicalWord(wordId);
-}
-
 export function getWordIntroductionPreparation(wordId: string) {
   requireLearnerId();
   const setKey = resolveLearnerTeachingSetKey(wordId);
@@ -569,26 +548,6 @@ export function getWordIntroductionPreparation(wordId: string) {
   const exactDefault = getExactDefaultTeachingSource(wordId,setKey);
   return prepared?.contentId || !exactDefault ? prepared
     : {...exactDefault,activeStage:preparationRow(wordId)?.active_stage ?? null};
-}
-
-export function claimWordIntroductionStage(wordId: string, stage: WordIntroductionStage, token: string, now: string, expiresAt: string) {
-  requireLearnerId();
-  return claimSharedWordIntroductionStage(wordId, stage, token, now, expiresAt);
-}
-
-export function finishWordIntroductionBootstrap(wordId: string, token: string, input: WordContentDocument, model: string) {
-  requireLearnerId();
-  return finishSharedWordIntroductionBootstrap(wordId, token, input, model);
-}
-
-export function finishWordIntroductionTeaching(wordId: string, token: string, input: TeachingPackage, model: string) {
-  requireLearnerId();
-  return finishSharedWordIntroductionTeaching(wordId, token, input, model);
-}
-
-export function releaseWordIntroductionStage(wordId: string, token: string) {
-  requireLearnerId();
-  return releaseSharedWordIntroductionStage(wordId, token);
 }
 
 /** Shared-only source read: never consults private pins, events, or learner views. */
@@ -607,20 +566,4 @@ export function getSharedWordTeachingPackageId(wordId: string, teachingSetKey = 
   const current = preparationRow(wordId, teachingSetKey);
   if (!current || current.preparation_epoch < VOCABULARY_PREPARATION_EPOCH) return eligiblePackageRows(wordId, null, teachingSetKey)[0]?.package_id ?? null;
   return eligiblePackageRows(wordId, null, teachingSetKey).find(row => row.package_id === current?.package_id && row.content_id === current?.content_id)?.package_id ?? null;
-}
-
-/** Validate historical post-reveal material against its immutable source, even after withdrawal. */
-export function assertBootstrapRevealSource(wordId: string, value: unknown): void {
-  if (!isBootstrapRevealSnapshot(value)) throw new Error('Invalid bootstrap reveal snapshot');
-  const row = getDb().prepare('SELECT content_json FROM word_content_documents WHERE content_id = ? AND word_id = ?')
-    .get(value.contentId, wordId) as { content_json: string } | undefined;
-  if (!row) throw new Error('Bootstrap reveal source does not belong to the target word');
-  const content = parseWordContent(JSON.parse(row.content_json));
-  const use = content.uses.find((entry) => entry.id === value.useId);
-  const example = content.examples.find((entry) => entry.id === value.exampleId);
-  if (!use || !example || use.exampleIds[0] !== example.id
-    || value.englishFrame !== use.label || value.exampleSentence !== example.text
-    || value.exampleTranslation !== example.translation) {
-    throw new Error('Bootstrap reveal differs from its immutable source');
-  }
 }
