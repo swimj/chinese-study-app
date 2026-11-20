@@ -220,7 +220,7 @@ All HTTP is intercepted, so these fixtures do not modify learner data.
 | `word-content-lab-api.test.ts` | Local opt-in, host/origin gates, route response contracts | Express lab router |
 | `introduction-player.test.ts` | Paced navigation, rehearsal matching, retry/finish, IME and keyboard guards | Pure local player |
 | `new-learner-preview.test.ts` | Fresh learner setup, existing-data protection, reset-link output, and welcome-only browser marker reset | Preview command + temporary SQLite |
-| `ui-annotation-fixtures.test.ts` | Fresh annotation setup, relative UTC dates, prepared stash/learning/review serving, Home content, and existing-data protection | Fixture command + temporary SQLite |
+| `ui-annotation-fixtures.test.ts` | Relative UTC dates in the annotation seed that the vocabulary fixture imports | `server/seeds/ui-annotation-data.ts` |
 | `vocabulary-session-fixtures.test.ts` | Full 12-word vocabulary composition, Solidify threshold range, persisted prior override, and summary choice through real finalization | Fresh fixture command + temporary SQLite |
 | `session-composition.test.ts` | Session payload / scheduling composition | Dynamic `server/db.ts` |
 | `diet-intake-placement-api.test.ts` | Retired placement endpoints and removed intake status gate | `server/index.ts` registered routes + temporary SQLite |

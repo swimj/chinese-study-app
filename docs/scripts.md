@@ -125,61 +125,21 @@ diagnostic report, not a persistence envelope. See
 [word content representation](word-content-representation.md) for the objects
 and compatibility boundary being inspected.
 
-## Repeatable UI annotation fixtures
+## Repeatable UI fixtures
 
-For the adaptive vocabulary session, use the
-[full vocabulary walkthrough fixture](vocabulary-learning.md#contributor-verification).
-It includes 12 words, Solidify graduation boundaries and a persisted manual
-override. The command below prepares the retained legacy annotation scenarios.
-
-Use `npm run prepare:ui-fixtures -- --data-dir=data/ui-fixtures/<new-run-name>`
-to create a fresh Mandarin annotation database. The directory must not already
-exist, even if empty. This keeps earlier annotation sessions and other local
-databases intact. Each preparation starts from the standard Mandarin seed and
-adds these prepared scenarios:
-
-| Words / content | Initial state |
-| --- | --- |
-| 藤椒, 泡沫 | Top stash, unstudied, bootstrap content and teaching ready; introduction not yet completed |
-| 不堪, 石沉大海, 为所欲为 | Teaching completed; learning with 0, 1, and 2 successful practice days, available today |
-| 报备 | Teaching and authored review content ready; review admission open and both skills due |
-| Home | Five Connections notes in a completed sample session, plus two published sample update posts |
-
-The three-day practice period is the learning phase. Successful practice
-completions increase the learning streak; reaching three graduates a word to
-review. Fixture coverage dates and review due times are relative to preparation
-time in UTC. The fixture also includes standard review and contrast examples.
-The normal session composer chooses the study order and review action; due
-recognition and production do not imply two separate cards for the same word in
-one session.
-
-The command prints the backend startup command for the new directory. Start
-that backend and `npm run dev:frontend` in separate terminals, using the normal
-local ports. To resume an annotation run, start its existing database again;
-to restore the initial scenarios, prepare a new directory. The standard
-`dev:backend` seed and existing development databases are unchanged.
-
-Preparation uses authored content and domain persistence functions without
-starting provider workers. These are synthetic state snapshots, not replayed
-learner histories: teaching-completion events are recorded at preparation time,
-while prior learning progress and due dates describe the intended scenario.
-The sample session supplies overview and Connections data, not a full attempt
-or reflection history. Posts are labeled as local sample content.
-
-`annotation-seed.json` records the dated seed and `fixture-manifest.json` records
-the creation time, learner, and scenario identities alongside `app.db`. The
-recommended `data/ui-fixtures/` location is ignored by Git. To extend coverage,
-update `server/seeds/ui-annotation-data.ts` (dated word states) and
-`server/seeds/ui-annotations.ts` (prepared content), then run
-`tests/ui-annotation-fixtures.test.ts`. That test checks actual session serving,
-scheduler invariants, repeat creation, and refusal to overwrite existing data.
+Use the [full vocabulary walkthrough fixture](vocabulary-learning.md#contributor-verification)
+to prepare a fresh fixture database. Its starting word states come from
+`server/seeds/ui-annotation-data.ts` (dated word states) and
+`server/seeds/ui-annotations.ts` (prepared teaching/review content, sample
+Connections, and What's New posts), which the vocabulary fixture then imports.
+`tests/ui-annotation-fixtures.test.ts` checks the seed dates and
+`tests/vocabulary-session-fixtures.test.ts` checks the prepared vocabulary scenarios.
 
 ## Safe in dev (repo-local data)
 
 | Script / npm command | Purpose |
 | --- | --- |
 | `npm run reset:dev-data` | Reset dev SQLite |
-| `npm run check:study-scheduler-state -- --mode=study --data-dir=/absolute/path --learner-id=<id>` | Report one learner's scheduler invariant issues |
 | `npm run report:word -- --data-dir=/absolute/path --learner-id=<id>` | Interactive read-only report for one learner's exact hanzi matches |
 | `scripts/build-canonical-wordlist.ts` | Build canonical wordlist artifact |
 | `npm run build:deck-manifest` | Rebuild the checked-in Mandarin HSK deck manifest from externally acquired or locally retained canonical corpus, HSK, and SUBTLEX inputs. See the [provenance and regeneration notes](../README.md#deck-manifest-provenance-and-regeneration). |
@@ -217,7 +177,6 @@ manual acceptance, and lifecycle procedures are in the
 | `npm run hosted:backup -- --action=<create\|status\|restore> ...` | Request and inspect verified receiver backups, or restore to a new isolated file; see [backup operations](ops/hosted-backups.md) |
 | `npm run hosted:backfill-luna-costs -- --data-dir=/data` | Preview missing GPT-6 Luna cost estimates from saved usage; the [accounting repair procedure](ops/hosted-beta-deployment.md#backfill-missing-gpt-6-luna-invocation-costs) owns confirmed application |
 | `npm run hosted:inspect-client-incidents -- --data-dir=/data --limit=20` | Read uploaded client transport incidents; optionally select one with `--diagnostic-id=<id>` |
-| `npm run hosted:inspect-study-commits -- --data-dir=/data --limit=20` | Read recent private study-commit failure records; optionally select one with `--diagnostic-id=<id>` |
 | `npm run hosted:observe -- --app=<app> --machine=<id> [--queries=<file>]` | Read release/runtime identity and bounded ad hoc SQLite queries from a cloud checkout ([setup and evidence limits](ops/cloud-production-observation.md)) |
 | `npm run hosted:inspect-request-timings -- --port=9091 --limit=20` | Read the in-memory request flight recorder from inside the Machine; filter with `--route`, `--min-local-ms`, or `--since` ([guide](ops/hosted-observability.md#read-recent-request-timings)) |
 | `npm run hosted:smoke -- --data-dir=/data` | Mint a short-lived Clerk session for the designated smoke user and perform a read-only authenticated GET |

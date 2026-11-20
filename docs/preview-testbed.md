@@ -59,9 +59,7 @@ identities for coordinator-side persistence inspection.
 
 The launcher reuses `prepare-vocabulary-fixtures.ts`, which builds on the UI
 annotation seed and vocabulary practice fixtures, then adds this operator case.
-`prepare-ui-fixtures.ts` remains the older annotation/session exploration route;
-it is not the operator Save/Apply fixture. Both existing builders claim fresh
-directories instead of resetting unknown data. No valued database is copied.
+The builder claims a fresh directory instead of resetting unknown data. No valued database is copied.
 
 Provider work is disabled in the fixture database. The testbed backend starts
 only the normal HTTP application and approval worker; it does not start provider

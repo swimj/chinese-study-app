@@ -12,9 +12,9 @@ lives under [`server/db/`](../server/db/); callers and tests use the stable
 [`server/db.ts`](../server/db.ts) barrel.
 
 Migration `0027_correct_cue_repair_recovery` adds the immutable operator-only
-`operator_reflection_cue_recoveries` audit. Selection and atomic recovery use
-the reflection application adapter in `reflections.ts`; the runbook is
-[`hosted-beta-deployment.md`](ops/hosted-beta-deployment.md#recover-failed-cue-repairs-from-correct-requested-reviews).
+`operator_reflection_cue_recoveries` audit. Selection and atomic recovery remain
+in the reflection application adapter in `reflections.ts`; the operator command
+and runbook for it were retired with the legacy reflection runtime.
 
 Migration `0035_definition_fallback_quality` extends the content quality kind
 constraint for exact definition fallback snapshots. It preserves existing
