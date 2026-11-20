@@ -1,0 +1,247 @@
+[
+  {
+    "name": "intake-triage",
+    "version": "intake-triage-v1",
+    "hash": "2321c9a96126a961365030fffe8e724f1bf81d677045b41182696ed6e28875f5"
+  },
+  {
+    "name": "pure-cue-promotion",
+    "version": "pure-cue-promotion-v3.0",
+    "hash": "fdd0432028b043c70d40d71f254f124a59e8ffbf6f1939cf74aaf9511aba2c6a"
+  },
+  {
+    "name": "pure-cue-reflection",
+    "version": "pure-cue-reflection-v2.0",
+    "hash": "7b30bd60c53122c80f553134923702b82640513f9d0132f595fc9901685a5f1b"
+  },
+  {
+    "name": "reflection",
+    "version": "reflection-v9",
+    "hash": "f0a8ff9fc545c7042703cc7b6b7b5fa4af006e0f09ec69c78cac2d2c2069a498"
+  },
+  {
+    "name": "reflection-staged",
+    "version": "reflection-staged-v5.0",
+    "hash": "8965815a6e66bf373ec6ce8e33c8873cc57556ef997034ae01d7b4d47caa152b"
+  },
+  {
+    "name": "session-debrief",
+    "version": "v7",
+    "hash": "cf746ae1ee5074c7257549b7d7c093f3866e0f97d5331709fe7f272c5b8868c8"
+  },
+  {
+    "name": "vocabulary-bootstrap",
+    "version": "v1",
+    "hash": "4eaea1e634605466921d3cd719397c9192321c920187ebf80b9ba3a3fe398e66"
+  },
+  {
+    "name": "vocabulary-bootstrap-enrichment",
+    "version": "v1",
+    "hash": "2cf8162da3dbb98ae221f08514dd22e94612ba8edc9b5bd69e69055625a2100b"
+  },
+  {
+    "name": "vocabulary-default-useful-selection",
+    "version": "1",
+    "hash": "ba3d9b4b4b833cd2a9fd356470fdef8824edfb54a23287223dd156d58a04a97b"
+  },
+  {
+    "name": "vocabulary-default-useful-selection",
+    "version": "6",
+    "hash": "b3d097da2dd3acb87fcc1480214b4738405078eba92589d970976fd44bd141fa"
+  },
+  {
+    "name": "vocabulary-default-useful-selection",
+    "version": "7",
+    "hash": "8678212c4a0c7c833247ddfdc11ed8e30175bf7254e6fa6795b56bbc804201e0"
+  },
+  {
+    "name": "vocabulary-general-exercises",
+    "version": "v4",
+    "hash": "87036bae2287fda9db20ab99f044b5530c3a5524da2a8e5d77f94e253a41aabf"
+  },
+  {
+    "name": "vocabulary-general-exercises",
+    "version": "v5",
+    "hash": "3caa55cf9583641c3aa79e8e8ff4caa80b36c64db85d11870428982c00196482"
+  },
+  {
+    "name": "vocabulary-general-exercises",
+    "version": "v5.1",
+    "hash": "868773a326a044c7438f97c85393fe0dc893bb4b5529880de913a4c6c659050d"
+  },
+  {
+    "name": "vocabulary-general-exercises",
+    "version": "v5.1",
+    "hash": "ace8369696be631469dec18bdfbc9f8ee858b9d2e4df39601b24989ca4a0e702"
+  },
+  {
+    "name": "vocabulary-intake-chat",
+    "version": "9.3",
+    "hash": "057af4a880fce28aa41ec50055a5151150df8c455a960cfa4555d45aea85930b"
+  },
+  {
+    "name": "vocabulary-intake-chat",
+    "version": "9.3",
+    "hash": "988b5ab024cd7ded94ff5c3aa7e19702718d0fc8898659da0c95ecb941a3e35b"
+  },
+  {
+    "name": "vocabulary-intake-context-match",
+    "version": "1",
+    "hash": "758a30cc945feda8c30f126d63fc0d920322ed81273366718934ab52ed585af7"
+  },
+  {
+    "name": "vocabulary-introduction",
+    "version": "v1",
+    "hash": "d262a39bd89c31e0efe522e3dd222434b48b56a27951e2dfd5267ea78624394a"
+  },
+  {
+    "name": "vocabulary-practice",
+    "version": "v2",
+    "hash": "cad3a5cb54f3cde3ccad5c5eb1769657004d9d94706714b109ef76a740b772a1"
+  },
+  {
+    "name": "vocabulary-reflection-feedback",
+    "version": "4",
+    "hash": "127e53aa81a7a9d5d1f68715ccfbb6748abfdcbddaab89f42e6bd12fe36380d9"
+  },
+  {
+    "name": "vocabulary-reflection-pure-cue-improvement",
+    "version": "1",
+    "hash": "0c2fe5223525fed3eff10094a242456731e1816d0773de1fabc28edeadd8c435"
+  },
+  {
+    "name": "vocabulary-reflection-pure-cue-improvement",
+    "version": "2",
+    "hash": "13c94deb8033a2ef2c72d0713f786b2ddfbfbf87a36135f67ff0d18014e63030"
+  },
+  {
+    "name": "vocabulary-reflection-pure-cue-improvement",
+    "version": "2",
+    "hash": "7d5bb01bc82ce01586469f70d38f42f63a4e7edf97db91b14346ba6fc9a5f16a"
+  },
+  {
+    "name": "vocabulary-reflection-pure-cue-integration",
+    "version": "1",
+    "hash": "0e3404056b5e684633fd084b5b9572b7dda3171f6cfb71873e4561395b15d6d4"
+  },
+  {
+    "name": "vocabulary-reflection-pure-cue-integration",
+    "version": "3",
+    "hash": "c8f650a5644215f85f00c0cafc7b762b6547a4415c44644e7a8100b22c176581"
+  },
+  {
+    "name": "vocabulary-reflection-pure-cue-promotion",
+    "version": "3",
+    "hash": "75ff68c43ce0896e4739959da561df25b18170565c17788eb00e29200a676c72"
+  },
+  {
+    "name": "vocabulary-reflection-pure-cue-promotion",
+    "version": "4",
+    "hash": "58ba5bfbe8b648d345b46a99fe25444a29617b92b8b36203c2801c46282b3fee"
+  },
+  {
+    "name": "vocabulary-reflection-repertoire",
+    "version": "2",
+    "hash": "fa79a53dc875eb28a1d23f1df984ef8471dbf5ed966de2a2543b96102c8343d5"
+  },
+  {
+    "name": "vocabulary-reflection-second-opinion",
+    "version": "1",
+    "hash": "94440c18c0662f66a7f30946b9098a5f8e8004f9ab3dda9ea6fe55908d91b6e8"
+  },
+  {
+    "name": "vocabulary-reflection-second-opinion",
+    "version": "2",
+    "hash": "b27ff4c2703533ece882e2b99efa987fdc2b19b2684d2f8528492fec94686185"
+  },
+  {
+    "name": "vocabulary-reflection-second-opinion",
+    "version": "3",
+    "hash": "e82ad827b62f10657e98ea0b1e3abe0f9582a4f3c51a9a95bc7c8ef3a110a69d"
+  },
+  {
+    "name": "vocabulary-reflection-sense-mapping",
+    "version": "2",
+    "hash": "7e8d11887aec9672db2e0333e92edc96005230ea1a0ce3a42ae654f38068e1dd"
+  },
+  {
+    "name": "vocabulary-reflection-sense-mapping",
+    "version": "3",
+    "hash": "f5a6119130a5191a55710cb7af3843913895b2e097ee21707045c85c3e1bcbea"
+  },
+  {
+    "name": "vocabulary-reflection-sense-mapping",
+    "version": "4",
+    "hash": "3ec6d19cc5b8564f25d13470ca907e8255ecc21e72c084af0deb1f426e3d05c3"
+  },
+  {
+    "name": "vocabulary-reflection-sense-mapping",
+    "version": "5",
+    "hash": "6a54f19bdc59a5dd157aa7d66700fc426f18bcab7da19145b96363da67f17326"
+  },
+  {
+    "name": "vocabulary-reflection-single-improvement",
+    "version": "3",
+    "hash": "4fc04f3fa43e789b76b982af6ad80db10e1faa4c0d0c9f00905b875af096d5f6"
+  },
+  {
+    "name": "vocabulary-reflection-single-improvement",
+    "version": "4",
+    "hash": "d7db22dac3f9669770afb0a0b837c3a7b330896fa858326f50bf11734393659d"
+  },
+  {
+    "name": "vocabulary-reflection-single-improvement",
+    "version": "5",
+    "hash": "02b1e953da4620f70a4f913cf3980e6fd4d012670135f4486a29db3c4a002670"
+  },
+  {
+    "name": "vocabulary-reflection-single-improvement",
+    "version": "5",
+    "hash": "4d97ed582fb5e80618a38ce6855b6d8b8d00561a7a84aabe350b9b1a056df20e"
+  },
+  {
+    "name": "vocabulary-reflection-single-improvement",
+    "version": "7",
+    "hash": "5acc80f723fd703ee5e7ee6233b947725b03936176d33c23d71aff4379cf0d9d"
+  },
+  {
+    "name": "vocabulary-reflection-single-improvement",
+    "version": "7",
+    "hash": "b21665db36af708e6c7bdf7f6a3ebb94afa352e785b19ed4a9f1def21e9dd397"
+  },
+  {
+    "name": "vocabulary-review",
+    "version": "v2",
+    "hash": "01ae5b4bc5c782206a40cd6b6c13631c9b6a7e5e24f85ac332e90c1df82e9265"
+  },
+  {
+    "name": "vocabulary-sense-inventory",
+    "version": "1",
+    "hash": "8014a26391532e3c326790b5df005aa05cc2805f8490f003f1912cba29f1d67e"
+  },
+  {
+    "name": "vocabulary-sense-inventory",
+    "version": "2",
+    "hash": "e1f3ce92cd6de4ceab23c31021382a29032097c4319b25b27ef648ebaeb8baed"
+  },
+  {
+    "name": "vocabulary-sense-inventory",
+    "version": "7",
+    "hash": "5b89079bfce03bf95fdfaee5dae211457205be3fa4edece98e1f5d80694c1495"
+  },
+  {
+    "name": "vocabulary-sense-inventory",
+    "version": "8",
+    "hash": "1ed63131e8f5ea247d8366342905553175ae369ba79b1b14f59451d94357bce5"
+  },
+  {
+    "name": "vocabulary-teaching-exercises",
+    "version": "v2",
+    "hash": "8fc01bd5dcc0368daa6fdb1ab321b2820d22f0ade2980c49926015f6b5c9f9b9"
+  },
+  {
+    "name": "vocabulary-teaching-exercises",
+    "version": "v2.1",
+    "hash": "d283d1ef11df8901b12001e6a3ec715691c9e10e630f2211aea98a0349e404fb"
+  }
+]

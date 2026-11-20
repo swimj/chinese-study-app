@@ -474,8 +474,10 @@ It returns the exact captured template and serialized provider request, verifyin
 each Git blob against its digest. The optional third argument selects an archive
 directory. Hosted machines carry the digest catalog and the active prompt sources.
 The historical archive lives in Git under `artifacts/invocation-prompts/`.
-Hosted writes reject an unregistered authored prompt before the provider call.
-The [prompt authoring procedure](prompt-development.md#register-and-retain-invocation-prompts)
+[Look up the archived system prompt by hash or use and version](prompt-development.md#look-up-a-system-prompt)
+directly from a checkout. Hosted writes reject an unregistered authored prompt
+before the provider call. The
+[prompt authoring procedure](prompt-development.md#register-and-retain-invocation-prompts)
 covers registration and retention.
 
 Improvement-job checkpoints use the same archive for the system prompt in their
