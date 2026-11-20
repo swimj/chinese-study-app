@@ -40,9 +40,8 @@ reconciling both words' repertoires.
 
 The archive in `artifacts/invocation-prompts/<sha256>.txt` holds exact rendered
 system prompt bytes. The running app ships its hash catalog. The archive stays
-in Git and outside the Fly image. To investigate an invocation, open the file
-named by its SHA-256 in a checkout containing the corresponding release or a
-later commit.
+in Git and outside the Fly image. Use a checkout containing the corresponding
+release or a later commit to [look up a prompt](#look-up-a-system-prompt).
 
 When changing a hosted prompt, register each rendered variant, including any
 reasoning prefix, editorial suffix and significant whitespace. For a prompt
@@ -51,24 +50,51 @@ composed prompt, render each variant locally using its caller and save the
 resulting system text in a file. Run this command from the repository root:
 
 ```sh
-node scripts/register-invocation-prompt.mjs <rendered-system-prompt-file>
+node scripts/register-invocation-prompt.mjs --use=<name> --version=<version> <rendered-system-prompt-file>
 ```
 
-Review and commit the generated archive file and
-`server/db/invocation-prompt-catalog.json` with the caller change. Only
-shared, authored system text belongs in this archive. Learner messages, runtime
-evidence, operator notes and credentials belong outside Git.
+Use the caller's exact `promptName` and `promptVersion`. Register a rendered
+variant with every named use or version that sends those bytes. A call with
+multiple rendered variants may register their files together with the same
+name and version. Omit both options for source retention when the bytes have
+no established use and version.
+
+Review and commit the generated archive file and any changes to
+`server/db/invocation-prompt-catalog.json` and `server/db/invocation-prompt-uses/`
+with the caller change. The registration command saves new associations in
+`registered.json` under that directory. Only shared, authored system text belongs
+in the archive. Learner messages, runtime evidence, operator notes and credentials
+belong outside Git.
 
 The `Prompt source retention` check verifies each archive file against its
-digest, enforces complete catalog coverage and keeps every historical digest
-at its original path. For authored files under server directories named
-`prompts` or ending in `-prompts`, prior source bytes must also survive a move
-or edit. Retain them in a versioned source file or register them in the Git
+digest, enforces complete hash coverage, validates use and version associations,
+and keeps every historical digest at its original path. For authored files under
+server directories named `prompts` or ending in `-prompts`, prior source bytes
+must also survive a move or edit. Retain them in a versioned source file or register them in the Git
 archive before retiring them from the image. Directory `README.md` files are
 exempt. After committing, run
 `node scripts/check-prompt-retention.mjs origin/main HEAD` to check locally.
 Require the GitHub Actions status `Prompt source retention` on the target
 branch to block merges that lose archived bytes.
+
+## Look up a system prompt
+
+Run the lookup from the repository root. Use a full hash, a unique hexadecimal
+prefix, or a prompt name and its exact version string.
+
+```sh
+node scripts/lookup-invocation-prompt.mjs hash 8678212c
+node scripts/lookup-invocation-prompt.mjs use vocabulary-sense-inventory 8
+```
+
+Each result gives the full hash, the archive path, and every recorded name and
+version for those bytes. One use and version can resolve to multiple hashes,
+for example when a caller appends editorial instructions to the system prompt.
+Lookup reads the Git catalog files and works before a prompt has been invoked.
+A result with an empty `uses` array still identifies archived bytes. Historical
+associations cover rendered prompts that can be matched to a named use and
+version in source history. Some older experiment prompts and other retained
+sources have only a hash.
 
 ## Adapt the contract explicitly
 
