@@ -192,8 +192,7 @@ use Save selection, then reselect and save to restore it. Unsaved defaults block
 approval and navigation; Discard edits restores access. Add `&narrow=1` to check the
 embedded layout. These browser scenarios are separate from `npm test`.
 Use the [disposable vocabulary fixture](vocabulary-learning.md#contributor-verification)
-for end-to-end study against the actual API and SQLite. The older session fixtures
-below retain coverage of the previous controller, not the current Mandarin path.
+for end-to-end study against the actual API and SQLite.
 
 `shared-dictionary-baselines-migration.test.ts` verifies populated stock-baseline
 scope correction, new proposal revisions with prior approvals retained, immutable
@@ -204,40 +203,6 @@ two learners and legacy identity/deactivation/retirement compatibility;
 encounter across the audited scope-only revision, and substantive drift rejection.
 
 
-`/tests/browser/bootstrap-reveal.html` checks the shared bootstrap teaching
-reveal with the actual session controller. Use `?recognition=1` for recognition,
-`?frozen=1` for the frozen production correction, and the default for accepted
-definition production. It supplies long labels/examples and legacy fallback
-content to verify bootstrap precedence, keyboard progression, and reference
-wrapping. `bootstrap-reveal-serving.test.ts` checks source eligibility and exact
-snapshots without provider calls.
-
-With `npm run dev:frontend` running, open
-`/tests/browser/final-reinforcement.html` on the Vite server. This isolated fixture
-intercepts all HTTP and exercises the real session controller, HomePage, and
-completion screen and retained final answer. It reports PASS after verifying that the final correct
-production reinforcement fills all three boxes, Undo restores two, skipping a
-revealed reinforcement keeps two, and a subsequent correct retry fills three.
-It leaves the completion screen visible for visual inspection. These browser
-assertions are separate from `npm test`; server rendering cannot exercise the
-retained card's layout-effect lifecycle.
-
-The isolated `/tests/browser/session-completion.html` fixture exercises the real
-completion hook and panel against intercepted HTTP with shortened deadlines. It
-checks acknowledgement failure and retry with one revision, final Undo,
-automatic return, keeping the summary open through backend closure, explicit
-return, and Home after remount without restoring the pending completion view. Use `?preview=1` for visual inspection,
-`large=1` for enlarged text, and `empty=1` for empty report groups. The fixture verifies browser state;
-`durable-session-completion.test.ts` verifies persistence and server expiry.
-
-The isolated `/tests/browser/content-feedback.html` fixture exercises the real
-session controller and content-rating buttons: negative-rating feedback requests,
-independent explicit requests, clear/switch behavior, failed saves, durable attempt
-links, deduplication, and delayed-save navigation. It leaves a production card
-visible after PASS; `?preview=1` opens that card directly for layout inspection.
-Use `?fallback=1` to run the same checks on definition fallback production,
-including the frozen post-answer card. Combine it with `preview=1` and
-`large-text=1` to inspect fallback controls at 125% text size.
 All HTTP is intercepted, so these fixtures do not modify learner data.
 
 ## By domain
@@ -263,16 +228,11 @@ All HTTP is intercepted, so these fixtures do not modify learner data.
 | `unstudied-admission.test.ts` | Experimental dual-pool unstudied admission selector, including stash-only source | `server/db/unstudied-admission.ts` |
 | `session-completion.test.ts` | Session completion commits | Dynamic `server/db.ts` |
 | `durable-session-completion.test.ts` | Fixed deadline, cancel/expiry, atomic final acceptance, outcome reporting, restart, and durable reflection dispatch | Completion persistence + worker with temporary SQLite |
-| `session-completion-panel.test.ts` | Saving, pending and confirmed completion report, controls and character presentation | Completion panel server render |
-| `session-bucket-scheduler.test.ts` | Bucket ordering helpers | `src/domain/study-actions.ts` |
-| `session-bucket-state.test.ts` | In-session bucket state | `src/domain/study-actions.ts` |
-| `session-selectors.test.ts` | Session UI selectors | `src/features/session/session-selectors.ts` |
 | `card-characters.test.ts` | Study-card simplified/traditional character formatting | `src/domain/card-characters.ts` |
 | `sentence-characters.test.ts` | Script conversion, Taiwan variants, comparison preservation, and contextual cloze alignment | OpenCC + sentence display helpers |
 | `sentence-character-settings.test.ts` | Private sentence preferences, retention, status, and HTTP validation | Temporary SQLite + Express app |
 | `session-character-settings-panel.test.ts` | Conditional sentence selector and remembered script | Settings panel server render |
 | `cloze-prompt.test.ts` | Display normalization of manual blank markers, reveal, and ambiguous-text fallback | `ClozePrompt.tsx` server render |
-| `session-keyboard.test.ts` | Session action/shortcut mapping, empty-answer No clue guards, rating labels, Undo aliases | `src/features/session/session-keyboard.ts` |
 | `study-actions.test.ts` | Study action adapters / event derivation | `src/domain/study-actions.ts` |
 | `study-attempt-events.test.ts` | Attempt event persistence | Dynamic `server/db.ts` |
 | `study-management.test.ts` | Suppress / bad-prompt / management actions | Dynamic `server/db.ts` |
@@ -280,7 +240,6 @@ All HTTP is intercepted, so these fixtures do not modify learner data.
 | `contrast-content.test.ts` | Contrast clusters and prompts | Dynamic `server/db.ts` |
 | `reflection-domain.test.ts` | V3 result/operation validation, registry, exact/revised classification, lifecycle transitions | `src/domain/reflection.ts` |
 | `reflection-evidence-validation.test.ts` | Strict supplement/full-bundle shapes, validation-only attempt links, retired attempt/management metadata rejection, and initial-milestone evidence boundary | `src/domain/reflection-evidence.ts` |
-| `session-reflection-evidence.test.ts` | Raw production response persistence, evidence accumulation, accepted-attempt links, Undo/drop behavior | Session state + `session-reflection-evidence.ts` |
 | `reflection-evidence-enrichment.test.ts` | Completed-session/attempt verification, managed-action exclusion, read-only durable context enrichment, and stable fifty-item initial cap | `server/reflection/evidence.ts` with temporary SQLite fixtures |
 | `reflection-provider.test.ts` | Pinned Luna request, lazy credentials, production prompt, strict output validation, sanitized failures, and retained truncation metadata | `server/reflection/luna-provider.ts` with injected fetch |
 | `reflection-generation.test.ts` | Prelookup idempotency, provider/materialization/run metadata, included/eligible counts, in-process coalescing, exact saved-bundle failure retry, and model selection | `server/reflection/generation.ts` with injected dependencies |
@@ -302,16 +261,11 @@ All HTTP is intercepted, so these fixtures do not modify learner data.
 | `attention-badges.test.ts` | Unseen Help count, sticky `inbox_seen_at`, dismiss/reopen, durable failed-run seen-through cursor, What’s New cursor | `server/db/attention.ts` + temporary SQLite |
 | `reflection-attention.test.ts` | Reflections nav badge hiding, failure-over-count priority, and failed-run seen-through comparison | `src/features/attention/reflection-attention.ts` |
 | `session-debrief-cooldown.test.ts` | Two-session rolling 72-hour cooldown, distinct-session counting, learner isolation, exact expiry, frozen retries, alternatives and all-filtered completion | `server/db/session-debrief.ts` |
-| `session-debrief-inventory.test.ts` | Covered-only frozen inventory, actual contrast target, one-row purecue alternatives, pronunciation absence, Undo | `session-summary.ts` + session state machine |
 | `session-debrief-loader.test.ts` | Pending-only polling, request abort/fencing, retry races and lost response recovery | `session-debrief-loader.ts` |
 | `home-connections.test.ts` | Completed-session presentation preferences, deferred ready introduction, exact previews, bounded ring navigation, arrow-key guards, loop cue, waiting/failure/empty states | Home connections state/keyboard models + server-rendered component |
 | `content-reactions.test.ts` | Reaction input validation, one current reaction per subject, append-only history, ownership, Saved collection window and operator summary, HTTP routes | DB module + API against a disposable database |
 | `content-reactions-ui.test.ts` | Exclusive Save / Not for me toggles, reasons and notes, S/X guards, Home reaction rendering, Saved grouping, filtering and visit-stable membership | Reaction state, controls and Saved list helpers |
 | `session-debrief-ui.test.ts` | Exact stepped text, empty/loading/failure, safe keyboard navigation, blank optional interests and French exclusion | Debrief card and settings server render + keyboard model |
-| `session-finalization.test.ts` | Explicit summary-entry boundary, commit-before-summary ordering, reflection isolation/retry and stale-response guards | `session-finalization.ts` |
-| `reflection-page-model.test.ts` | Item/proposal grouping, help-queue cards from Help inbox membership, deep draft edits for four operations, support and validation presentation | `reflection-page-model.ts` |
-| `reflection-operation-editor.test.ts` | Compact V2 cue-change list, hidden restated Hanzi field, and accepted-word chips | `ReflectionOperationEditor.tsx` |
-| `reflections-page-run-log.test.ts` | Empty, unavailable-cost, priced run-log, and offered-model selector rendering | `ReflectionsPage.tsx` server render |
 | `llm-provider-runner.test.ts` | Spike compatibility shims, provider adapters, fixtures, current V3 validation/viewer behavior | `spikes/llm-provider/` |
 | `user-priority.test.ts` | User priority patches | Dynamic `server/db.ts` |
 | `my-words.test.ts` | Learner collection membership, study dates, stage/lapses filters, search/pagination, isolation, HTTP validation | Dynamic `server/db.ts`, `server/index.ts` |
@@ -480,14 +434,13 @@ multiword rollback, idempotence, preparation refresh, and preserved learner hist
 | Contrast content | `contrast-content.test.ts` |
 | Study management / suppression | `study-management.test.ts` |
 | Priority / aliases | `user-priority.test.ts`, `priority-aliases.test.ts` |
-| Frontend session state only | `session-selectors.test.ts`, `session-bucket-state.test.ts`, `session-keyboard.test.ts` |
 | Clerk frontend session gate | `clerk-auth-gate.test.ts` |
 | Hosted Clerk invitations | `hosted-clerk-invite.test.ts` |
 | Reflection contracts / validation | `reflection-domain.test.ts`, `reflection-evidence-validation.test.ts`, `reflection-v7-schema.test.ts` |
-| Reflection evidence / finalization | `session-reflection-evidence.test.ts`, `session-finalization.test.ts`, `reflection-evidence-enrichment.test.ts` |
+| Reflection evidence / finalization | `reflection-evidence-enrichment.test.ts` |
 | Reflection provider / generation | `reflection-provider.test.ts`, `reflection-generation.test.ts`, `reflection-generation-isolation.test.ts` |
 | Reflection persistence / application | `reflection-store.test.ts`, `reflection-application.test.ts`, `reflection-persistence-reload.test.ts`, `reflection-quality.test.ts`, `reflection-help-inbox.test.ts` |
-| Reflection HTTP / review UI model | `reflection-api.test.ts`, `reflection-page-model.test.ts`, `reflection-operation-editor.test.ts`, `reflections-page-run-log.test.ts` |
+| Reflection HTTP | `reflection-api.test.ts` |
 | Schema or bootstrap | `dev-db-bootstrap.test.ts` + any db-touching tests above |
 | Hosted metrics / Grafana export | `observability.test.ts`, `request-timing.test.ts`, `hosted-runtime.test.ts` |
 | Hosted code-only upgrade pipeline | `hosted-upgrade.test.ts`, `hosted-build.test.ts`, `hosted-smoke.test.ts` |

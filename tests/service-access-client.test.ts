@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { fetchServiceAccess, fetchMyWords, setClientIncidentStorageScope, subscribeServiceAccessDenied } from '../src/services/api.ts';
+import { fetchServiceAccess, fetchVocabularyWordCollection, setClientIncidentStorageScope, subscribeServiceAccessDenied } from '../src/services/api.ts';
 
 test('access preflight validates the server contract and regular requests broadcast only access denials', async () => {
   const originalFetch = globalThis.fetch;
@@ -13,10 +13,10 @@ test('access preflight validates the server contract and regular requests broadc
     globalThis.fetch = async () => Response.json({ unexpected: true });
     await assert.rejects(fetchServiceAccess(), /Invalid service availability/);
     globalThis.fetch = async () => Response.json({ code: 'MAINTENANCE_MODE' }, { status: 503 });
-    await assert.rejects(fetchMyWords('deck', ''));
+    await assert.rejects(fetchVocabularyWordCollection('deck', ''));
     assert.equal(denied, 0);
     globalThis.fetch = async () => Response.json({ code: 'OPERATOR_ONLY' }, { status: 503 });
-    await assert.rejects(fetchMyWords('deck', ''));
+    await assert.rejects(fetchVocabularyWordCollection('deck', ''));
     assert.equal(denied, 1);
   } finally { globalThis.fetch = originalFetch; unsubscribe(); }
 });
@@ -31,7 +31,7 @@ test('late denied requests from another account cannot lock out the current acco
   try {
     setClientIncidentStorageScope('learner-a');
     globalThis.fetch = () => { started(); return new Promise(resolve => { finish = resolve; }); };
-    const pending = fetchMyWords('deck', '');
+    const pending = fetchVocabularyWordCollection('deck', '');
     await requestStarted;
     setClientIncidentStorageScope('operator-b');
     // Returning to A must also fence the original session's request.

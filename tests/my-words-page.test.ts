@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { test } from 'node:test';
-import { MyWordsPage, WordBrowserPage, type MyWordsPageProps } from '../src/pages/MyWordsPage.tsx';
+import { WordBrowserPage, type MyWordsPageProps } from '../src/pages/MyWordsPage.tsx';
 import {
   ALL_MY_WORDS_STATUSES,
   myWordsRecentLapseSinceDay,
@@ -19,13 +19,14 @@ const waiting: MyWord = {
   lastStudiedAt: null, personalUpdatedAt: '2026-01-02T00:00:00Z',
 };
 function render(overrides: Partial<MyWordsPageProps>) {
-  return renderToStaticMarkup(createElement(MyWordsPage, {
+  const props: MyWordsPageProps = {
     view: 'personal', query: '', statuses: [], recentLapses: false,
     words: [waiting], currentDeck: null, selectedId: null, loading: false,
     error: null, hasMore: false, total: 1, scrollTop: 0, onViewChange: () => {}, onQueryChange: () => {},
     onToggleStatus: () => {}, onToggleRecentLapses: () => {},
     onSelect: () => {}, onLoadMore: () => {}, onRetry: () => {}, onScroll: () => {}, ...overrides,
-  }));
+  };
+  return renderToStaticMarkup(createElement(WordBrowserPage<MyWordsPageProps['statuses'][number]>, props));
 }
 
 test('waiting personal words show their stage and full details without invented study or addition dates', () => {

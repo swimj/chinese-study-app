@@ -2,19 +2,14 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import {
   assertStrictTargetOnlyProductionSnapshot,
+  buildReviewSessionStudyItem,
   type ProductionExerciseSnapshot,
-  type SessionStudyItem,
 } from '../src/domain/study-actions.ts';
 import {
   buildProductionAnswerLookup,
   resolveAcceptedProductionResponse,
   resolveUniqueOutOfSetWordId,
 } from '../src/domain/production-response.ts';
-import {
-  createBucketSessionState,
-  markActiveSessionUnitStarted,
-  rateActiveSessionUnit,
-} from '../src/lib/session-state.ts';
 import type { Word } from '../src/types.ts';
 
 const targetAnswer = { wordId: 'target', hanzi: '学习', traditional: '學習' };
@@ -50,45 +45,25 @@ test('word-owned production rejects a multi-answer or non-target served snapshot
   }, 'target'), /only target word/);
 });
 
-test('session creation rejects an invalid live production snapshot before it can be served', () => {
-  const item: SessionStudyItem = {
-    sessionActionId: 'review/target/production',
-    actionKind: 'production',
-    targetWordId: 'target',
-    sampledSkillIds: ['production'],
-    contentRef: { type: 'production_cue', taskId: 'task', cueId: 'cue' },
-    intervalHours: 24,
+test('session item construction rejects an invalid live production snapshot before it can be served', () => {
+  assert.throws(() => buildReviewSessionStudyItem({
+    wordSkillState: {
+      wordId: 'target',
+      skillId: 'production',
+      enabled: true,
+      intervalHours: 24,
+      lastStudiedAt: '2026-09-18T00:00:00.000Z',
+      nextDueAt: '2026-09-19T00:00:00.000Z',
+      easeFactor: 2.5,
+    },
     word: createReviewWord(),
-    contrastSelection: null,
+    sessionActionId: 'review/target/production',
+    contentRef: { type: 'production_cue', taskId: 'task', cueId: 'cue' },
     production: {
       ...createProductionSnapshot(),
       acceptedAnswers: [targetAnswer, { wordId: 'other', hanzi: '研习', traditional: '研習' }],
     },
-  };
-
-  assert.throws(() => createBucketSessionState({
-    sessionId: 'strict-production-session',
-    buckets: { review: [item], learning: [], unstudied: [] },
   }), /exactly one accepted answer/);
-});
-
-test('production attempt metadata omits retired recheck demand state', () => {
-  const item = createReviewProductionItem();
-  const started = markActiveSessionUnitStarted(createBucketSessionState({
-    sessionId: 'strict-production-metadata',
-    buckets: { review: [item], learning: [], unstudied: [] },
-  }));
-  const result = rateActiveSessionUnit(started, 'good', {
-    response: '学习',
-    productionResponse: { submittedText: '学习', result: 'accepted_anchor' },
-  });
-
-  assert.equal(result.commit.type, 'commit-review-action-session');
-  if (result.commit.type !== 'commit-review-action-session') {
-    throw new Error('Expected a production review commit.');
-  }
-  const production = result.commit.events[0]?.metadata.production as Record<string, unknown>;
-  assert.equal(Object.hasOwn(production, 'recheckDemandId'), false);
 });
 
 test('catalog lookup may identify a rejected response without making it an accepted answer', () => {
@@ -112,20 +87,6 @@ function createProductionSnapshot(): ProductionExerciseSnapshot {
     text: 'to study',
     acceptedAnswers: [targetAnswer],
     supplement: null,
-  };
-}
-
-function createReviewProductionItem(): SessionStudyItem {
-  return {
-    sessionActionId: 'review/target/production',
-    actionKind: 'production',
-    targetWordId: 'target',
-    sampledSkillIds: ['production'],
-    contentRef: { type: 'production_cue', taskId: 'task', cueId: 'cue' },
-    intervalHours: 24,
-    word: createReviewWord(),
-    contrastSelection: null,
-    production: createProductionSnapshot(),
   };
 }
 

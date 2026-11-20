@@ -15,16 +15,6 @@ export type Word = {
   lastLearningCoveredOn: string | null;
 };
 
-export type WordMeaning = {
-  id: string;
-  wordId: string;
-  position: number;
-  text: string;
-  showOnProductionPrompt: boolean;
-  createdAt: string;
-  updatedAt: string;
-};
-
 export type PriorityWord = {
   word: Word;
   bumpCount: number;

@@ -8,10 +8,7 @@ import {
   type TargetedCueContent,
 } from '../src/domain/cues.ts';
 import { resolvePureCueResponse, type PureCue, type PureCueServedSnapshot } from '../src/domain/pure-cues.ts';
-import {
-  resolveAcceptedProductionResponse,
-  resolveSessionProductionResponse,
-} from '../src/domain/production-response.ts';
+import { resolveAcceptedProductionResponse } from '../src/domain/production-response.ts';
 
 const targetAnswer = { wordId: 'target', hanzi: '学习', traditional: '學習' };
 const alternateAnswer = { wordId: 'alternate', hanzi: '研习', traditional: '研習' };
@@ -75,21 +72,6 @@ test('shared frozen-answer matching is profile-aware and returns stable identity
 });
 
 test('word-owned and pure response resolution share matching without sharing ownership policy', () => {
-  assert.deepEqual(resolveSessionProductionResponse({
-    submittedText: '學習',
-    anchorWordId: 'target',
-    production: {
-      taskId: 'production-task:target:default_production',
-      cueId: 'cue-target',
-      cueType: 'definition_gloss',
-      text: 'to study',
-      acceptedAnswers: [targetAnswer],
-      supplement: null,
-    },
-  }), {
-    submittedText: '學習',
-    result: 'accepted_anchor',
-  });
   assert.deepEqual(resolveAcceptedProductionResponse({
     submittedText: '學習',
     anchorWordId: 'target',

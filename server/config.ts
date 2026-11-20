@@ -60,7 +60,6 @@ export function getAppConfig(options: AppConfigOptions = {}): AppConfig {
       [
         'Dev mode requires an explicit seed data file. Pass --seed-data=/path/to/seed.json or set APP_SEED_DATA_PATH.',
         'For default mandarin dev behavior use: npm run dev:backend.',
-        'For default french dev behavior use: npm run dev:french:backend.',
         'To reset the mandarin dev database use: npm run reset:dev-data.',
       ].join(' '),
     );
@@ -112,11 +111,11 @@ function parseMode(value: string): AppMode {
 }
 
 function parseStudyProfile(value: string): StudyProfile {
-  if (value === 'mandarin' || value === 'french') {
+  if (value === 'mandarin') {
     return value;
   }
 
-  throw new Error(`Invalid study profile: ${value}. Expected "mandarin" or "french".`);
+  throw new Error(`Invalid study profile: ${value}. Expected "mandarin"; the French try-out profile is retired.`);
 }
 
 function parseBoolean(value: string, label: string): boolean {

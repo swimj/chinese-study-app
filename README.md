@@ -127,26 +127,6 @@ npm run reset:dev-data
 
 If your current dev database was created before the latest schema rewrite, reset it once before starting the backend again.
 
-### French profile try-out mode
-
-The French try-out path uses a different dev data directory and seed file. The backend is started with the narrow French study profile so add-priority lookup can consult French aliases, while the frontend selects the French study profile at boot.
-
-Start the backend:
-
-```bash
-npm run dev:french:backend
-```
-
-Start the frontend:
-
-```bash
-npm run dev:french:frontend
-```
-
-The backend still stores the same `words` shape. In the French seed data, `hanzi` is the French target term, `pinyin` is pronunciation or a compact grammar note, and `meaning` / `meanings` are English glosses.
-
-Typed production answers use the French profile's forgiving default normalization rules.
-
 ### Study mode
 
 - Command:
@@ -158,7 +138,6 @@ Typed production answers use the French profile's forgiving default normalizatio
   ```
 
 - Requires an explicit data directory
-- For French alias lookup, pass `--study-profile=french` or set `APP_STUDY_PROFILE=french`
 - Study mode requires a stable local learner via `--learner-id=<id>` or `APP_LEARNER_ID=<id>`
 - Uses `app.db` inside that directory
 - Does not seed sample data on first run
@@ -242,7 +221,7 @@ destination for the later dogfood migration.
 - Agent/docs index: [`docs/README.md`](docs/README.md)
 - Product model spec: [Adaptive vocabulary study](SPECS/vocabulary-learning.md)
 - Default dev database: `data/app.db` (generated locally and ignored by Git)
-- Checked-in dev seed files: [`server/seeds/mandarin-dev.json`](server/seeds/mandarin-dev.json), [`server/seeds/french-dev.json`](server/seeds/french-dev.json)
+- Checked-in dev seed file: [`server/seeds/mandarin-dev.json`](server/seeds/mandarin-dev.json)
 - Deck manifest (HSK delta decks for the new-word diet): `server/decks/mandarin-decks-v1.json` — checked-in runtime artifact with logical source provenance in its metadata. Rebuild with `npm run build:deck-manifest` only after supplying the external inputs described in [the deck-build script](scripts/build-deck-manifest.ts) at its expected local paths.
 
 ### Deck manifest provenance and regeneration
@@ -273,4 +252,4 @@ retaining useful contemporary alternate readings. Those decisions, including
 their short reasons, are recorded in the manifest metadata and the generated
 eyeball report.
 
-Dev mode requires an explicit seed file via `--seed-data` or `APP_SEED_DATA_PATH`. Use `npm run dev:backend`, `npm run dev:french:backend`, or `npm run reset:dev-data` instead of invoking the server manually without a seed path.
+Dev mode requires an explicit seed file via `--seed-data` or `APP_SEED_DATA_PATH`. Use `npm run dev:backend` or `npm run reset:dev-data` instead of invoking the server manually without a seed path.

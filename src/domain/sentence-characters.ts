@@ -9,12 +9,7 @@ import taiwanVariants from 'opencc-js/dict/TWVariants';
 import taiwanVariantPhrases from 'opencc-js/dict/TWVariantsPhrases';
 import reversedTaiwanVariants from 'opencc-js/dict/TWVariantsRev';
 import reversedTaiwanVariantPhrases from 'opencc-js/dict/TWVariantsRevPhrases';
-import {
-  DEFAULT_SENTENCE_CHARACTER_PRESENTATION,
-  type CardCharacterForms,
-  type CharacterPresentation,
-  type SentenceCharacterPresentation,
-} from './card-characters';
+import { DEFAULT_SENTENCE_CHARACTER_PRESENTATION, type CardCharacterForms, type SentenceCharacterPresentation } from './card-characters';
 
 export { DEFAULT_SENTENCE_CHARACTER_PRESENTATION };
 export type { SentenceCharacterPresentation };
@@ -58,13 +53,6 @@ const toTraditional = Converter({ from: 'cn', to: 'tw' });
 // whereas sending the already-simplified 显著 straight to tw2s produces 显着.
 function normalizeToSimplified(text: string): string {
   return toSimplified(toTraditional(text));
-}
-
-export function effectiveSentenceCharacterPresentation(
-  main: CharacterPresentation,
-  preference: SentenceCharacterPresentation = DEFAULT_SENTENCE_CHARACTER_PRESENTATION,
-): SentenceCharacterPresentation {
-  return main === 'both' ? preference : main;
 }
 
 export function sentenceCharacterLanguage(script: SentenceCharacterPresentation): 'zh-Hans' | 'zh-Hant' {

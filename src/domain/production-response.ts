@@ -1,11 +1,6 @@
 import { normalizeProductionAnswerForProfile, type StudyProfileId } from '../study-profile';
 import { matchServedCueAnswer } from './cues';
-import type {
-  ProductionAnswerWord,
-  ProductionAttemptResult,
-  ProductionExerciseSnapshot,
-  ProductionResponseResolution,
-} from './study-actions';
+import type { ProductionAnswerWord, ProductionAttemptResult, ProductionResponseResolution } from './study-actions';
 import { assertStrictTargetOnlyProductionSnapshot } from './study-actions';
 
 /**
@@ -13,29 +8,6 @@ import { assertStrictTargetOnlyProductionSnapshot } from './study-actions';
  * promotion. It is not an accepted-answer or grading mechanism.
  */
 export type ProductionAnswerLookup = ReadonlyMap<string, readonly string[]>;
-
-export function resolveSessionProductionResponse({
-  submittedText,
-  anchorWordId,
-  production,
-  profileId,
-}: {
-  submittedText: string;
-  anchorWordId: string;
-  production: ProductionExerciseSnapshot | null;
-  profileId?: StudyProfileId;
-}): ProductionResponseResolution {
-  if (production === null) {
-    throw new Error('Review production response resolution requires a frozen production snapshot.');
-  }
-
-  return resolveAcceptedProductionResponse({
-    submittedText,
-    anchorWordId,
-    acceptedAnswers: production.acceptedAnswers,
-    profileId,
-  });
-}
 
 export function resolveAcceptedProductionResponse({
   submittedText,

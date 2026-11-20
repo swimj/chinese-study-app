@@ -170,7 +170,3 @@ export function WordBrowserPage<Stage extends string = MyWordsStatus, Entry exte
 }
 
 export type { WordBrowserEntry } from '../domain/my-words';
-
-export function MyWordsPage(props: MyWordsPageProps) {
-  return <WordBrowserPage {...props} />;
-}

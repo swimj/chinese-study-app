@@ -44,7 +44,7 @@ For how authenticated identity reaches private SQLite reads and writes, see
 | Content diagnostics | `pages/ContentDiagnosticsPage.tsx`, `features/content/*` | Read-only primitive content browser |
 | Shared domain types | `domain/vocabulary-*.ts`, `types.ts` | Content, session commands/projection and API contracts |
 | Client transport diagnostics | `domain/client-incidents.ts`, `services/client-incident-diagnostics.ts` | Bounded commit-failure capture and pending upload |
-| Study profile | `study-profile.ts` | Mandarin vs French client behavior |
+| Study profile | `study-profile.ts` | Mandarin client labels and answer-matching defaults |
 
 For more frontend code navigation, see the
 [frontend architecture map](../SPECS/frontend-architecture-map.md).
@@ -71,7 +71,7 @@ For more frontend code navigation, see the
 | `APP_MODE` | Backend | `dev` (seed) or `study` (explicit data dir) |
 | `APP_DATA_DIR` | Backend | SQLite directory |
 | `APP_LEARNER_ID` | Backend | Stable trusted-local learner selected for this process |
-| `APP_STUDY_PROFILE` | Backend | `mandarin` or `french` |
+| `APP_STUDY_PROFILE` | Backend | `mandarin` (the default; the former `french` try-out profile is rejected) |
 | `APP_SEED_DATA_PATH` | Backend | Required in dev mode; seed JSON path |
 | `VITE_API_BASE` | Frontend | API base override; defaults to `http://localhost:5174` in Vite development and the serving origin in production builds |
 | `APP_USE_LOCAL_PROVIDER_PROXY` | Backend | Exact `true` opts local OpenAI/OpenRouter calls into `127.0.0.1:7897`; hosted default is direct |
@@ -96,7 +96,6 @@ For more frontend code navigation, see the
 
 - Dev default: `data/app.db` (gitignored)
 - Study mode: user-provided `--data-dir` (recommended outside repo)
-- French dev: `data/french-dev/`
 - Artifacts: `artifacts/` (generated; see `artifacts/README.md`)
 
 ## Tests

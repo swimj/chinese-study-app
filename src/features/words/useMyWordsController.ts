@@ -1,12 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import {
-  ALL_MY_WORDS_STATUSES,
-  type MyWord,
-  type MyWordsResponse,
-  type MyWordsStatus,
-  type MyWordsView,
-} from '../../domain/my-words';
-import { fetchMyWords } from '../../services/api';
+import { type MyWordsResponse, type MyWordsView } from '../../domain/my-words';
 import type { WordBrowserEntry } from '../../domain/my-words';
 
 export type WordsLoader<Stage extends string, Entry extends WordBrowserEntry<Stage>> = (view: MyWordsView, query: string, offset: number, signal: AbortSignal, statuses: readonly Stage[], recentLapses: boolean) => Promise<{words: Entry[]; currentDeck: MyWordsResponse['currentDeck']; hasMore: boolean; total: number}>;
@@ -125,8 +118,4 @@ export function useWordBrowserController<Stage extends string, Entry extends Wor
     onRetry: () => { resetList(); setRevision((value) => value + 1); },
     onScroll: (top: number) => { scrollTop.current = top; },
   };
-}
-
-export function useMyWordsController(active: boolean) {
-  return useWordBrowserController<MyWordsStatus, MyWord>(active, fetchMyWords, ALL_MY_WORDS_STATUSES);
 }

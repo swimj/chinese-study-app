@@ -76,8 +76,7 @@ linking to the intended guarantees they realize and any known gaps.
   [frontend map](../SPECS/frontend-architecture-map.md): focused code references.
 - [Operator panel guide](operator-panel.md): how to reach and use the
   bookmark-only operator surface.
-- [Structured review content](structured-review-content.md),
-  [reflection frontend](reflection-frontend-architecture.md), and
+- [Structured review content](structured-review-content.md) and
   [content quality](content-quality.md): related feature realization and operator
   material.
 - [Test coverage map](testing.md): test files and the domains they exercise.

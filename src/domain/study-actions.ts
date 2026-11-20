@@ -71,17 +71,6 @@ export type ProductionResponseResolution =
       result: 'rejected';
     };
 
-export function cloneProductionExerciseSnapshot(
-  production: ProductionExerciseSnapshot,
-): ProductionExerciseSnapshot {
-  return {
-    ...production,
-    acceptedAnswers: production.acceptedAnswers.map((word) => ({ ...word })),
-    supplement: production.supplement == null ? null : { ...production.supplement },
-    ...(production.bootstrapReveal ? { bootstrapReveal: { ...production.bootstrapReveal } } : {}),
-  };
-}
-
 export type ContrastCluster = {
   id: string;
   title: string;
@@ -127,7 +116,6 @@ export type StudyAction = {
 };
 
 export type SessionStudyItemSource = 'unstudied' | 'learning' | 'review';
-export type WordLifecycleSessionStudyItemSource = Exclude<SessionStudyItemSource, 'review'>;
 
 export type LearningRehearsalSnapshot = ContentExerciseSnapshot & {
   readonly packageId: string;
@@ -279,15 +267,6 @@ export function mapStudySkillToDefaultActionKind(skillId: StudySkillId): StudyAc
   }
 }
 
-export function studyManagementActionRemovesCurrentReviewAction(action: StudyManagementActionKind): boolean {
-  switch (action) {
-    case 'suppress_skill':
-      return true;
-    default:
-      return assertUnreachableStudyManagementAction(action);
-  }
-}
-
 export function buildReviewSessionStudyItem({
   wordSkillState,
   word,
@@ -330,25 +309,6 @@ export function buildReviewSessionStudyItem({
     contrastSelection,
     production,
   };
-}
-
-export function buildWordLifecycleSessionStudyItems({
-  source,
-  word,
-}: {
-  source: WordLifecycleSessionStudyItemSource;
-  word: Word;
-}): SessionStudyItem[] {
-  if (word.status !== source) {
-    throw new Error(
-      `Session study item invariant violated: ${source} session item word "${word.id}" must have ${source} status.`,
-    );
-  }
-
-  return [
-    buildWordLifecycleSessionStudyItem({ source, word, skillId: 'recognition' }),
-    buildWordLifecycleSessionStudyItem({ source, word, skillId: 'production' }),
-  ];
 }
 
 export function deriveReviewCommitFieldsFromAttemptEvents(
@@ -478,28 +438,6 @@ function assertReviewAttemptOutcomeMatchesRating(event: StudyAttemptEvent, ratin
   }
 }
 
-function buildWordLifecycleSessionStudyItem({
-  source,
-  word,
-  skillId,
-}: {
-  source: WordLifecycleSessionStudyItemSource;
-  word: Word;
-  skillId: Extract<StudySkillId, 'recognition' | 'production'>;
-}): SessionStudyItem {
-  return {
-    sessionActionId: buildSessionActionId(source, word.id, skillId),
-    actionKind: mapStudySkillToDefaultActionKind(skillId),
-    targetWordId: word.id,
-    sampledSkillIds: [skillId],
-    contentRef: null,
-    intervalHours: 0,
-    word,
-    contrastSelection: null,
-    production: null,
-  };
-}
-
 function buildSessionActionId(source: SessionStudyItemSource, wordId: string, skillId: StudySkillId) {
   return `${source}/${wordId}/${skillId}`;
 }
@@ -510,8 +448,4 @@ function assertAttemptEventsPresent(): never {
 
 function assertUnreachableStudySkill(skillId: never): never {
   throw new Error(`Unsupported study skill "${String(skillId)}".`);
-}
-
-function assertUnreachableStudyManagementAction(action: never): never {
-  throw new Error(`Unsupported study management action "${String(action)}".`);
 }
