@@ -19,6 +19,8 @@ export type NormalizedTokenUsage = {
 export type StructuredOutputMode = 'json_schema' | 'json_object';
 
 export type ProviderRunRequest = {
+  /** Named inclusion predicates. Results project to a JSON array of selected names. */
+  decisions?: { questions: { type: 'predicate'; name: string; instructions: string }[]; threshold: number };
   model: string;
   reasoningEffort: string | null;
   systemPrompt: string;
@@ -38,6 +40,7 @@ export type ProviderRunRequest = {
 export type ProviderRunConfig = {
   apiKey: string;
   baseUrl: string | null;
+  onInvocationStarted?: (id: string | null) => void;
 };
 
 /**
@@ -50,7 +53,7 @@ export type ProviderRawResult = {
   provider: string;
   model: string;
   responseId: string | null;
-  structuredOutputMode: StructuredOutputMode;
+  structuredOutputMode: StructuredOutputMode | 'predicates';
   rawText: string;
   finishReason: string | null;
   usage: NormalizedTokenUsage;

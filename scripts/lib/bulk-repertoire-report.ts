@@ -23,7 +23,7 @@ export async function reportBulkRepertoire(directory:string){
   }
   const calls=[...rows].map(([attemptId,row])=>{
     const evidence=row.attempt??row.response??row.start!;
-    const calculated=row.response?costForBulkResponse(evidence.request.model,row.response.body):row.attempt?.result?costForBulkResult(row.attempt.result):{spendUsd:null,spendSource:'unknown' as const,pricing:null};
+    const calculated=row.response?costForBulkResponse(evidence.request,row.response.body):row.attempt?.result?costForBulkResult(row.attempt.result,evidence.request):{spendUsd:null,spendSource:'unknown' as const,pricing:null};
     const retained=row.response?row.response.cost:row.attempt?.cost;
     // Preserve historical estimates while accounting from the complete retained response.
     const costCorrection=retained&&bulkHash(retained)!==bulkHash(calculated)

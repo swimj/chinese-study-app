@@ -1,0 +1,40 @@
+# Default sense selection through Decisions, November 20, 2026
+
+We tested switching the standalone selector to one Decisions predicate per supplied sense. Each predicate saw the entire, unchanged production inventory. The release candidate kept eight worked inventories and added two brief contrasts about reading the Chinese evidence. It selected only “rear-end collision” for 追尾 and only “dismiss an employee” for 解雇. These two words were known development cases.
+
+## Comparison
+
+We reran the v7 Chat Completions request from revision `5972e933` with high reasoning, strict JSON output and the current specialized-word policy. We also ran the v7 prompt through Decisions with just its closing output instructions adapted. The two Decisions arms used the same model, inventory, predicate question and inclusive 0.50 cutoff. The release rubric is the developer message; the user message contains the inventory as JSON. Each named predicate asks whether its ID belongs to the default useful subset. Keeping the question short lets every predicate use the same editorial criteria. The provider recommends observable criteria, shared input for independent questions and testing thresholds against application labels. [OpenAI Decisions guide](https://developers.openai.com/api/docs/guides/decisions)
+
+We used inventories saved from completed production selector requests in the November 18 snapshot. The 15 development words included the two requested changes, single and multiple defaults, a genuinely empty recommendation, and the sole eligible surname in a mixed inventory. The next 20 words were outside the earlier 36-word spike and included analogous grammatical cases. They served as an initial holdout for an intermediate candidate. After seeing its results we used them for refinement. A final 16 production words were disjoint from both groups and the November 18 spike. We reserved them before the final revisions and scored them once the release prompt and threshold were fixed.
+
+The evaluator wrote acceptable selections before each group's first request. These are agent editorial judgments informed by the user's stated preferences. For 故障, either the broad malfunction sense alone or both it and the software sense earned credit. Exact match requires the complete unordered ID set to equal an accepted selection. We selected words to exercise distinctions; these counts characterize the trial cases.
+
+| Arm | Development, 15 words | Refinement, 20 words | Final holdout, 16 words |
+| --- | ---: | ---: | ---: |
+| Current v7 chat | 13 | 14 | 12 |
+| Full v7 rubric adapted to Decisions | 11 | 13 | 14 |
+| Release Decisions prompt | 12 | 16 | 14 |
+
+The holdout contained 30 sense decisions. Both Decisions variants added two entries the evaluator skipped. They agreed with each other on all 16 words. The release prompt used 39,305 total input tokens, compared with 50,409 for the full Decisions prompt. Median observed round-trip time was 198 ms for the release prompt, 189 ms for full Decisions and 2,014 ms for chat on the same client. Each arm ran once per word with up to three requests in flight. All 48 holdout calls returned a complete valid result.
+
+## Prompt and threshold choice
+
+On the original 15 words, very short versions (77–370 whitespace-delimited words) matched 9–10 complete sets. Some handled the reported passive or risk distinction but admitted compound-only and peripheral senses. An 814-word prompt with six worked inventories reached 12. An intermediate 1,026-word candidate reached 13 and declined both reported extra senses, but it omitted the productive suffix 兮兮 and added specialist readings of 乳液 and 五官 on its first holdout. We revised the relevant examples, retaining the short predicate question. The final 1,078-word guidance is about 35% shorter by this measure than v7 chat's 1,646 words.
+
+The release prompt retains the worked inventories for 垂, 有所, 不堪, 函, 蜘, 双误, 藤椒 and 泡沫. The rewritten introduction gives contrasting Mandarin examples for an action versus a possible consequence and an active versus a regular passive use. Neither motivating target appears in those examples. It expands 有所's explanation to address productive particles and suffixes. It keeps room for useful settings, including technical uses when they are the only eligible sense. The separate examples for 过时, 报备, 石沉大海 and 为所欲为 were omitted. The remaining examples and prose cover the fixed-expression, shared-meaning, whole-idiom and register judgments, with less space devoted to social tone. Chat-specific JSON instructions and backend workflow narration were dropped from the rubric.
+
+On the initial 15 development cases the release prompt matched 12 complete sets at each of 0.40, 0.50 and 0.60. On the 20 refinement cases those thresholds gave 14, 16 and 16. The motivating pairs both scored 1.00 for the primary sense and 0.00 for the extra sense. We retained the spike's 0.50 cutoff. Higher thresholds improved some development counts, but these few handpicked cases give limited evidence for sacrificing lower-confidence positive selections.
+
+## Editorial findings
+
+- Full Decisions included both supplied senses for each of 追尾 and 解雇. Current chat omitted the following-too-closely reading for 追尾 and kept the passive reading for 解雇. The release prompt omitted both extra entries. All three kept both 故障 senses.
+- On the refinement cases the release prompt recognized the distinction between 质疑 and facing others' doubts, and between 在乎 and the effect of its negation. It kept the productive suffix 兮兮 and a specialized or literary sole use for 贸易顺差, 奥斯曼帝国 and 矣. It selected just the everyday sense of 乳液 and 五官.
+- The nudge has limits. The candidate still treated “force yourself” as a separate default for 强迫 and the date/time examples as a separate use of 七. It also accepted both entries for 本末倒置 and 督促. On the final holdout, its two extra selections were the learning/training context for 循序渐进 and the stylistic use of 浮世绘. Each illustrates how editorial choices about contexts can differ.
+- Compared with the final-holdout labels, chat also accepted the lower-priority “worn smooth” reading of 麻花 and skipped the physical binding sense of 束缚. A larger independently adjudicated sample would be needed to estimate quality on unsampled production traffic.
+
+## Replay evidence
+
+The originating checkout retains the local-only bundle in `artifacts/default-sense-decisions-2026-11-20/`. Its `dev.json`, `test.json` (refinement) and `final.json` contain the exact inventories and accepted sets. Each variant directory retains requests, raw responses and timings. `results.json` groups outputs by word. Inside this directory, run `python3 score.py chat-final full-final worked-final` to rescore the holdout offline. The release variant is named `worked`. The retained `run.mjs` issues live requests for a given split and variant, skipping saved results. To run a fresh comparison, use a private copy of the input JSON, prompt files and runner in an empty directory with project API credentials in the environment.
+
+The v7 chat rubric SHA-256 is `8678212c4a0c7c833247ddfdc11ed8e30175bf7254e6fa6795b56bbc804201e0`. The release rubric SHA-256 is `c921642d51cb210d5ba3d023b0d3b1f1557a675e65243a67d584029e67b09e8b`. [Archived chat rubric](../../../artifacts/invocation-prompts/8678212c4a0c7c833247ddfdc11ed8e30175bf7254e6fa6795b56bbc804201e0.txt) · [Release Decisions prompt](../../../server/vocabulary/reflection-prompts/default-useful-decisions.md)

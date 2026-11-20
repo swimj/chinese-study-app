@@ -1,11 +1,20 @@
 import type { ModelInvocationRow } from '../../src/domain/model-invocations.ts';
-import { estimateInitialReflectionRunCost, type ReflectionRunPricingBasis } from '../reflection/run-pricing.ts';
+import { estimateInitialReflectionRunCost, GPT_6_LUNA_STANDARD_SHORT_CONTEXT_PRICING, type ReflectionRunPricingBasis } from '../reflection/run-pricing.ts';
+import { estimateRunCostFromSnapshot } from './run-pricing.ts';
 import type { NormalizedTokenUsage } from './types.ts';
 
 export type InvocationSpend = {
   spendUsd: number | null;
   spendSource: ModelInvocationRow['spendSource'];
   pricing: ReflectionRunPricingBasis | null;
+};
+
+// Decisions uses standard Luna input/cache rates and charges nothing for outputs.
+// https://developers.openai.com/api/docs/guides/decisions#pricing-and-availability
+const decisionsPricing = {
+  ...GPT_6_LUNA_STANDARD_SHORT_CONTEXT_PRICING,
+  id: 'openai-gpt-6-luna-decisions-short-context-2026-11-20',
+  pricingAsOf: '2026-11-20', outputPerMillionUsd: 0,
 };
 
 function object(value: unknown): Record<string, unknown> {
@@ -18,7 +27,7 @@ function nonnegative(value: unknown): number | null {
 
 /** Shared by response accounting and explicit repairs from the retained raw usage. */
 export function priceInvocationUsage(input: {
-  provider: string; model: string; usage: unknown; reportedAt: string;
+  provider: string; model: string; usage: unknown; reportedAt: string; api?: 'decisions';
 }): InvocationSpend {
   const usage = object(input.usage);
   const inputCount = usage.prompt_tokens ?? usage.input_tokens;
@@ -49,10 +58,16 @@ export function priceInvocationUsage(input: {
     && (normalized.inputTokens === null || writes + (normalized.cachedInputTokens ?? 0) <= normalized.inputTokens)
     && !(input.provider === 'openai' && (input.model === 'gpt-6.1-sol' || luna)
       && (normalized.inputTokens ?? 0) > 272_000);
+  // Provider input counts include the separately priced cache writes.
+  const billable = { ...normalized, inputTokens: normalized.inputTokens === null ? null : normalized.inputTokens - writes };
+  if (input.api === 'decisions') {
+    const estimate = luna && validUsage ? estimateRunCostFromSnapshot({ ...billable, outputTokens: 0 }, decisionsPricing) : null;
+    return { spendUsd: estimate?.estimatedCostUsd ?? null, spendSource: estimate ? 'estimated' : 'unknown',
+      pricing: estimate?.pricing ?? null };
+  }
   const estimate = (!validUsage && reportedCostUsd === null) ? null : estimateInitialReflectionRunCost({
     provider: input.provider, providerModel: input.model,
-    // Provider prompt_tokens includes writes; normalized pricing treats them separately.
-    usage: { ...normalized, inputTokens: normalized.inputTokens === null ? null : normalized.inputTokens - writes },
+    usage: billable,
     ...(reportedCostUsd === null ? {} : { reportedCostUsd }), reportedAt: input.reportedAt,
   });
   return {

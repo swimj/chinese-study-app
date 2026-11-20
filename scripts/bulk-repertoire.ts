@@ -10,10 +10,10 @@ import { snapshotBulkRepertoireWord } from '../server/db/bulk-repertoire-snapsho
 import { bulkHash, generateBulkWord, verifyBulkWord, type BulkWordSnapshot, type BulkCall, type BulkWordResult } from '../server/vocabulary/bulk-repertoire.ts';
 import { createBulkDispatcher, costForBulkResult, costForBulkResponse, type BulkAttempt, type BulkResponse, type BulkStart } from './lib/bulk-repertoire-dispatch.ts';
 import { reportBulkRepertoire } from './lib/bulk-repertoire-report.ts';
-import { parseResponse } from '../server/llm/openai-compatible.ts';
+import { parseResponseForRequest } from '../server/llm/openai-compatible.ts';
 import { hostname } from 'node:os';
 import { applyBulkRepertoireWord } from '../server/db/bulk-repertoire-apply.ts';
-import type { ProviderAdapter } from '../server/llm/types.ts';
+import type { ProviderAdapter, ProviderRunRequest } from '../server/llm/types.ts';
 
 const { positionals, values } = parseArgs({ allowPositionals: true, options: {
   database: {type:'string'}, out: {type:'string'}, input: {type:'string'}, limit: {type:'string',default:'500'},
@@ -31,6 +31,22 @@ async function save(file:string,value:unknown):Promise<void> {
 async function exists(file:string):Promise<boolean>{try{await fs.access(file);return true;}catch{return false;}}
 type Manifest = { version:1; createdAt:string; sourceRevision:string; selection:ReturnType<typeof selectBulkRepertoireWords>;
   words:Array<{wordId:string;snapshot:BulkWordSnapshot}> };
+type HistoricalSelection = { request:ProviderRunRequest; recoverable:boolean; uncertain:boolean };
+function historicalSelections(starts:BulkStart[], attempts:BulkAttempt[], responses:BulkResponse[]) {
+  const byWorkflow = new Map<string, HistoricalSelection>();
+  const finished = new Set(attempts.map(attempt=>attempt.attemptId));
+  function observe(request:ProviderRunRequest, recoverable:boolean, uncertain:boolean) {
+    const workflowId = request.provenance?.workflowId;
+    if(!workflowId || request.outputSchemaName!=='vocabulary_default_useful_selection_v1') return;
+    const prior = byWorkflow.get(workflowId);
+    if(prior && bulkHash(prior.request)!==bulkHash(request)) throw new Error('Conflicting retained selection requests');
+    byWorkflow.set(workflowId,{request,recoverable:recoverable || !!prior?.recoverable,uncertain:uncertain || !!prior?.uncertain});
+  }
+  for(const start of starts) observe(start.request,false,!finished.has(start.attemptId));
+  for(const attempt of attempts) observe(attempt.request,!!attempt.result,!!attempt.error?.outcomeUnknown);
+  for(const response of responses) observe(response.request,response.responseStatus===200,false);
+  return byWorkflow;
+}
 type Bundle={version:1;operationId:string;actorId:string;results:BulkWordResult[]};
 if(positionals.length!==1)throw new Error('Use plan, generate, report, bundle, or apply');
 if(positionals[0]==='plan') {
@@ -72,12 +88,13 @@ if(positionals[0]==='plan') {
   const oldStarts=await Promise.all((await fs.readdir(startsDirectory)).map(name=>read<BulkStart>(path.join(startsDirectory,name))));
   const oldAttempts=await Promise.all((await fs.readdir(attemptsDirectory)).map(name=>read<BulkAttempt>(path.join(attemptsDirectory,name))));
   const oldResponses=await Promise.all((await fs.readdir(responsesDirectory)).map(name=>read<BulkResponse>(path.join(responsesDirectory,name))));
+  const legacySelections = historicalSelections(oldStarts,oldAttempts,oldResponses);
   const dispatcher=createBulkDispatcher({concurrency:Number(values.concurrency),probeLimits:true,onStart:async start=>{
     await save(path.join(startsDirectory,`${start.attemptId}.json`),start);
   },onResponse:async response=>{
-    await save(path.join(responsesDirectory,`${randomUUID()}.json`),{...response,cost:costForBulkResponse(response.request.model,response.body)});
+    await save(path.join(responsesDirectory,`${randomUUID()}.json`),{...response,cost:costForBulkResponse(response.request,response.body)});
   },onAttempt:async attempt=>{
-    await save(path.join(attemptsDirectory,`${randomUUID()}.json`),{...attempt,cost:attempt.result?costForBulkResult(attempt.result):{spendUsd:null,spendSource:'unknown',pricing:null}});
+    await save(path.join(attemptsDirectory,`${randomUUID()}.json`),{...attempt,cost:attempt.result?costForBulkResult(attempt.result,attempt.request):{spendUsd:null,spendSource:'unknown',pricing:null}});
   }});
   const outcomes=await Promise.allSettled(words.map(async ({wordId,snapshot},index)=>{
     const folder=path.join(directory,String(index).padStart(4,'0'));await fs.mkdir(folder,{recursive:true,mode:0o700});
@@ -89,6 +106,18 @@ if(positionals[0]==='plan') {
         ||retained.calls.some(call=>call.request.provenance?.workflowId!==workflowId))throw new Error('Completed result belongs to a different cohort entry');
       await verifyBulkWord(retained);return;
     }
+    // Standalone selection on an established inventory is always the first stage.
+    // Recover paid historical chat evidence without dispatching a new chat selection.
+    const firstStage = path.join(folder,'call-0.json');
+    const legacy = legacySelections.get(workflowId);
+    const savedFirst = await exists(firstStage) ? await read<BulkCall>(firstStage) : undefined;
+    const firstMarker = !savedFirst && await exists(firstStage+'.started')
+      ? await read<{request:ProviderRunRequest}>(firstStage+'.started') : undefined;
+    const legacyMarker = firstMarker?.request.outputSchemaName==='vocabulary_default_useful_selection_v1';
+    const retainedSelectionRequest = savedFirst?.request.provenance?.stepName==='default_useful_selection'
+      ? savedFirst.request : legacy?.recoverable ? legacy.request : undefined;
+    if(!retainedSelectionRequest && (legacy?.uncertain || (legacyMarker && !legacy)) && !values['retry-uncertain'])
+      throw new Error('Previous selection outcome is uncertain; inspect retained evidence before --retry-uncertain');
     let callIndex=0;
     const adapter:ProviderAdapter={...dispatcher.adapter,async run(request,config){
       const file=path.join(folder,`call-${callIndex++}.json`);
@@ -99,27 +128,31 @@ if(positionals[0]==='plan') {
       }
       const prior=oldAttempts.filter(attempt=>bulkHash(attempt.request)===bulkHash(request));
       const success=prior.find(attempt=>attempt.result);
-      if(success?.result){await save(file,{...success,cost:costForBulkResult(success.result)});return success.result;}
+      if(success?.result){await save(file,{...success,cost:costForBulkResult(success.result,request)});return success.result;}
       const response=oldResponses.find(response=>response.responseStatus===200&&bulkHash(response.request)===bulkHash(request));
       if(response){
-        const parsed=parseResponse('openai','json_schema',response.body as import('../server/llm/types.ts').JsonValue);
-        await save(file,{request,result:parsed,startedAt:response.startedAt,finishedAt:response.receivedAt,latencyMs:Date.parse(response.receivedAt)-Date.parse(response.startedAt),cost:costForBulkResult(parsed)});
+        const parsed=parseResponseForRequest('openai','json_schema',request,response.body as import('../server/llm/types.ts').JsonValue);
+        await save(file,{request,result:parsed,startedAt:response.startedAt,finishedAt:response.receivedAt,latencyMs:Date.parse(response.receivedAt)-Date.parse(response.startedAt),cost:costForBulkResult(parsed,request)});
         return parsed;
       }
       const startedFile=file+'.started';
       const unmatchedStart=oldStarts.some(start=>bulkHash(start.request)===bulkHash(request)&&!prior.some(attempt=>attempt.attemptId===start.attemptId));
-      const legacyUncertain=await exists(startedFile)&&!oldStarts.some(start=>bulkHash(start.request)===bulkHash(request));
+      const marker = await exists(startedFile) ? await read<{request:ProviderRunRequest}>(startedFile) : undefined;
+      const replacingLegacy = request.decisions && marker?.request.outputSchemaName==='vocabulary_default_useful_selection_v1';
+      const legacyUncertain=marker && !replacingLegacy && !oldStarts.some(start=>bulkHash(start.request)===bulkHash(request));
       if((prior.some(attempt=>attempt.error?.outcomeUnknown)||unmatchedStart||legacyUncertain)&&!values['retry-uncertain'])
         throw new Error('Previous provider outcome is uncertain; inspect retained evidence before --retry-uncertain');
+      if(request.outputSchemaName==='vocabulary_default_useful_selection_v1')
+        throw new Error('Historical selection has no recoverable response for the reconstructed request');
       if(!await exists(startedFile))await save(startedFile,{request,startedAt:new Date().toISOString()});
       const startedAt=new Date().toISOString(),start=performance.now();
       const result=await dispatcher.adapter.run(request,config);
-      await save(file,{request,result,startedAt,finishedAt:new Date().toISOString(),latencyMs:performance.now()-start,cost:costForBulkResult(result)});
+      await save(file,{request,result,startedAt,finishedAt:new Date().toISOString(),latencyMs:performance.now()-start,cost:costForBulkResult(result,request)});
       return result;
     }};
     console.log(JSON.stringify({event:'started',wordId,hanzi:snapshot.word.hanzi,model:values.model}));
     const result=await generateBulkWord(snapshot,{model:values.model!,reasoningEffort:values.effort!,adapter,apiKey,
-      baseUrl:process.env.OPENAI_BASE_URL?.trim()||null,workflowId});
+      baseUrl:process.env.OPENAI_BASE_URL?.trim()||null,workflowId,retainedSelectionRequest});
     // Preserve original timing when resuming cached outputs.
     result.calls=await Promise.all(result.calls.map((_call,i)=>read<BulkCall>(path.join(folder,`call-${i}.json`))));
     await verifyBulkWord(result);await save(finalFile,result);

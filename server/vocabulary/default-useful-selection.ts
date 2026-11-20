@@ -15,23 +15,60 @@ import { validateJsonSchema } from '../llm/json-schema-validator.ts';
 import { invalidateServiceInvocation } from '../llm/invocation-ledger.ts';
 import { isOutputTruncationFinishReason,type ProviderAdapter } from '../llm/types.ts';
 import type { JsonSchema } from '../../src/domain/reflection-result-schema.ts';
-import { VocabularySenseReadinessPending,VocabularySenseSelectionRequired,VOCABULARY_SENSE_SERVICE,VOCABULARY_SENSE_MODEL } from './sense-readiness.ts';
+import { VocabularySenseReadinessPending,VocabularySenseSelectionRequired,VOCABULARY_SENSE_SERVICE } from './sense-readiness.ts';
 import { recordPreparationAttempt,linkPreparationInvocation,completePreparationAttempt,failPreparationAttempt } from './preparation-retry.ts';
 const actor={kind:'service' as const,id:VOCABULARY_SENSE_SERVICE};
-const prompt=readFileSync(new URL('./reflection-prompts/default-useful-selection.md',import.meta.url),'utf8');
+const prompt=readFileSync(new URL('./reflection-prompts/default-useful-decisions.md',import.meta.url),'utf8');
 const timeoutMs=180_000;
-export type UsefulSelectionProvider={isConfigured():boolean;select(input:{word:NonNullable<ReturnType<typeof getSharedIntroductionLexicalWord>>;senses:VocabularySense[]},context:{workflowId:string;attemptNumber:number;onInvocation:(id:string|null|undefined)=>void}):Promise<unknown>};
+type SelectionInput = { word: NonNullable<ReturnType<typeof getSharedIntroductionLexicalWord>>; senses: VocabularySense[] };
+export type UsefulSelectionProvider={isConfigured():boolean;select(input:SelectionInput,context:{workflowId:string;attemptNumber:number;onInvocation:(id:string|null|undefined)=>void}):Promise<unknown>};
+
+export function defaultUsefulSelectorInput(input: SelectionInput) {
+  const references = vocabularySenseReferences(input.senses.map(sense => sense.senseId));
+  const wire = { word: modelLexicalWord(input.word), senses: input.senses.map(({ wordId: _wordId, ...sense }) => ({
+    ...sense, senseId: references.alias(sense.senseId),
+  })) };
+  return { references, wire };
+}
+
 export function createUsefulSelectionProvider(options:{environment?:NodeJS.ProcessEnv;adapter?:ProviderAdapter}={}):UsefulSelectionProvider {
   const environment=options.environment??process.env;
   const adapter=options.adapter??createOpenAiCompatibleAdapter({id:'openai',defaultBaseUrl:'https://api.openai.com/v1',apiKeyEnvironmentVariable:'OPENAI_API_KEY',structuredOutputMode:'json_schema',maxTokensField:'max_completion_tokens',fetchImplementation:fetchImplementationForProvider('openai',timeoutMs)});
   return {isConfigured:()=>Boolean(environment.OPENAI_API_KEY?.trim()),async select(input,context){
-    const references=vocabularySenseReferences(input.senses.map(sense=>sense.senseId));
-    const wire={word:modelLexicalWord(input.word),senses:input.senses.map(({wordId: _wordId,...sense})=>({...sense,senseId:references.alias(sense.senseId)}))};
-    const schema:JsonSchema={type:'object',additionalProperties:false,required:['senseIds'],properties:{senseIds:{type:'array',items:{type:'string',enum:input.senses.map(sense=>references.alias(sense.senseId))}}}};
-    const result=await adapter.run({model:VOCABULARY_SENSE_MODEL,reasoningEffort:'high',systemPrompt:prompt,userPrompt:JSON.stringify(wire),outputSchemaName:'vocabulary_default_useful_selection_v1',outputSchema:schema,maxOutputTokens:4000,temperature:null,timeoutMs,cachePrompt:true,invocationActor:{kind:'service',serviceId:VOCABULARY_SENSE_SERVICE},provenance:{workflowId:context.workflowId,attemptNumber:context.attemptNumber,stepName:'default_useful_selection',promptName:'vocabulary-default-useful-selection',promptVersion:'7',schemaVersion:'1',inputProjectionVersion:'canonical-inventory-local-senses-v3'}},{apiKey:environment.OPENAI_API_KEY?.trim()??'',baseUrl:environment.OPENAI_BASE_URL?.trim()||null});
-    context.onInvocation(result.invocationId);
-    try{if(isOutputTruncationFinishReason(result.finishReason))throw new Error('truncated');const value:unknown=JSON.parse(result.rawText);if(validateJsonSchema(value,schema).length)throw new Error('schema');const selected=(value as {senseIds:string[]}).senseIds;if(new Set(selected).size!==selected.length)throw new Error('duplicate');return {senseIds:selected.map(id=>references.canonical(id))};}
-    catch{invalidateServiceInvocation(result.invocationId,VOCABULARY_SENSE_SERVICE);throw new Error('Default useful selection output is invalid');}
+    const { references, wire } = defaultUsefulSelectorInput(input);
+    const ids = wire.senses.map(sense => sense.senseId);
+    const schema: JsonSchema = { type: 'array', items: { type: 'string', enum: ids } };
+    const questions = ids.map(name => ({
+      type: 'predicate' as const, name,
+      instructions: `Should ${name} be in the DEFAULT USEFUL subset for this target under the supplied editorial guidance?`,
+    }));
+    let startedId: string | null | undefined;
+    const result = await adapter.run({
+      model: 'gpt-6-luna', systemPrompt: prompt, userPrompt: JSON.stringify(wire),
+      decisions: { questions, threshold: 0.5 },
+      outputSchemaName: 'vocabulary_default_useful_selection_v2', outputSchema: schema,
+      reasoningEffort: null, maxOutputTokens: 0, temperature: null, timeoutMs, cachePrompt: true,
+      invocationActor: { kind: 'service', serviceId: VOCABULARY_SENSE_SERVICE },
+      provenance: { workflowId: context.workflowId, attemptNumber: context.attemptNumber,
+        stepName: 'default_useful_selection', promptName: 'vocabulary-default-useful-selection',
+        promptVersion: '8', schemaVersion: '2', inputProjectionVersion: 'canonical-inventory-local-senses-v3' },
+    }, {
+      apiKey: environment.OPENAI_API_KEY?.trim() ?? '', baseUrl: environment.OPENAI_BASE_URL?.trim() || null,
+      onInvocationStarted(id) { startedId = id; context.onInvocation(id); },
+    });
+    // Offline replay imports its invocation when the retained response is consumed.
+    if (result.invocationId !== startedId) context.onInvocation(result.invocationId);
+    try {
+      const selected: unknown = JSON.parse(result.rawText);
+      if (isOutputTruncationFinishReason(result.finishReason) || validateJsonSchema(selected, schema).length
+        || !Array.isArray(selected) || new Set(selected).size !== selected.length) {
+        throw new Error('Invalid selection');
+      }
+      return { senseIds: selected.map(id => references.canonical(id)) };
+    } catch {
+      invalidateServiceInvocation(result.invocationId, VOCABULARY_SENSE_SERVICE);
+      throw new Error('Default useful selection output is invalid');
+    }
   }};
 }
 function atomic<T>(work:()=>T):T {const db=getDb(),point=`selection_${randomUUID().replaceAll('-','')}`;db.exec(`SAVEPOINT ${point}`);try{const result=work();db.exec(`RELEASE ${point}`);return result;}catch(error){db.exec(`ROLLBACK TO ${point}; RELEASE ${point}`);throw error;}}

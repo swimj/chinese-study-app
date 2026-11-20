@@ -18,9 +18,10 @@ import { BULK_REPERTOIRE_APPLIED } from '../server/db/bulk-repertoire-state.ts';
 import { authoredVocabularyRepertoire } from '../server/db/vocabulary-authored-repertoire.ts';
 import { composeVocabularySessionPayload } from '../server/vocabulary/study.ts';
 import { createVocabularyPracticePreparation } from '../server/vocabulary/preparation.ts';
-import { parseResponse } from '../server/llm/openai-compatible.ts';
+import { parseResponse, parseResponseForRequest } from '../server/llm/openai-compatible.ts';
 import type { ProviderAdapter, JsonValue } from '../server/llm/types.ts';
 import { claimSharedWordIntroductionStage, finishSharedWordIntroductionBootstrap } from '../server/db/word-introductions.ts';
+import { readInvocationPromptEvidence } from '../server/db/invocation-prompt-archive.ts';
 import { createVocabularyProposal } from '../server/db/vocabulary-reflection.ts';
 
 let root:string,baseline:string,db:DatabaseSync;
@@ -71,15 +72,28 @@ function addTeachingSource(){
     {catalogVersion:getVocabularySenseCatalog('w1').version,senseVersions:[{senseId:'greeting',version:1}],senseIds:['greeting']});
 }
 function tables(){return {words:db.prepare('SELECT * FROM learner_words ORDER BY learner_id').all(),schedules:db.prepare('SELECT * FROM learner_word_schedules ORDER BY learner_id').all()};}
-async function generate(empty=false){
+async function generate(empty=false, historicalSelection=false){
   const steps:string[]=[];
   const adapter:ProviderAdapter={id:'openai',defaultBaseUrl:'',apiKeyEnvironmentVariable:'',structuredOutputMode:'json_schema',async run(request){
     const step=request.provenance!.stepName!;steps.push(step);
+    if(request.decisions) {
+      assert.equal(request.model,'gpt-6-luna');
+      assert.equal(request.reasoningEffort,null);
+      return parseResponseForRequest('openai','json_schema',request,{
+        model:'gpt-6-luna',answers:[{name:'s1',type:'predicate',probability:.6}],
+        usage:{input_tokens:100,output_tokens:0,total_tokens:100,input_tokens_details:{cached_tokens:10,cache_write_tokens:20}},
+      });
+    }
     const output=step==='sense_inventory'?{senses:[{label:'greeting',notes:['Greet someone.'],defaultUseful:true},{label:'formal greeting',notes:['Formal greeting.'],defaultUseful:false}]}:
       step==='default_useful_selection'?{senseIds:['s1']}:{exercises:empty?[]:[{id:'one',sourceUseId:'s1',stimulus:{kind:'direct_text',text:'A greeting when meeting someone.'},teachingNote:'Use to greet someone.'},{id:'two',sourceUseId:'s1',stimulus:{kind:'direct_text',text:'Hello!'},teachingNote:null}]};
     return parseResponse('openai','json_schema',{id:`response-${step}`,model:request.model,choices:[{message:{content:JSON.stringify(output)},finish_reason:'stop'}],usage:{prompt_tokens:100,completion_tokens:80,total_tokens:180}} as JsonValue);
   }};
-  const result=await generateBulkWord(snapshotBulkRepertoireWord('w1'),{model:'gpt-6-sol',reasoningEffort:'high',adapter,apiKey:'fake',baseUrl:null,workflowId:'trial:w1'});
+  const snapshot=snapshotBulkRepertoireWord('w1');
+  // Version 7 is the final chat selector contract captured by bulk artifacts.
+  const retainedSelectionRequest=historicalSelection?{
+    systemPrompt:fs.readFileSync(new URL('../artifacts/invocation-prompts/8678212c4a0c7c833247ddfdc11ed8e30175bf7254e6fa6795b56bbc804201e0.txt',import.meta.url),'utf8'),
+    outputSchemaName:'vocabulary_default_useful_selection_v1',provenance:{promptVersion:'7'}}:undefined;
+  const result=await generateBulkWord(snapshot,{retainedSelectionRequest,model:'gpt-6-sol',reasoningEffort:'high',adapter,apiKey:'fake',baseUrl:null,workflowId:'trial:w1'});
   return {result,steps};
 }
 
@@ -102,9 +116,30 @@ test('unknown inventory imports exact provider evidence, selected canonical iden
 test('existing inventory with unknown defaults replays selection, preserving existing sense identities',async()=>{
   establish(false);const before=getVocabularySenses('w1');const {result,steps}=await generate();
   assert.deepEqual(steps,['default_useful_selection','general_exercises']);
-  await applyBulkRepertoireWord(result,authority);
+  const receipt=await applyBulkRepertoireWord(result,authority);
+  const selection=readInvocationPromptEvidence(db,receipt.invocationIds[0]!);
+  const body=JSON.parse(selection.requestJson!);
+  assert.equal(body.model,'gpt-6-luna');
+  assert.equal(body.questions[0].name,'s1');assert.equal(body.input[1].content[0].data.senses[0].senseId,'s1');
+  const row=db.prepare('SELECT response_snapshot_json,spend_usd,settings_json FROM model_invocations WHERE id=?').get(receipt.invocationIds[0]!)!;
+  assert.equal(JSON.parse(String(row.response_snapshot_json)).answers[0].probability,.6);
+  assert.equal(JSON.parse(String(row.settings_json)).api,'decisions');
+  assert.equal(row.spend_usd,(70*.10+10*.01+20*.125)/1e6);
   assert.deepEqual(getVocabularySenses('w1'),before);assert.deepEqual(getVocabularyWordSenseCoverage('w1').defaultUsefulSenseIds,['greeting']);
   assert.equal(db.prepare("SELECT status FROM vocabulary_default_selection_readiness WHERE word_id='w1'").get()!.status,'ready');
+});
+
+test('retained chat selection still replays offline under its original contract and spend basis',async()=>{
+  establish(false);
+  const {result}=await generate(false,true);
+  const call=result.calls[0]!;
+  assert.equal(call.request.model,'gpt-6-sol');assert.equal(call.request.decisions,undefined);
+  const receipt=await applyBulkRepertoireWord(result,authority);
+  const {requestJson}=readInvocationPromptEvidence(db,receipt.invocationIds[0]!);
+  const body=JSON.parse(requestJson!);
+  assert.equal(body.response_format.type,'json_schema');assert.equal(body.model,'gpt-6-sol');
+  assert.equal(JSON.parse(body.messages[1].content).senses[0].senseId,'s1');
+  assert.deepEqual(getVocabularyWordSenseCoverage('w1').defaultUsefulSenseIds,['greeting']);
 });
 
 test('additive publication preserves fallback identities and history and replays one receipt',async()=>{

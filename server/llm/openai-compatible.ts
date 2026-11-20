@@ -36,6 +36,16 @@ export function requestBody(
   maxTokensField: OpenAiCompatibleOptions['maxTokensField'],
   additionalRequestBody: Record<string, JsonValue> | undefined,
 ): Record<string, JsonValue> {
+  if (request.decisions) {
+    return {
+      model: request.model,
+      input: [
+        { role: 'developer', content: request.systemPrompt },
+        { role: 'user', content: [{ type: 'input_json', data: JSON.parse(request.userPrompt) as JsonValue }] },
+      ],
+      questions: request.decisions.questions,
+    };
+  }
   const systemPrompt = mode === 'json_schema'
     ? request.systemPrompt
     : [
@@ -65,6 +75,52 @@ export function requestBody(
   if (request.temperature !== null) body.temperature = request.temperature;
   if (request.reasoningEffort !== null) body.reasoning_effort = request.reasoningEffort;
   return { ...body, ...additionalRequestBody };
+}
+
+export function openAiRequestPath(request: ProviderRunRequest): '/decisions' | '/chat/completions' {
+  return request.decisions ? '/decisions' : '/chat/completions';
+}
+
+export function openAiInvocation(provider: string, request: ProviderRunRequest, body: JsonValue) {
+  const settings = request.decisions
+    ? { api: 'decisions', threshold: request.decisions.threshold, timeoutMs: request.timeoutMs }
+    : { reasoningEffort: request.reasoningEffort, maxOutputTokens: request.maxOutputTokens,
+        temperature: request.temperature, timeoutMs: request.timeoutMs, cachePrompt: request.cachePrompt };
+  return { provider, model: request.model, invocationType: request.outputSchemaName,
+    provenance: { ...request.provenance, promptTemplate: request.systemPrompt,
+      schemaName: request.outputSchemaName, schema: request.outputSchema, settings, requestSnapshot: body } };
+}
+
+export function parseResponseForRequest(
+  provider: string, mode: StructuredOutputMode, request: ProviderRunRequest, rawResponse: JsonValue,
+): ProviderRawResult {
+  if (!request.decisions) return parseResponse(provider, mode, rawResponse);
+  const root = asRecord(rawResponse, 'Decisions response');
+  const answers = asArray(root.answers, 'Decisions answers');
+  const { questions, threshold } = request.decisions;
+  if (answers.length !== questions.length) throw new Error('Decisions response has the wrong number of answers');
+  const selected: string[] = [];
+  for (const [index, question] of questions.entries()) {
+    const answer = asRecord(answers[index]!, 'Decisions answer');
+    const probability = numberOrNull(answer.probability);
+    // Answers are ordered. An absent, refused, or malformed answer invalidates the entire selection.
+    if (answer.type !== 'predicate' || answer.name !== question.name || probability === null || probability < 0 || probability > 1) {
+      throw new Error(`Invalid Decisions answer for ${question.name}`);
+    }
+    if (probability >= threshold) selected.push(question.name);
+  }
+  const usage = root.usage === undefined ? {} : asRecord(root.usage, 'Decisions usage');
+  const input = usage.input_tokens_details === undefined ? {} : asRecord(usage.input_tokens_details, 'Decisions input token details');
+  const output = usage.output_tokens_details === undefined ? {} : asRecord(usage.output_tokens_details, 'Decisions output token details');
+  return {
+    provider, model: stringOrNull(root.model) ?? 'unknown', responseId: stringOrNull(root.id),
+    structuredOutputMode: 'predicates', rawText: JSON.stringify(selected), finishReason: null, rawResponse,
+    usage: {
+      inputTokens: numberOrNull(usage.input_tokens), cachedInputTokens: numberOrNull(input.cached_tokens),
+      cacheWriteInputTokens: numberOrNull(input.cache_write_tokens), outputTokens: numberOrNull(usage.output_tokens),
+      reasoningTokens: numberOrNull(output.reasoning_tokens), totalTokens: numberOrNull(usage.total_tokens),
+    },
+  };
 }
 
 export function parseResponse(
@@ -131,12 +187,7 @@ export function createOpenAiCompatibleAdapter(
       // Retain the exact body independently of transport configuration. Headers,
       // credentials and endpoint configuration never enter the ledger snapshot.
       const body = requestBody(request, options.structuredOutputMode, options.maxTokensField, options.additionalRequestBody);
-      const invocation = { provider: options.id, model: request.model, invocationType: request.outputSchemaName,
-        provenance: { ...request.provenance, promptTemplate: request.systemPrompt,
-          schemaName: request.outputSchemaName, schema: request.outputSchema,
-          settings: { reasoningEffort: request.reasoningEffort, maxOutputTokens: request.maxOutputTokens,
-            temperature: request.temperature, timeoutMs: request.timeoutMs, cachePrompt: request.cachePrompt },
-          requestSnapshot: body } };
+      const invocation = openAiInvocation(options.id, request, body);
 
       const service = request.invocationActor;
       const invocationId = service === undefined ? beginInvocation(invocation)
@@ -147,10 +198,11 @@ export function createOpenAiCompatibleAdapter(
       const startedAt = performance.now();
       let transportLatencyMs: number | null = null;
       try {
+        config.onInvocationStarted?.(invocationId);
         const rawResponse = await postJson(
           options.id,
           fetchImplementation,
-          joinUrl(config.baseUrl ?? options.defaultBaseUrl, '/chat/completions'),
+          joinUrl(config.baseUrl ?? options.defaultBaseUrl, openAiRequestPath(request)),
           {
             authorization: `Bearer ${config.apiKey}`,
             ...(request.clientRequestId ? { 'x-client-request-id': request.clientRequestId } : {}),
@@ -163,7 +215,7 @@ export function createOpenAiCompatibleAdapter(
         else recordServiceInvocationResponse(invocationId, service.serviceId, invocation, rawResponse);
         let result: ProviderRawResult;
         try {
-          result = parseResponse(options.id, options.structuredOutputMode, rawResponse);
+          result = parseResponseForRequest(options.id, options.structuredOutputMode, request, rawResponse);
         } catch (error) {
           throw new ProviderInvalidResponseError(error instanceof Error ? error.message : 'Invalid provider response');
         }
