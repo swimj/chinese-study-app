@@ -80,7 +80,7 @@ async function generate(empty=false, historicalSelection=false){
       assert.equal(request.model,'gpt-6-luna');
       assert.equal(request.reasoningEffort,null);
       return parseResponseForRequest('openai','json_schema',request,{
-        model:'gpt-6-luna',answers:[{name:'s1',type:'predicate',probability:.6}],
+        model:'gpt-6-luna',answers:[{name:'s1',type:'predicate',probability:.8}],
         usage:{input_tokens:100,output_tokens:0,total_tokens:100,input_tokens_details:{cached_tokens:10,cache_write_tokens:20}},
       });
     }
@@ -122,7 +122,7 @@ test('existing inventory with unknown defaults replays selection, preserving exi
   assert.equal(body.model,'gpt-6-luna');
   assert.equal(body.questions[0].name,'s1');assert.equal(body.input[1].content[0].data.senses[0].senseId,'s1');
   const row=db.prepare('SELECT response_snapshot_json,spend_usd,settings_json FROM model_invocations WHERE id=?').get(receipt.invocationIds[0]!)!;
-  assert.equal(JSON.parse(String(row.response_snapshot_json)).answers[0].probability,.6);
+  assert.equal(JSON.parse(String(row.response_snapshot_json)).answers[0].probability,.8);
   assert.equal(JSON.parse(String(row.settings_json)).api,'decisions');
   assert.equal(row.spend_usd,(70*.10+10*.01+20*.125)/1e6);
   assert.deepEqual(getVocabularySenses('w1'),before);assert.deepEqual(getVocabularyWordSenseCoverage('w1').defaultUsefulSenseIds,['greeting']);

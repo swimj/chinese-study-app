@@ -45,13 +45,13 @@ export function createUsefulSelectionProvider(options:{environment?:NodeJS.Proce
     let startedId: string | null | undefined;
     const result = await adapter.run({
       model: 'gpt-6-luna', systemPrompt: prompt, userPrompt: JSON.stringify(wire),
-      decisions: { questions, threshold: 0.5 },
+      decisions: { questions, threshold: 0.8 },
       outputSchemaName: 'vocabulary_default_useful_selection_v2', outputSchema: schema,
       reasoningEffort: null, maxOutputTokens: 0, temperature: null, timeoutMs, cachePrompt: true,
       invocationActor: { kind: 'service', serviceId: VOCABULARY_SENSE_SERVICE },
       provenance: { workflowId: context.workflowId, attemptNumber: context.attemptNumber,
-        stepName: 'default_useful_selection', promptName: 'vocabulary-default-useful-selection',
-        promptVersion: '8', schemaVersion: '2', inputProjectionVersion: 'canonical-inventory-local-senses-v3' },
+        stepName: 'default_useful_selection', promptName: 'vocabulary-default-useful-decisions',
+        promptVersion: '1', schemaVersion: '2', inputProjectionVersion: 'canonical-inventory-local-senses-v3' },
     }, {
       apiKey: environment.OPENAI_API_KEY?.trim() ?? '', baseUrl: environment.OPENAI_BASE_URL?.trim() || null,
       onInvocationStarted(id) { startedId = id; context.onInvocation(id); },

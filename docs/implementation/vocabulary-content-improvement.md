@@ -571,7 +571,7 @@ standalone selector sends the complete inventory and shared editorial guidance t
 OpenAI Decisions. A named predicate asks about each call-local sense ID, using
 the [selection prompt](../../server/vocabulary/reflection-prompts/default-useful-decisions.md).
 The selector validates the complete response and maps IDs with a probability of
-at least 0.50 back to their canonical identities. A refusal or missing answer
+at least 0.80 back to their canonical identities. A refusal or missing answer
 fails the attempt. Teaching source mappings remain preparation prerequisites;
 their absence or staleness does not block default
 selection over an established canonical inventory. The selector cannot rewrite labels, notes, sense versions or

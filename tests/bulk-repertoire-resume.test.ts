@@ -18,7 +18,7 @@ const snapshot:BulkWordSnapshot={word:{wordId:'word',hanzi:'你好',traditional:
   coverage:{wordId:'word',version:1,defaultUsefulSenseIds:['sense'],excludedSenseIds:[]},hasBootstrap:false,fallbacks:[]};
 const adapter:ProviderAdapter={id:'openai',defaultBaseUrl:'',apiKeyEnvironmentVariable:'',structuredOutputMode:'json_schema',async run(request){
   if(request.decisions) return parseResponseForRequest('openai','json_schema',request,{
-    model:'gpt-6-luna',answers:[{name:'s1',type:'predicate',probability:.75}],
+    model:'gpt-6-luna',answers:[{name:'s1',type:'predicate',probability:.8}],
     usage:{input_tokens:50,output_tokens:0,total_tokens:50},
   });
   const output=request.outputSchemaName==='vocabulary_default_useful_selection_v1'?{senseIds:['s1']}
