@@ -1,5 +1,4 @@
 import assert from 'node:assert/strict';
-import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -2114,23 +2113,6 @@ describe('reflection application adapters', { concurrency: false }, () => {
     assert.equal(countRows('production_cues'), 0);
     assert.equal(countRows('operator_reflection_cue_recoveries'), 0);
     assert.deepEqual(sqlite.prepare('SELECT * FROM study_attempt_events').all(), attempts);
-  });
-
-  test('the host command previews without applying and recovers only the confirmed plan', () => {
-    seedFailedAcceptedCorrectCueRepair('cli-recovery');
-    const command = (...args: string[]) => JSON.parse(execFileSync(process.execPath,
-      ['--import', 'tsx', 'scripts/recover-correct-cue-repairs.ts',
-        `--data-dir=${dataDir}`, '--learner-id=test-learner', ...args],
-      { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }));
-    const plan = command();
-    assert.deepEqual(plan, dbModule.previewCorrectCueRepairRecovery());
-    assert.equal(dbModule.getReflectionInvocation('cli-recovery').application.state.kind, 'failed');
-    assert.equal(countRows('production_cues'), 0);
-    quiesceCueRecovery();
-    const result = command('--apply=true', '--actor-id=cli-operator', `--confirm-plan=${plan.digest}`);
-    assert.deepEqual(result.recoveredInvocationIds, ['cli-recovery']);
-    assert.equal(dbModule.getReflectionInvocation('cli-recovery').application.state.kind, 'applied');
-    assert.equal(sqlite.prepare('SELECT actor_id FROM operator_reflection_cue_recoveries').get()?.actor_id, 'cli-operator');
   });
 
   test('does not expose another learner\'s recovery candidates', () => {

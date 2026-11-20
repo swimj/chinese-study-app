@@ -446,9 +446,8 @@ snapshot to conceal gaps. Optional synthetic cases belong in a separate fixture.
 
 The existing hosted smoke account is useful for authenticated deployment checks,
 but `hosted:smoke` only reads vocabulary statistics. It does not exercise session
-completion. The legacy `hosted:provision-review-test` helper writes old learner
-state and must not be used to provision a new-runtime rehearsal session after
-cutover. A scripted end-to-end migrated-copy session rehearsal is not yet supplied;
+completion. The legacy `hosted:provision-review-test` helper, which wrote old
+learner state, has been removed. A scripted end-to-end migrated-copy session rehearsal is not yet supplied;
 the checks above currently require a dedicated harness or a recorded manual run.
 
 Migration `0054_vocabulary_provider_retry_routing` retains preparation retry

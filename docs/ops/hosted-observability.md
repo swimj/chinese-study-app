@@ -150,15 +150,7 @@ the complete submitted payload; treat it as private operational evidence.
 Read recent records without opening or copying the database:
 
 ```bash
-fly ssh console --app <app-name> --command \
-  'npm run --silent hosted:inspect-study-commits -- --data-dir=/data --limit=20'
-```
-
-If the learner supplied a diagnostic id, select that record directly:
-
-```bash
-fly ssh console --app <app-name> --command \
-  'npm run --silent hosted:inspect-study-commits -- --data-dir=/data --diagnostic-id=<id>'
+fly ssh console --app <app-name> --command 'tail -n 20 /data/study-commit-diagnostics.jsonl'
 ```
 
 The file survives an application restart, but it is not part of the database

@@ -1,9 +1,8 @@
 import * as db from '../db.ts';
 import { wordContentFixtures, authoredReviewFixture, authoredDefinitionFixture } from '../../src/features/introduction-lab/samples.ts';
 import { annotationWords } from './ui-annotation-data.ts';
-import { isPureCueSessionReviewItem } from '../../src/domain/study-actions.ts';
 
-/** Only used by the fresh-directory fixture command, never application startup. */
+/** Seeds the starting word states that the vocabulary fixture command imports; never used at application startup. */
 export function prepareUiAnnotationFixtures(now: Date) {
   if (db.dbConfig.mode !== 'dev' || db.dbConfig.authMode !== 'trusted_local' || db.dbConfig.studyProfile !== 'mandarin') {
     throw new Error('UI annotation fixtures require trusted-local Mandarin development mode');
@@ -25,22 +24,6 @@ export function prepareUiAnnotationFixtures(now: Date) {
       { exercise: authoredDefinitionFixture, cueType: 'definition_gloss', supplement: null },
     ], 'authored-dev-fixture');
     seedHomeContent(now);
-    const issues = db.validateStudySchedulerStateInvariants();
-    if (issues.length) throw new Error(`Fixture scheduler invariants failed: ${JSON.stringify(issues)}`);
-    const buckets = db.getSessionPayload(timestamp.slice(0, 10), { random: () => 0.5 }).buckets;
-    for (const wordId of annotationWords.introduction) {
-      if (!buckets.unstudied.some(word => word.id === wordId) || !buckets.introductions?.[wordId]) {
-        throw new Error(`Introduction fixture not served: ${wordId}`);
-      }
-    }
-    for (const wordId of annotationWords.learning) {
-      if (!buckets.learning.some(word => word.id === wordId) || !buckets.learningRehearsals?.[wordId]) {
-        throw new Error(`Learning fixture not served: ${wordId}`);
-      }
-    }
-    if (!buckets.review.some(item => !isPureCueSessionReviewItem(item) && item.targetWordId === annotationWords.review)) {
-      throw new Error('Due review fixture not served');
-    }
     return { fixtureVersion: 1, preparedAt: timestamp, learnerId: 'dev-learner', words: annotationWords,
       connectionsSessionId: 'ui-annotations-sample-session', connectionCount: 5, samplePostCount: 2 };
   });
