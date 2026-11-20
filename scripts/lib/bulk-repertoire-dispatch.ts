@@ -93,7 +93,9 @@ export function createBulkDispatcher(options: {
   const metadata = { id: 'openai', defaultBaseUrl: 'https://api.openai.com/v1', apiKeyEnvironmentVariable: 'OPENAI_API_KEY', structuredOutputMode: 'json_schema' as const };
   const adapter: ProviderAdapter = { ...metadata, async run(request, config) {
     // A conservative character estimate plus maximum completion tokens reserves capacity.
-    const tokens = Math.ceil((request.systemPrompt.length + request.userPrompt.length + JSON.stringify(request.outputSchema).length) / 3) + request.maxOutputTokens;
+    const tokens = request.decisions
+      ? Math.ceil((request.systemPrompt.length + request.userPrompt.length + JSON.stringify(request.decisions.questions).length) / 3)
+      : Math.ceil((request.systemPrompt.length + request.userPrompt.length + JSON.stringify(request.outputSchema).length) / 3) + request.maxOutputTokens;
     for (let attempt = 1; ; attempt++) {
       await new Promise<void>(resolve => { pending.push({ model: request.model, tokens, resolve }); pump(); });
       const started = now(), startedAt = new Date(started).toISOString();

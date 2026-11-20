@@ -64,6 +64,15 @@ test('preview is read-only; repair matches live pricing, retains evidence and re
   assert.deepEqual(rows(), repaired);
 });
 
+test('repairs Decisions spend using input and cache rates even when the response reports output tokens', () => {
+  insert('decisions', { usage: { input_tokens: 1000, output_tokens: 100,
+    input_tokens_details: { cached_tokens: 200, cache_write_tokens: 300 } } });
+  sql.prepare('UPDATE model_invocations SET settings_json=? WHERE id=?').run(JSON.stringify({ api: 'decisions' }), 'decisions');
+  const [candidate] = previewLunaInvocationCostBackfill(sql).candidates;
+  assert.equal(candidate!.spendUsd, 0.0000895);
+  assert.equal(candidate!.pricing.id, 'openai-gpt-6-luna-decisions-short-context-2026-11-20');
+});
+
 test('preserves known and running costs; skips missing, malformed, unsupported and long-context usage', () => {
   insert('known-zero', { cost: 0 });
   insert('known-estimate', { cost: 0.5, pricing: { id: 'historical' } });

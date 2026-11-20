@@ -65,7 +65,10 @@ to a larger run. There is no CLI spending cap; limit and concurrency are not cos
 guarantees.
 
 The ordinary inventory and useful-selection providers build and validate the
-prerequisite calls. Known inventories/defaults are reused. Partial inventories
+prerequisite calls. The run's model and reasoning effort apply to inventory and
+exercise generation. An established inventory with unknown defaults uses
+`gpt-6-luna` on the Decisions API for sense selection. Known inventories/defaults
+are reused. Partial inventories
 need operator review. An explicit empty selection remains empty. General
 repertoire uses canonical sense evidence with the shared general-exercise prompt,
 schema, local sense references and validation. The `result.json` in each numbered
@@ -101,6 +104,10 @@ without provider calls; unfinished stages can make new paid calls.
 A retained successful attempt can recover a missing stage file. Concurrent runs
 are excluded by `run.lock`. After verifying that its owning local process is dead,
 `--recover-run-lock` permits recovery.
+
+For older runs, a retained successful Chat Completions selector response replays
+under its original prompt and model. If that dispatch has an unknown outcome,
+`--retry-uncertain` authorizes a fresh Decisions call in the same run directory.
 An uncertain attempt blocks another dispatch of that request unless
 `--retry-uncertain` is supplied; other words can continue. Inspect retained
 evidence before opting in because that retry may incur duplicate provider spend.

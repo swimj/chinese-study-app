@@ -6,7 +6,8 @@ import { bulkRepertoireBlockers } from './bulk-repertoire-selection.ts';
 import { getHostedServiceControls } from './hosted-operations.ts';
 import { createVocabularyContent, getVocabularySenses, getVocabularySenseCatalog, emitBackendEvent } from './vocabulary-content.ts';
 import { ensureVocabularySenses, createVocabularySenseProvider, VOCABULARY_SENSE_SERVICE } from '../vocabulary/sense-readiness.ts';
-import { ensureVocabularyDefaultUsefulSelection, createUsefulSelectionProvider } from '../vocabulary/default-useful-selection.ts';
+import { ensureVocabularyDefaultUsefulSelection } from '../vocabulary/default-useful-selection.ts';
+import { bulkUsefulSelectionProvider } from '../vocabulary/bulk-selection-replay.ts';
 import { resolveVocabularySenseCoverage } from './vocabulary-sense-coverage.ts';
 import { generalExerciseContent } from '../vocabulary/general-exercise-content.ts';
 import { GENERAL_EXERCISE_CONTRACT, normalizeGeneralExerciseReferences, validateGeneralExerciseOutput, generalExerciseInvocation } from '../vocabulary/general-exercise-authoring.ts';
@@ -14,19 +15,17 @@ import { canonicalExerciseSource } from '../vocabulary/canonical-exercise-source
 import { startServiceModelInvocation, recordServiceModelInvocationResponseSnapshot, recordServiceModelInvocationSpend, finishServiceModelInvocation } from './model-invocations.ts';
 import { linkVocabularyInvocationContent, linkVocabularyInvocationSense } from './vocabulary-provenance.ts';
 import { costForBulkResult } from '../llm/bulk-repertoire-pricing.ts';
-import { requestBody } from '../llm/openai-compatible.ts';
+import { openAiInvocation, requestBody } from '../llm/openai-compatible.ts';
 import type { ProviderAdapter } from '../llm/types.ts';
 import { BULK_REPERTOIRE_APPLIED, type BulkRepertoireReceipt } from './bulk-repertoire-state.ts';
 
 const serviceId='vocabulary-bulk-repertoire';
 function importCall(call:BulkCall):{id:string;serviceId:string} {
   const request=call.request,owner=request.invocationActor?.serviceId??serviceId;
-  const id=startServiceModelInvocation({provider:'openai',model:request.model,invocationType:request.outputSchemaName,serviceId:owner,
-    provenance:{...request.provenance,promptTemplate:request.systemPrompt,schemaName:request.outputSchemaName,schema:request.outputSchema,
-      settings:{reasoningEffort:request.reasoningEffort,maxOutputTokens:request.maxOutputTokens,temperature:request.temperature,timeoutMs:request.timeoutMs,cachePrompt:request.cachePrompt},
-      requestSnapshot:requestBody(request,'json_schema','max_completion_tokens',undefined)}});
+  const body = requestBody(request,'json_schema','max_completion_tokens',undefined);
+  const id = startServiceModelInvocation({ ...openAiInvocation('openai', request, body), serviceId: owner });
   recordServiceModelInvocationResponseSnapshot(id,owner,call.result.rawResponse);
-  recordServiceModelInvocationSpend(id,owner,call.cost??costForBulkResult(call.result));
+  recordServiceModelInvocationSpend(id,owner,call.cost??costForBulkResult(call.result,request));
   finishServiceModelInvocation(id,owner,'completed',call.latencyMs);
   // Imported observations keep their actual execution time, not the import time.
   getDb().prepare('UPDATE model_invocations SET timestamp=?,finished_at=? WHERE id=?').run(call.startedAt,call.finishedAt,id);
@@ -63,7 +62,7 @@ export async function applyBulkRepertoireWord(result:BulkWordResult,options:{ope
         const call=byStep.get(step);if(!call)throw new Error('Missing retained prerequisite response');
         // Workflow/attempt metadata changes when publishing; linguistic input and contract must not.
         if(request.systemPrompt!==call.request.systemPrompt||request.userPrompt!==call.request.userPrompt
-          ||bulkHash(request.outputSchema)!==bulkHash(call.request.outputSchema))throw new Error('Prerequisite input changed');
+          ||!isDeepStrictEqual(request.decisions,call.request.decisions)||bulkHash(request.outputSchema)!==bulkHash(call.request.outputSchema))throw new Error('Prerequisite input changed');
         const imported=importCall(call);invocationIds.push(imported.id);
         return {...call.result,invocationId:imported.id};
       }};
@@ -71,7 +70,9 @@ export async function applyBulkRepertoireWord(result:BulkWordResult,options:{ope
     const environment={OPENAI_API_KEY:'offline-replay'};
     const workflowId=`bulk-apply:${options.operationId}:${wordId}`;
     await ensureVocabularySenses(wordId,{workflowId,provider:createVocabularySenseProvider({environment,adapter:replayAdapter('sense_inventory')})});
-    await ensureVocabularyDefaultUsefulSelection(wordId,{workflowId,provider:createUsefulSelectionProvider({environment,adapter:replayAdapter('default_useful_selection')})});
+    const selection = bulkUsefulSelectionProvider({ environment, adapter: replayAdapter('default_useful_selection') },
+      byStep.get('default_useful_selection')?.request);
+    await ensureVocabularyDefaultUsefulSelection(wordId,{workflowId,provider:selection});
     const current=getVocabularySenses(wordId).filter(sense=>sense.status==='active');
     const original=result.snapshot.catalog.establishedAt===null
       ? result.source.uses.map(use=>{

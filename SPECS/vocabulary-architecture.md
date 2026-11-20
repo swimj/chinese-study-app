@@ -257,6 +257,12 @@ Unknown defaults initialize asynchronously when needed. Every established nonemp
 inventory receives a selector decision over existing sense IDs, including senses
 imported from teaching. Teaching provenance does not establish default usefulness,
 and missing or stale teaching links do not block selection over canonical senses.
+For each candidate, consider what the target itself contributes in the supplied
+examples. A warning about a rear-end collision demonstrates the collision sense
+of 追尾 even when the warning also describes following too closely. The passive
+被解雇 illustrates the same dismissal verb as 解雇. Surrounding grammar can also
+reveal a distinct, useful construction of the target. The decision is whether
+that entry merits its own place in default teaching.
 The selector cannot create or rewrite senses. Existing default selections are
 preserved. An established empty inventory resolves unknown defaults to `[]`
 without a selector call. A nonempty inventory whose model recommendation selects

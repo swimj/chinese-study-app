@@ -566,13 +566,21 @@ finding indicates a suspect inventory. It retains the inventory, stores its reco
 usefulness unknown for operator review. Mapping can still improve a single use.
 
 `ensureVocabularyDefaultUsefulSelection` conditionally initializes unknown defaults.
-Every established nonempty inventory uses `default-useful-selection.md`, including
-teaching-imported senses. The prompt adapts the inventory brief's full editorial
-reasoning and only returns existing sense IDs. Teaching source mappings remain
-preparation prerequisites; their absence or staleness does not block default
+For an established nonempty inventory, including teaching-imported senses, the
+standalone selector sends the complete inventory and shared editorial guidance to
+OpenAI Decisions. A named predicate asks about each call-local sense ID, using
+the [selection prompt](../../server/vocabulary/reflection-prompts/default-useful-decisions.md).
+The selector validates the complete response and maps IDs with a probability of
+at least 0.50 back to their canonical identities. A refusal or missing answer
+fails the attempt. Teaching source mappings remain preparation prerequisites;
+their absence or staleness does not block default
 selection over an established canonical inventory. The selector cannot rewrite labels, notes, sense versions or
 inventory membership. An operator's concurrent selection wins; the recommendation
 remains auditable. Explicit `[]` is preserved and suppresses unknown-selection findings.
+
+The [Decisions trial](../evaluation/trials/2026-11-20-default-sense-decisions.md)
+records the prompt and threshold comparisons, representative selections and
+remaining editorial disagreements.
 
 `vocabulary_default_selection_readiness` gives the selector its own lease and
 bounded retry cycle. Inventory and selector attempts share the attempt journal,

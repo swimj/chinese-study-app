@@ -6,7 +6,7 @@ import path from 'node:path';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { bulkHash, generateBulkWord, verifyBulkWord, type BulkWordSnapshot } from '../server/vocabulary/bulk-repertoire.ts';
-import { parseResponse } from '../server/llm/openai-compatible.ts';
+import { parseResponse, parseResponseForRequest } from '../server/llm/openai-compatible.ts';
 import type { ProviderAdapter } from '../server/llm/types.ts';
 import { reportBulkRepertoire } from '../scripts/lib/bulk-repertoire-report.ts';
 import { costForBulkResult } from '../server/llm/bulk-repertoire-pricing.ts';
@@ -16,17 +16,25 @@ const snapshot:BulkWordSnapshot={word:{wordId:'word',hanzi:'你好',traditional:
   catalog:{wordId:'word',version:1,establishedAt:'2026-01-01T00:00:00.000Z'},
   senses:[{wordId:'word',senseId:'sense',version:1,status:'active',description:{label:'greeting',notes:[]},createdAt:'2026-01-01T00:00:00.000Z',updatedAt:'2026-01-01T00:00:00.000Z'}],
   coverage:{wordId:'word',version:1,defaultUsefulSenseIds:['sense'],excludedSenseIds:[]},hasBootstrap:false,fallbacks:[]};
-const adapter:ProviderAdapter={id:'openai',defaultBaseUrl:'',apiKeyEnvironmentVariable:'',structuredOutputMode:'json_schema',async run(){
-  return parseResponse('openai','json_schema',{id:'test-response',model:'gpt-6-sol',choices:[{message:{content:JSON.stringify({exercises:[{id:'one',sourceUseId:'s1',stimulus:{kind:'direct_text',text:'Hello.'},teachingNote:null}]})},finish_reason:'stop'}],usage:{prompt_tokens:100,completion_tokens:30,total_tokens:130}});
+const adapter:ProviderAdapter={id:'openai',defaultBaseUrl:'',apiKeyEnvironmentVariable:'',structuredOutputMode:'json_schema',async run(request){
+  if(request.decisions) return parseResponseForRequest('openai','json_schema',request,{
+    model:'gpt-6-luna',answers:[{name:'s1',type:'predicate',probability:.75}],
+    usage:{input_tokens:50,output_tokens:0,total_tokens:50},
+  });
+  const output=request.outputSchemaName==='vocabulary_default_useful_selection_v1'?{senseIds:['s1']}
+    :{exercises:[{id:'one',sourceUseId:'s1',stimulus:{kind:'direct_text',text:'Hello.'},teachingNote:null}]};
+  return parseResponse('openai','json_schema',{id:'test-response',model:'gpt-6-sol',choices:[{message:{content:JSON.stringify(output)},finish_reason:'stop'}],usage:{prompt_tokens:100,completion_tokens:30,total_tokens:130}});
 }};
-async function fixture(){
-  const root=await fs.mkdtemp(path.join(os.tmpdir(),'bulk-resume-')),directory=path.join(root,'run'),manifest={version:1,words:[{wordId:'word',snapshot}]};
+async function fixture(wordSnapshot=snapshot,legacySelection=false){
+  const root=await fs.mkdtemp(path.join(os.tmpdir(),'bulk-resume-')),directory=path.join(root,'run'),manifest={version:1,words:[{wordId:'word',snapshot:wordSnapshot}]};
   const configuration={version:1,inputHash:bulkHash(manifest),wordIds:['word'],model:'gpt-6-sol',reasoningEffort:'high'};
-  const result=await generateBulkWord(snapshot,{model:'gpt-6-sol',reasoningEffort:'high',adapter,apiKey:'fake',baseUrl:null,workflowId:`bulk:${configuration.inputHash}:gpt-6-sol:high:word`});
+  const retainedSelectionRequest=legacySelection?{outputSchemaName:'vocabulary_default_useful_selection_v1',provenance:{promptVersion:'6'},
+    systemPrompt:await fs.readFile(new URL('../artifacts/invocation-prompts/b3d097da2dd3acb87fcc1480214b4738405078eba92589d970976fd44bd141fa.txt',import.meta.url),'utf8')}:undefined;
+  const result=await generateBulkWord(wordSnapshot,{retainedSelectionRequest,model:'gpt-6-sol',reasoningEffort:'high',adapter,apiKey:'fake',baseUrl:null,workflowId:`bulk:${configuration.inputHash}:gpt-6-sol:high:word`});
   await fs.mkdir(path.join(directory,'0000'),{recursive:true});await fs.mkdir(path.join(directory,'attempts'));
   const save=async(file:string,value:unknown)=>fs.writeFile(path.join(directory,file),JSON.stringify(value));
   await fs.writeFile(path.join(root,'manifest.json'),JSON.stringify(manifest));await save('configuration.json',configuration);
-  const run=()=>exec(process.execPath,['--import','tsx','scripts/bulk-repertoire.ts','generate',`--input=${root}/manifest.json`,`--out=${directory}`,'--limit=1','--allow-provider-calls'],
+  const run=(...extra:string[])=>exec(process.execPath,['--import','tsx','scripts/bulk-repertoire.ts','generate',`--input=${root}/manifest.json`,`--out=${directory}`,'--limit=1','--allow-provider-calls',...extra],
     {env:{...process.env,OPENAI_API_KEY:'fake',OPENAI_BASE_URL:'http://127.0.0.1:1',APP_USE_LOCAL_PROVIDER_PROXY:'false'}});
   return {root,directory,result,save,run};
 }
@@ -37,6 +45,57 @@ test('resume recovers a retained paid success without a stage file or a network 
     const saved=JSON.parse(await fs.readFile(path.join(f.directory,'0000/result.json'),'utf8'));await verifyBulkWord(saved);
     assert.equal(saved.calls[0].result.responseId,'test-response');
   }finally{await fs.rm(f.root,{recursive:true,force:true});}
+});
+test('resume recovers the raw Decisions response, retains its cost and never redispatches the stage',async()=>{
+  const f=await fixture({...snapshot,coverage:{...snapshot.coverage,defaultUsefulSenseIds:null}});
+  try {
+    const [selection,repertoire]=f.result.calls;assert.ok(selection!.request.decisions);
+    await fs.mkdir(path.join(f.directory,'responses'));
+    await f.save('responses/selection.json',{attemptId:'paid-selection',request:selection!.request,attempt:1,
+      startedAt:selection!.startedAt,receivedAt:selection!.finishedAt,responseStatus:200,body:selection!.result.rawResponse});
+    await f.save('attempts/repertoire.json',{...repertoire,attempt:1});
+    const output=await f.run();assert.match(output.stdout,/"completed":1/);
+    const retained=JSON.parse(await fs.readFile(path.join(f.directory,'0000/result.json'),'utf8'));await verifyBulkWord(retained);
+    assert.equal(retained.calls[0].result.structuredOutputMode,'predicates');
+    const report=await reportBulkRepertoire(f.directory);
+    const observed=report.calls.find(call=>call.stage==='default_useful_selection')!;
+    assert.equal(observed.model,'gpt-6-luna');assert.equal(observed.spendUsd,50*.10/1e6);
+  } finally {await fs.rm(f.root,{recursive:true,force:true});}
+});
+
+test('resume recovers a historical v6 chat selection from its paid response with its original request and cost',async()=>{
+  const f=await fixture({...snapshot,coverage:{...snapshot.coverage,defaultUsefulSenseIds:null}},true);
+  try {
+    const [selection,repertoire]=f.result.calls;
+    await fs.mkdir(path.join(f.directory,'responses'));
+    await f.save('responses/chat-selection.json',{attemptId:'old-chat',request:selection!.request,attempt:1,
+      startedAt:selection!.startedAt,receivedAt:selection!.finishedAt,responseStatus:200,body:selection!.result.rawResponse});
+    await f.save('attempts/repertoire.json',{...repertoire,attempt:1});
+    const output=await f.run();assert.match(output.stdout,/"completed":1/);
+    const retained=JSON.parse(await fs.readFile(path.join(f.directory,'0000/result.json'),'utf8'));
+    await verifyBulkWord(retained);
+    assert.deepEqual(retained.calls[0].request,selection!.request);
+    assert.deepEqual(retained.calls[0].cost,selection!.cost);
+  } finally {await fs.rm(f.root,{recursive:true,force:true});}
+});
+
+test('an uncertain historical chat selection requires explicit retry before switching the stage to Decisions',async()=>{
+  const f=await fixture({...snapshot,coverage:{...snapshot.coverage,defaultUsefulSenseIds:null}});
+  try {
+    const request={...f.result.calls[0]!.request,decisions:undefined,outputSchemaName:'vocabulary_default_useful_selection_v1'};
+    await fs.mkdir(path.join(f.directory,'starts'));
+    await f.save('starts/chat.json',{attemptId:'uncertain-chat',request,attempt:1,startedAt:f.result.calls[0]!.startedAt});
+    await f.save('0000/call-0.json.started',{request});
+    await assert.rejects(f.run());
+    assert.equal((await fs.readdir(path.join(f.directory,'attempts'))).length,0);
+    // This fixture's endpoint is deliberately unavailable. The recorded attempt proves which API ran.
+    await assert.rejects(f.run('--retry-uncertain'));
+    const attempts=await fs.readdir(path.join(f.directory,'attempts'));
+    assert.equal(attempts.length,1);
+    const attempted=JSON.parse(await fs.readFile(path.join(f.directory,'attempts',attempts[0]!),'utf8'));
+    assert.ok(attempted.request.decisions);
+    assert.equal(attempted.request.model,'gpt-6-luna');
+  } finally {await fs.rm(f.root,{recursive:true,force:true});}
 });
 test('resume blocks an uncertain dispatched request rather than spending again',async()=>{
   const f=await fixture();try{
