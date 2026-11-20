@@ -11,6 +11,7 @@ import express from 'express';
 import { registerVocabularyStudyRoutes } from '../server/vocabulary/study-routes.ts';
 import { setDb } from '../server/db/connection.ts';
 import { runWithLearnerId } from '../server/db/learner-context.ts';
+import { createUsefulSelectionProvider, ensureVocabularyDefaultUsefulSelection } from '../server/vocabulary/default-useful-selection.ts';
 import { createVocabularySenseProvider, ensureVocabularySenses, VOCABULARY_SENSE_MODEL } from '../server/vocabulary/sense-readiness.ts';
 import { createOpenAiCompatibleAdapter } from '../server/llm/openai-compatible.ts';
 import { fetchImplementationForProvider } from '../server/llm/proxy-fetch.ts';
@@ -113,6 +114,7 @@ const migrations = ['0039_vocabulary_content.sql', '0025_model_invocations.sql',
   '0042_vocabulary_sessions.sql', '0043_vocabulary_import.sql', '0044_vocabulary_reflection.sql', '0045_vocabulary_provenance_links.sql',
   '0046_vocabulary_pure_cue_guards.sql', '0023_session_debrief.sql', '0048_vocabulary_connections.sql',
   '0049_vocabulary_sense_readiness.sql', '0050_vocabulary_improvement_admission.sql', '0051_vocabulary_pure_cue_promotion.sql', '0053_vocabulary_second_opinions.sql', '0054_vocabulary_provider_retry_routing.sql',
+  '0062_vocabulary_sense_coverage.sql', '0064_vocabulary_default_useful_senses.sql',
   '0079_share_session_context.sql', '0080_retain_invocation_prompts.sql', '0081_reference_dispatch_completion.sql', '0082_session_history_guards.sql', '0083_reference_completion_actions.sql', '0084_reference_reflection_report.sql'];
 function initialize(sql: DatabaseSync): void {
   sql.exec(`PRAGMA foreign_keys=ON;
@@ -231,6 +233,7 @@ function exportEvidence(sql: DatabaseSync): void {
     'reflection_cases', 'reflection_case_evidence', 'vocabulary_reflection_jobs', 'model_invocations', 'teacher_judgments', 'learner_messages',
     'learner_state_effects', 'content_proposals', 'proposal_revision_history', 'proposal_content_bases', 'content_revision_history',
     'learner_word_schedules', 'learner_pure_cue_schedules', 'vocabulary_improvement_stages', 'vocabulary_sense_readiness',
+    'vocabulary_default_selection_readiness', 'vocabulary_sense_coverage_history', 'vocabulary_word_sense_coverage',
     'vocabulary_word_catalogs', 'senses', 'sense_revision_history', 'legacy_sense_imports', 'invocation_content_links', 'invocation_sense_links',
     'content_items', 'content_words', 'exercise_answer_words', 'backend_events'];
   const present = new Set(sql.prepare("SELECT name FROM sqlite_master WHERE type='table'").all().map(row => String(row.name)));
@@ -337,7 +340,9 @@ async function main(): Promise<void> {
       } };
     };
     const senseProvider = createVocabularySenseProvider({ adapter: adapter(180_000) });
+    const selector = createUsefulSelectionProvider({ adapter: adapter(180_000) });
     const provider = createVocabularyReflectionProvider({ adapter: adapter(LUNA_REFLECTION_MODEL_CONFIG.timeoutMs),
+      ensureDefaults: (wordId, options) => ensureVocabularyDefaultUsefulSelection(wordId, { ...options, provider: selector }),
       ensureSenses: (wordId, options) => ensureVocabularySenses(wordId, { ...options, provider: senseProvider }) });
     assert(provider.isConfigured(), 'OPENAI_API_KEY is not configured');
     assert.equal(Number(sql.prepare("SELECT count(*) AS n FROM vocabulary_reflection_jobs WHERE status='running'").get()!.n), 0,

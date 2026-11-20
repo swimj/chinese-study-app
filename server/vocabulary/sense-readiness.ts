@@ -13,7 +13,7 @@ import { linkVocabularyInvocationSense } from '../db/vocabulary-provenance.ts';
 import { createOpenAiCompatibleAdapter } from '../llm/openai-compatible.ts';
 import { fetchImplementationForProvider } from '../llm/proxy-fetch.ts';
 import { invalidateServiceInvocation } from '../llm/invocation-ledger.ts';
-import { vocabularySenseInventorySchema as schema, validateVocabularySenseInventory, type VocabularySenseInventory as Inventory } from './sense-inventory-contract.ts';
+import { vocabularySenseInventorySchema as schema, vocabularySenseInventorySchemaName, validateVocabularySenseInventory, type VocabularySenseInventory as Inventory } from './sense-inventory-contract.ts';
 import { isOutputTruncationFinishReason, type ProviderAdapter } from '../llm/types.ts';
 
 export const VOCABULARY_SENSE_SERVICE = 'vocabulary-sense-readiness';
@@ -51,11 +51,11 @@ export function createVocabularySenseProvider(options: { environment?: NodeJS.Pr
     async generate(word, context) {
       if (!environment.OPENAI_API_KEY?.trim()) throw new VocabularySenseReadinessError('Sense provider is not configured');
       const result = await adapter.run({ model: VOCABULARY_SENSE_MODEL, reasoningEffort: 'high', systemPrompt: prompt,
-        userPrompt: JSON.stringify({ word: modelLexicalWord(word) }), outputSchemaName: 'vocabulary_sense_inventory_v3', outputSchema: schema,
+        userPrompt: JSON.stringify({ word: modelLexicalWord(word) }), outputSchemaName: vocabularySenseInventorySchemaName, outputSchema: schema,
         maxOutputTokens: 8000, temperature: null, timeoutMs, cachePrompt: true,
         invocationActor: { kind: 'service', serviceId: VOCABULARY_SENSE_SERVICE },
         provenance: { workflowId: context.workflowId, attemptNumber: context.attemptNumber, stepName: 'sense_inventory',
-          promptName: 'vocabulary-sense-inventory', promptVersion: '8', schemaVersion: '3', inputProjectionVersion: 'simplified-lexical-evidence-v3' } },
+          promptName: 'vocabulary-sense-inventory', promptVersion: '9', schemaVersion: '4', inputProjectionVersion: 'simplified-lexical-evidence-v3' } },
       { apiKey: environment.OPENAI_API_KEY.trim(), baseUrl: environment.OPENAI_BASE_URL?.trim() || null });
       context.onInvocation(result.invocationId);
       try {
@@ -131,7 +131,6 @@ export async function ensureVocabularySenses(wordId: string, options: {
     throw new VocabularySenseReadinessError('Sense readiness requires explicit operator retry');
   }
   let invocationId: string | null | undefined;
-  let retryable=true;
   try {
     const word = getSharedIntroductionLexicalWord(wordId)!;
     const output = await provider.generate(word,{ workflowId: options.workflowId,attemptNumber: attempt,
@@ -143,7 +142,6 @@ export async function ensureVocabularySenses(wordId: string, options: {
     try { inventory = validateInventory(output); }
     catch (error) { invalidateServiceInvocation(invocationId,VOCABULARY_SENSE_SERVICE); throw error; }
     // Publication races are retried under a new lease; valid output is not invalidated.
-    const {recordEmptyUsefulRecommendation}=await import('./default-useful-selection.ts');
     return atomic(() => {
       publishGuard(options);
       if (!db.prepare("SELECT 1 FROM vocabulary_sense_readiness WHERE word_id=? AND status='running' AND active_token=? AND expires_at>?").get(wordId,token,now())) {
@@ -151,24 +149,26 @@ export async function ensureVocabularySenses(wordId: string, options: {
       }
       if (getVocabularySenseCatalog(wordId).version !== catalog.version || JSON.stringify(getSharedIntroductionLexicalWord(wordId)) !== JSON.stringify(word)
         || getSharedWordIntroductionContent(wordId) !== null) throw new VocabularySenseReadinessError('Sense readiness source changed');
-      const selected:string[]=[];
-      for (const {defaultUseful,...description} of inventory.senses) {
+      for (const description of inventory.senses) {
         const sense = createVocabularySense({ wordId,description: { ...description,source: { kind: 'sense_inventory' } } },actor);
-        if(defaultUseful)selected.push(sense.senseId);
         if (invocationId != null) linkVocabularyInvocationSense({ invocationId,senseId: sense.senseId,senseVersion: sense.version,role: 'output' },actor);
       }
       establishVocabularySenseCatalog(wordId,getVocabularySenseCatalog(wordId).version,actor);
-      const currentCoverage=getVocabularyWordSenseCoverage(wordId);
-      const recommendation={invocationId:invocationId??null,workflowId:options.workflowId,attemptNumber:attempt,senseIds:selected};
-      emitBackendEvent({name:'vocabulary.default_selection.recommended',entityKind:'word',entityId:wordId,actorKind:'service',actorId:VOCABULARY_SENSE_SERVICE,data:{...recommendation,applied:currentCoverage.defaultUsefulSenseIds===null&&(selected.length>0||inventory.senses.length===0)}});
-      if(currentCoverage.defaultUsefulSenseIds===null){if(selected.length||inventory.senses.length===0)writeVocabularyDefaultUsefulSenses(wordId,currentCoverage.version,selected,{...actor,reason:recommendation});else recordEmptyUsefulRecommendation(wordId,options.workflowId,invocationId,'inventory');}
+      if (!inventory.senses.length) {
+        const coverage = getVocabularyWordSenseCoverage(wordId);
+        if (coverage.defaultUsefulSenseIds === null) {
+          writeVocabularyDefaultUsefulSenses(wordId, coverage.version, [], {
+            ...actor, reason: { source: 'empty_inventory', workflowId: options.workflowId, invocationId: invocationId ?? null },
+          });
+        }
+      }
       db.prepare("UPDATE vocabulary_sense_readiness SET status='ready',active_token=NULL,expires_at=NULL,last_error=NULL,updated_at=? WHERE word_id=? AND active_token=?")
         .run(now(),wordId,token);
       completePreparationAttempt(token,now());
       return { ...existing(wordId)!,source: 'generated' };
     });
   } catch (error) {
-    const retryAt=failPreparationAttempt('sense',wordId,token,now(),'generation_failed',{retryable});
+    const retryAt=failPreparationAttempt('sense',wordId,token,now(),'generation_failed',{retryable:true});
     if(retryAt)throw new VocabularySenseReadinessPending(retryAt);
     if(error instanceof VocabularySenseReadinessPending)throw error;
     const latest=existing(wordId);if(latest)return latest;

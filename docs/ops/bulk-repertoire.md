@@ -66,7 +66,7 @@ guarantees.
 
 The ordinary inventory and useful-selection providers build and validate the
 prerequisite calls. The run's model and reasoning effort apply to inventory and
-exercise generation. An established inventory with unknown defaults uses
+exercise generation. After inventory is available, whether reused or newly generated, unknown defaults use
 `gpt-6-luna` on the Decisions API for sense selection. Known inventories/defaults
 are reused. Partial inventories
 need operator review. An explicit empty selection remains empty. General
@@ -105,7 +105,8 @@ A retained successful attempt can recover a missing stage file. Concurrent runs
 are excluded by `run.lock`. After verifying that its owning local process is dead,
 `--recover-run-lock` permits recovery.
 
-For older runs, a retained successful Chat Completions selector response replays
+Older combined inventory responses replay both their senses and their saved default choices.
+A retained successful standalone Chat Completions selector response replays
 under its original prompt and model. If that dispatch has an unknown outcome,
 `--retry-uncertain` authorizes a fresh Decisions call in the same run directory.
 An uncertain attempt blocks another dispatch of that request unless

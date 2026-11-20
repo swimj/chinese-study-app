@@ -6,7 +6,8 @@ import { parseArgs } from 'node:util';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { inventoryHash, validateInventorySnapshot, checkInventoryReconciliation } from './lib/sense-inventory-reconciliation.ts';
-import { vocabularySenseInventorySchema, validateVocabularySenseInventory } from '../server/vocabulary/sense-inventory-contract.ts';
+import { legacyVocabularySenseInventorySchema, validateLegacyVocabularySenseInventory,
+  vocabularySenseInventorySchema, vocabularySenseInventorySchemaName, validateVocabularySenseInventory } from '../server/vocabulary/sense-inventory-contract.ts';
 import { validateJsonSchema } from '../server/llm/json-schema-validator.ts';
 import { createOpenAiCompatibleAdapter } from '../server/llm/openai-compatible.ts';
 import { fetchImplementationForProvider } from '../server/llm/proxy-fetch.ts';
@@ -98,7 +99,7 @@ if (positionals[0] === 'export') {
   const source = async (file: string): Promise<string> => revision ? execFileSync('git', ['show', `${resolvedRevision}:${file}`], { cwd: repository, encoding: 'utf8' }) : readFile(path.join(repository, file), 'utf8');
   const systemPrompt = await source('server/vocabulary/reflection-prompts/sense-inventory.md');
   const providerSource = await source('server/vocabulary/sense-readiness.ts');
-  const outputSchema = structuredClone(vocabularySenseInventorySchema);
+  const outputSchema = structuredClone(revision ? legacyVocabularySenseInventorySchema : vocabularySenseInventorySchema);
   if (revision) {
     // A supported historical contract is frozen explicitly, not silently translated.
     if (!providerSource.includes("outputSchemaName: 'vocabulary_sense_inventory_v2'") || !providerSource.includes('minItems: 1, maxItems: 16')) throw new Error('Only the historical v2 inventory schema is supported');
@@ -119,7 +120,7 @@ if (positionals[0] === 'export') {
     const caseDirectory = path.join(directory, String(index).padStart(3, '0'));
     await mkdir(caseDirectory, { mode: 0o700 });
     const request: ProviderRunRequest = { model: 'gpt-6-luna', reasoningEffort: 'high', systemPrompt,
-      userPrompt: JSON.stringify({ word: revision ? snapshot.word : modelLexicalWord(snapshot.word) }), outputSchemaName: revision ? 'vocabulary_sense_inventory_v2' : 'vocabulary_sense_inventory_v3', outputSchema,
+      userPrompt: JSON.stringify({ word: revision ? snapshot.word : modelLexicalWord(snapshot.word) }), outputSchemaName: revision ? 'vocabulary_sense_inventory_v2' : vocabularySenseInventorySchemaName, outputSchema,
       maxOutputTokens: 8000, temperature: null, timeoutMs: 180_000, cachePrompt: true };
     await save(path.join(caseDirectory, 'snapshot.json'), snapshot);
     await save(path.join(caseDirectory, 'request.json'), request);
@@ -132,7 +133,8 @@ if (positionals[0] === 'export') {
       const candidate: unknown = JSON.parse(result.rawText);
       const errors = validateJsonSchema(candidate, outputSchema);
       if (isOutputTruncationFinishReason(result.finishReason) || errors.length) throw new Error('Invalid inventory response');
-      validateVocabularySenseInventory(candidate);
+      if (revision) validateLegacyVocabularySenseInventory(candidate);
+      else validateVocabularySenseInventory(candidate);
       await save(path.join(caseDirectory, 'candidate.json'), candidate);
       await save(path.join(caseDirectory, 'judgment-template.json'), { snapshotSha256: inventoryHash(snapshot), candidateSha256: inventoryHash(candidate), reviewer: '', groups: [] });
       console.log(JSON.stringify({ wordId: snapshot.word.wordId, event: 'generated', semanticReviewRequired: true }));

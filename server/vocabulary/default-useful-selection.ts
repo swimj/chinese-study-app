@@ -80,7 +80,8 @@ export function defaultUsefulInitializationPlan(wordId:string):{kind:'known'|'em
   if(!senses.length)return {kind:'empty',senseIds:[]};
   return {kind:'selector',senseIds:senses.map(sense=>sense.senseId).sort()};
 }
-export function recordEmptyUsefulRecommendation(wordId:string,workflowId:string,invocationId:string|null|undefined,source:'inventory'|'selector'):void {
+function recordEmptyUsefulRecommendation(wordId:string,workflowId:string,invocationId:string|null|undefined):void {
+  const source='selector';
   const at=new Date().toISOString();
   getDb().prepare(`INSERT INTO vocabulary_default_selection_readiness(word_id,status,expected_catalog_version,workflow_id,invocation_id,recommendation_json,last_error,created_at,updated_at) VALUES (?,'failed',?,?,?,?,?,?,?)
     ON CONFLICT(word_id) DO UPDATE SET status='failed',active_token=NULL,expires_at=NULL,invocation_id=excluded.invocation_id,recommendation_json=excluded.recommendation_json,last_error=excluded.last_error,updated_at=excluded.updated_at`).run(wordId,getVocabularySenseCatalog(wordId).version,workflowId,invocationId??null,JSON.stringify({senseIds:[],source}),'The model selected no useful senses; operator selection is required.',at,at);
@@ -123,7 +124,7 @@ export async function ensureVocabularyDefaultUsefulSelection(wordId:string,optio
       const current=getVocabularyWordSenseCoverage(wordId);
       const recommendation={senseIds:ids,invocationId:invocationId??null,workflowId:options.workflowId,attemptNumber:attempt};
       emitBackendEvent({name:'vocabulary.default_selection.recommended',entityKind:'word',entityId:wordId,actorKind:'service',actorId:VOCABULARY_SENSE_SERVICE,data:{...recommendation,applied:current.defaultUsefulSenseIds===null&&ids.length>0}});
-      if(current.defaultUsefulSenseIds===null){if(!ids.length){recordEmptyUsefulRecommendation(wordId,options.workflowId,invocationId,'selector');needsOperator=true;}else writeVocabularyDefaultUsefulSenses(wordId,current.version,ids,{...actor,reason:recommendation});}
+      if(current.defaultUsefulSenseIds===null){if(!ids.length){recordEmptyUsefulRecommendation(wordId,options.workflowId,invocationId);needsOperator=true;}else writeVocabularyDefaultUsefulSenses(wordId,current.version,ids,{...actor,reason:recommendation});}
       if(!needsOperator)db.prepare("UPDATE vocabulary_default_selection_readiness SET status='ready',active_token=NULL,expires_at=NULL,recommendation_json=?,last_error=NULL,updated_at=? WHERE word_id=? AND active_token=?").run(JSON.stringify(recommendation),now(),wordId,token);
       if(needsOperator)db.prepare("UPDATE vocabulary_preparation_attempts SET finished_at=?,outcome='failed',diagnostic='No useful senses recommended; operator review required' WHERE attempt_id=? AND outcome IS NULL").run(now(),token);else completePreparationAttempt(token,now());return getVocabularyWordSenseCoverage(wordId);
     });

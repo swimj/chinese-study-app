@@ -5,10 +5,11 @@ import { snapshotBulkRepertoireWord } from './bulk-repertoire-snapshot.ts';
 import { bulkRepertoireBlockers } from './bulk-repertoire-selection.ts';
 import { getHostedServiceControls } from './hosted-operations.ts';
 import { createVocabularyContent, getVocabularySenses, getVocabularySenseCatalog, emitBackendEvent } from './vocabulary-content.ts';
-import { ensureVocabularySenses, createVocabularySenseProvider, VOCABULARY_SENSE_SERVICE } from '../vocabulary/sense-readiness.ts';
+import { ensureVocabularySenses, VOCABULARY_SENSE_SERVICE } from '../vocabulary/sense-readiness.ts';
 import { ensureVocabularyDefaultUsefulSelection } from '../vocabulary/default-useful-selection.ts';
+import { bulkInventoryProvider, bulkInventoryOutput, bulkGeneratedSenses } from '../vocabulary/bulk-inventory-replay.ts';
 import { bulkUsefulSelectionProvider } from '../vocabulary/bulk-selection-replay.ts';
-import { resolveVocabularySenseCoverage } from './vocabulary-sense-coverage.ts';
+import { getVocabularyWordSenseCoverage, resolveVocabularySenseCoverage, writeVocabularyDefaultUsefulSenses } from './vocabulary-sense-coverage.ts';
 import { generalExerciseContent } from '../vocabulary/general-exercise-content.ts';
 import { GENERAL_EXERCISE_CONTRACT, normalizeGeneralExerciseReferences, validateGeneralExerciseOutput, generalExerciseInvocation } from '../vocabulary/general-exercise-authoring.ts';
 import { canonicalExerciseSource } from '../vocabulary/canonical-exercise-source.ts';
@@ -69,11 +70,32 @@ export async function applyBulkRepertoireWord(result:BulkWordResult,options:{ope
     }
     const environment={OPENAI_API_KEY:'offline-replay'};
     const workflowId=`bulk-apply:${options.operationId}:${wordId}`;
-    await ensureVocabularySenses(wordId,{workflowId,provider:createVocabularySenseProvider({environment,adapter:replayAdapter('sense_inventory')})});
+    const inventoryCall = byStep.get('sense_inventory');
+    await ensureVocabularySenses(wordId, { workflowId, provider: bulkInventoryProvider(
+      { environment, adapter: replayAdapter('sense_inventory') }, inventoryCall?.request) });
+    const current=getVocabularySenses(wordId).filter(sense=>sense.status==='active');
     const selection = bulkUsefulSelectionProvider({ environment, adapter: replayAdapter('default_useful_selection') },
       byStep.get('default_useful_selection')?.request);
-    await ensureVocabularyDefaultUsefulSelection(wordId,{workflowId,provider:selection});
-    const current=getVocabularySenses(wordId).filter(sense=>sense.status==='active');
+    if (inventoryCall) {
+      const { inventory, selectedLabels } = bulkInventoryOutput(JSON.parse(inventoryCall.result.rawText),
+        inventoryCall.request.outputSchemaName === 'vocabulary_sense_inventory_v3');
+      const ordered = bulkGeneratedSenses(wordId, inventory, current);
+      if (selectedLabels !== null) {
+        const coverage = getVocabularyWordSenseCoverage(wordId);
+        const ids = ordered.filter(sense => selectedLabels.includes(sense.description.label)).map(sense => sense.senseId);
+        const applied = coverage.defaultUsefulSenseIds === null;
+        const reason = { workflowId, attemptNumber: 1, invocationId: invocationIds[0]!, senseIds: ids };
+        emitBackendEvent({name:'vocabulary.default_selection.recommended',entityKind:'word',entityId:wordId,
+          actorKind:'service',actorId:VOCABULARY_SENSE_SERVICE,data:{...reason,applied}});
+        if (applied) writeVocabularyDefaultUsefulSenses(wordId,coverage.version,ids,{kind:'service',id:VOCABULARY_SENSE_SERVICE,reason});
+      } else {
+        await ensureVocabularyDefaultUsefulSelection(wordId, { workflowId, provider: {
+          ...selection, select: (input, context) => selection.select({ ...input, senses: ordered }, context),
+        } });
+      }
+    } else {
+      await ensureVocabularyDefaultUsefulSelection(wordId,{workflowId,provider:selection});
+    }
     const original=result.snapshot.catalog.establishedAt===null
       ? result.source.uses.map(use=>{
         const sense=current.find(sense=>typeof sense.description==='object'&&sense.description!==null&&!Array.isArray(sense.description)&&sense.description.label===use.label);

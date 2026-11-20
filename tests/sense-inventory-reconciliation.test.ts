@@ -13,7 +13,7 @@ const snapshot: InventorySnapshot = {
   coverage: { version: 2, defaultUsefulSenseIds: ['physical', 'compound'] },
   dependencies: { content: [{ contentId: 'exercise', version: 3, senseId: 'compound' }], stashed: [{ learnerId: 'learner', stateVersion: 8 }] },
 };
-const candidate = { senses: [{ label: 'Hang or droop downward', notes: [], defaultUseful: true }] };
+const candidate = { senses: [{ label: 'Hang or droop downward', notes: [] }] };
 function judgment(): ReconciliationJudgment {
   return { snapshotSha256: inventoryHash(snapshot), candidateSha256: inventoryHash(candidate), reviewer: 'semantic-reviewer', groups: [
     { existingSenseIds: ['physical'], candidateIndexes: [0], decision: 'revise', rationale: 'Same physical use, clearer label.' },
@@ -114,6 +114,8 @@ test('CLI export uses exact runtime lexical input and leaves the database unchan
     assert.deepEqual(JSON.parse(request.userPrompt), { word: {hanzi:'垂',pinyin:'chuí',meanings:['hang','droop']} });
     assert.equal(exported[0]!.word.wordId,'trial-word');
     assert.equal(exported[0]!.word.traditional,'垂');
+    assert.equal(request.outputSchemaName, 'vocabulary_sense_inventory_v4');
+    assert.deepEqual(request.outputSchema.properties.senses.items.required, ['label', 'notes']);
     assert.equal(request.outputSchema.properties.senses.minItems, 0);
     assert.equal(fs.existsSync(path.join(archive, 'prepared', '000', 'response.json')), false);
     // Exercise real revision reads without depending on the checkout's history.
@@ -132,6 +134,7 @@ test('CLI export uses exact runtime lexical input and leaves the database unchan
     assert.equal(historical.systemPrompt, systemPrompt);
     assert.equal(historical.outputSchemaName, 'vocabulary_sense_inventory_v2');
     assert.equal(historical.outputSchema.properties.senses.minItems, 1);
+    assert.deepEqual(historical.outputSchema.properties.senses.items.required, ['label', 'notes', 'defaultUseful']);
     const manifest = JSON.parse(fs.readFileSync(path.join(archive, 'historical', 'manifest.json'), 'utf8'));
     assert.equal(manifest.resolvedRevision, revision);
     assert.equal(manifest.source, 'git');

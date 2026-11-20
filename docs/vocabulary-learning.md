@@ -150,8 +150,8 @@ identity-level sense mappings. Later serving uses that retained material.
 catalog with zero active senses. The latter is a valid result and does not call
 the inventory provider again. `sense-inventory-contract.ts` accepts an empty
 `senses` array; readiness establishes the catalog and resolves unknown useful
-defaults to `[]`. A nonempty inventory with no selected defaults instead retains
-the operator-review recommendation.
+defaults to `[]`. A fresh nonempty inventory leaves unknown defaults for Decisions to initialize
+when needed. If Decisions selects no senses, its recommendation goes to operator review.
 
 `server/db/vocabulary-sense-eligibility.ts` supplies the shared empty-inventory
 check that excludes those words from new session admission, ordinary and pure-cue accepted answers, and contrast choices.
@@ -708,10 +708,10 @@ conditioned on that delivered material. A failed companion call preserves the
 successful introduction. No session waits for either workflow.
 
 For a wholly unprepared word with eligible selected senses, the pipeline uses
-five authoring calls: inventory/default selection, example enrichment,
-introduction, teaching exercises, and the independent general-practice pool.
-The first four establish a ready teaching repertoire; general practice is
-prepared after committed teaching completion. An empty inventory stops after
+six provider calls across the workflow. Inventory generation establishes the
+senses, Decisions selects defaults, and example enrichment, introduction and
+teaching exercises establish a ready teaching repertoire. After committed teaching
+completion, the sixth call authors the independent general-practice pool. An empty inventory stops after
 inventory generation. These are shared artifacts, not per-learner or per-session
 calls. The general v5 and teaching-exercise v2
 briefs come from the retained [editorial trials](implementation/vocabulary-prompt-handoff.md).
