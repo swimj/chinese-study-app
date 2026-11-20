@@ -116,7 +116,7 @@ const decisionUsage = { input_tokens: 1000, output_tokens: 7, total_tokens: 1007
 test('Decisions sends the shared inventory and one predicate per alias and applies the inclusive cutoff', async () => {
   inventory();
   installModelInvocationLedger();
-  const response = { model: 'gpt-6-luna', answers: [predicate('s1', 0.49), predicate('s2', 0.5)], usage: decisionUsage };
+  const response = { model: 'gpt-6-luna', answers: [predicate('s1', 0.7999), predicate('s2', 0.8)], usage: decisionUsage };
   let wireBody: string | undefined;
   const provider = decisionProvider(async (url, init) => {
     assert.equal(url, 'https://example.invalid/v1/decisions');
@@ -142,10 +142,12 @@ test('Decisions sends the shared inventory and one predicate per alias and appli
   const row = db.prepare('SELECT * FROM model_invocations').get()!;
   assert.equal(row.status, 'completed');
   assert.equal(row.invocation_type, 'vocabulary_default_useful_selection_v2');
+  assert.equal(row.prompt_name, 'vocabulary-default-useful-decisions');
+  assert.equal(row.prompt_version, '1');
   assert.equal(row.workflow_id, 'decision-run');
   assert.equal(readInvocationPromptEvidence(db, String(row.id)).requestJson, wireBody);
   assert.deepEqual(JSON.parse(String(row.response_snapshot_json)), response);
-  assert.deepEqual(JSON.parse(String(row.settings_json)), { api: 'decisions', threshold: 0.5, timeoutMs: 180000 });
+  assert.deepEqual(JSON.parse(String(row.settings_json)), { api: 'decisions', threshold: 0.8, timeoutMs: 180000 });
   assert.equal(row.spend_usd, 0.0000895);
   assert.equal(JSON.parse(String(row.pricing_json)).outputPerMillionUsd, 0);
   assert.equal(db.prepare('SELECT invocation_id FROM vocabulary_preparation_attempts').get()!.invocation_id, row.id);
@@ -179,7 +181,7 @@ for (const [label, answers] of Object.entries({
 test('all-negative Decisions answers retain the empty recommendation for the operator', async () => {
   inventory();
   installModelInvocationLedger();
-  const provider = decisionProvider(async () => Response.json({ answers: [predicate('s1', 0), predicate('s2', 0.49)] }));
+  const provider = decisionProvider(async () => Response.json({ answers: [predicate('s1', 0), predicate('s2', 0.79)] }));
   await assert.rejects(ensureVocabularyDefaultUsefulSelection('word', { workflowId: 'none', provider }), VocabularySenseSelectionRequired);
   assert.equal(getVocabularyWordSenseCoverage('word').defaultUsefulSenseIds, null);
   assert.equal(db.prepare('SELECT status FROM model_invocations').get()!.status, 'completed');
