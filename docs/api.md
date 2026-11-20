@@ -462,18 +462,20 @@ other stash by the same timestamp. Corpus frequency no longer ranks that list.
 `bump_count` is still written on overlay updates and is treated as zero/nonzero
 stash membership; the payload no longer includes approximate rank, percentile
 baseline, or bump-boosted effective priority.
-`POST /api/priority/unstudied/add-by-hanzi` still exact-matches `hanzi`, then
-for Mandarin also matches the punctuation-stripped lookup key used by
-production answers, and adds every unstudied hit. French continues to use
-exact plus alias lookup and ignores that key.
-
 `POST /api/priority/unstudied/add-by-hanzi` accepts `{ hanzi, requiredForNextSession?,
-wordIds? }`. Exact (and French alias) lookup still resolves unstudied matches.
+wordIds? }`. It trims the submitted text and combines exact `hanzi` matches with
+matches on the punctuation-stripped Mandarin lookup key used by production
+answers. Only unstudied words are eligible; alias lookup is not used. The backend
+accepts only the Mandarin study profile; the French try-out profile is retired.
+
 When multiple matches exist and `wordIds` is omitted, the handler returns
 `{ needsSelection: true, query, matches }` without writing overlay rows so the
-client can present a chooser. A single match, or an explicit `wordIds` subset of
-those matches, adds the selected rows and returns `{ addedCount, words }` as
-before.
+client can present a chooser. With one match and no `wordIds`, the handler adds
+that match; an explicit nonempty `wordIds` subset selects the additions. Success
+returns `{ addedCount, words }`. For a well-formed request, no matches returns 404.
+If there are matches, an empty selection or IDs outside them returns 400.
+See the [HTTP handler](../server/routes/words-routes.ts) for input validation and
+response shapes.
 
 ## Diet profile
 
