@@ -12,15 +12,16 @@ import { addVocabularyWord, changeVocabularyMode } from '../server/db/vocabulary
 import { createVocabularyContent, createVocabularySense, establishVocabularySenseCatalog, getVocabularySenses, getVocabularySenseCatalog, getVocabularyContentForMaintenance, updateVocabularyContent } from '../server/db/vocabulary-content.ts';
 import { writeVocabularyDefaultUsefulSenses, getVocabularyWordSenseCoverage } from '../server/db/vocabulary-sense-coverage.ts';
 import { snapshotBulkRepertoireWord } from '../server/db/bulk-repertoire-snapshot.ts';
-import { generateBulkWord } from '../server/vocabulary/bulk-repertoire.ts';
+import { generateBulkWord, verifyBulkWord } from '../server/vocabulary/bulk-repertoire.ts';
 import { applyBulkRepertoireWord } from '../server/db/bulk-repertoire-apply.ts';
 import { BULK_REPERTOIRE_APPLIED } from '../server/db/bulk-repertoire-state.ts';
 import { authoredVocabularyRepertoire } from '../server/db/vocabulary-authored-repertoire.ts';
 import { composeVocabularySessionPayload } from '../server/vocabulary/study.ts';
 import { createVocabularyPracticePreparation } from '../server/vocabulary/preparation.ts';
-import { parseResponse } from '../server/llm/openai-compatible.ts';
+import { parseResponse, parseResponseForRequest } from '../server/llm/openai-compatible.ts';
 import type { ProviderAdapter, JsonValue } from '../server/llm/types.ts';
 import { claimSharedWordIntroductionStage, finishSharedWordIntroductionBootstrap } from '../server/db/word-introductions.ts';
+import { readInvocationPromptEvidence } from '../server/db/invocation-prompt-archive.ts';
 import { createVocabularyProposal } from '../server/db/vocabulary-reflection.ts';
 
 let root:string,baseline:string,db:DatabaseSync;
@@ -71,40 +72,129 @@ function addTeachingSource(){
     {catalogVersion:getVocabularySenseCatalog('w1').version,senseVersions:[{senseId:'greeting',version:1}],senseIds:['greeting']});
 }
 function tables(){return {words:db.prepare('SELECT * FROM learner_words ORDER BY learner_id').all(),schedules:db.prepare('SELECT * FROM learner_word_schedules ORDER BY learner_id').all()};}
-async function generate(empty=false){
+async function generate(empty=false, historicalSelection=false, combinedInventory=false, stop?: 'inventory'|'selection'){
   const steps:string[]=[];
   const adapter:ProviderAdapter={id:'openai',defaultBaseUrl:'',apiKeyEnvironmentVariable:'',structuredOutputMode:'json_schema',async run(request){
     const step=request.provenance!.stepName!;steps.push(step);
-    const output=step==='sense_inventory'?{senses:[{label:'greeting',notes:['Greet someone.'],defaultUseful:true},{label:'formal greeting',notes:['Formal greeting.'],defaultUseful:false}]}:
+    if(request.decisions) {
+      assert.equal(request.model,'gpt-6-luna');
+      assert.equal(request.reasoningEffort,null);
+      return parseResponseForRequest('openai','json_schema',request,{
+        model:'gpt-6-luna',answers:request.decisions.questions.map(q=>({name:q.name,type:'predicate',probability:q.name==='s1'&&stop!=='selection'?.8:.3})),
+        usage:{input_tokens:100,output_tokens:0,total_tokens:100,input_tokens_details:{cached_tokens:10,cache_write_tokens:20}},
+      });
+    }
+    const senses=stop==='inventory'?[]:[{label:'greeting',notes:['Greet someone.']},{label:'formal greeting',notes:['Formal greeting.']}];
+    const output=step==='sense_inventory'?{senses:combinedInventory?senses.map((sense,i)=>({...sense,defaultUseful:i===0})):senses}:
       step==='default_useful_selection'?{senseIds:['s1']}:{exercises:empty?[]:[{id:'one',sourceUseId:'s1',stimulus:{kind:'direct_text',text:'A greeting when meeting someone.'},teachingNote:'Use to greet someone.'},{id:'two',sourceUseId:'s1',stimulus:{kind:'direct_text',text:'Hello!'},teachingNote:null}]};
     return parseResponse('openai','json_schema',{id:`response-${step}`,model:request.model,choices:[{message:{content:JSON.stringify(output)},finish_reason:'stop'}],usage:{prompt_tokens:100,completion_tokens:80,total_tokens:180}} as JsonValue);
   }};
-  const result=await generateBulkWord(snapshotBulkRepertoireWord('w1'),{model:'gpt-6-sol',reasoningEffort:'high',adapter,apiKey:'fake',baseUrl:null,workflowId:'trial:w1'});
+  const snapshot=snapshotBulkRepertoireWord('w1');
+  // Version 7 is the final chat selector contract captured by bulk artifacts.
+  const retainedSelectionRequest=historicalSelection?{
+    systemPrompt:fs.readFileSync(new URL('../artifacts/invocation-prompts/8678212c4a0c7c833247ddfdc11ed8e30175bf7254e6fa6795b56bbc804201e0.txt',import.meta.url),'utf8'),
+    outputSchemaName:'vocabulary_default_useful_selection_v1',provenance:{promptVersion:'7'}}:undefined;
+  const retainedInventoryRequest=combinedInventory?{outputSchemaName:'vocabulary_sense_inventory_v3',provenance:{promptVersion:'8'},
+    systemPrompt:fs.readFileSync(new URL('../artifacts/invocation-prompts/1ed63131e8f5ea247d8366342905553175ae369ba79b1b14f59451d94357bce5.txt',import.meta.url),'utf8')}:undefined;
+  const result=await generateBulkWord(snapshot,{retainedInventoryRequest,retainedSelectionRequest,model:'gpt-6-sol',reasoningEffort:'high',adapter,apiKey:'fake',baseUrl:null,workflowId:'trial:w1'});
   return {result,steps};
 }
 
 test('unknown inventory imports exact provider evidence, selected canonical identities and repertoire without changing tracked schedules',async()=>{
   const before=tables();const {result,steps}=await generate();
-  assert.deepEqual(steps,['sense_inventory','general_exercises']);assert.equal(result.snapshot.hasBootstrap,false);
+  assert.deepEqual(steps,['sense_inventory','default_useful_selection','general_exercises']);assert.equal(result.snapshot.hasBootstrap,false);
   const receipt=await applyBulkRepertoireWord(result,authority);
-  assert.equal(receipt.replayed,false);assert.equal(receipt.contentIds.length,2);assert.equal(receipt.invocationIds.length,2);
+  assert.equal(receipt.replayed,false);assert.equal(receipt.contentIds.length,2);assert.equal(receipt.invocationIds.length,3);
   const senses=getVocabularySenses('w1');assert.equal(senses.length,2);
   const selected=getVocabularyWordSenseCoverage('w1').defaultUsefulSenseIds!;assert.equal(selected.length,1);
   assert.equal(senses.find(s=>s.senseId===selected[0])!.description && (senses.find(s=>s.senseId===selected[0])!.description as {label:string}).label,'greeting');
   for(const id of receipt.contentIds){const content=getVocabularyContentForMaintenance(id)!;assert.equal(content.words[0]!.senseId,selected[0]);assert.equal(content.availability,'active');}
   assert.deepEqual(tables(),before);
-  assert.equal(db.prepare("SELECT count(*) n FROM model_invocations WHERE status='completed' AND response_snapshot_json IS NOT NULL").get()!.n,2);
+  assert.equal(db.prepare("SELECT count(*) n FROM model_invocations WHERE status='completed' AND response_snapshot_json IS NOT NULL").get()!.n,3);
   assert.equal(db.prepare("SELECT count(*) n FROM invocation_content_links WHERE role='output'").get()!.n,2);
   assert.equal(db.prepare("SELECT count(*) n FROM invocation_sense_links WHERE role='output'").get()!.n,2);
   assert.deepEqual(db.prepare('PRAGMA foreign_key_check').all(),[]);
 });
 
+test('paid v9 inventory and v1 Decisions verify and apply with their archived prompt bytes',async()=>{
+  const {result}=await generate();
+  const [inventory,selection]=result.calls;
+  const archived=(digest:string)=>fs.readFileSync(new URL(`../artifacts/invocation-prompts/${digest}.txt`,import.meta.url),'utf8');
+  inventory!.request.systemPrompt=archived('037e2efae2a7f6bbceea42fa337d3edadbcfa15bf428604524793d2aebe1f568');
+  inventory!.request.provenance!.promptVersion='9';
+  selection!.request.systemPrompt=archived('c921642d51cb210d5ba3d023b0d3b1f1557a675e65243a67d584029e67b09e8b');
+  selection!.request.provenance!.promptVersion='1';
+  await verifyBulkWord(result);
+  for(const index of [0,1]){
+    const tampered=structuredClone(result);
+    tampered.calls[index]!.request.systemPrompt+=' ';
+    await assert.rejects(verifyBulkWord(tampered),/Unrecognized retained/);
+  }
+  const receipt=await applyBulkRepertoireWord(result,authority);
+  const promptVersion=db.prepare('SELECT prompt_version FROM model_invocations WHERE id=?');
+  assert.deepEqual(receipt.invocationIds.slice(0,2).map(id=>promptVersion.get(id)!.prompt_version),['9','1']);
+  assert.equal(getVocabularyWordSenseCoverage('w1').defaultUsefulSenseIds!.length,1);
+});
+
+test('the pre-merge v2 label replays only the clarified Decisions prompt',async()=>{
+  const {result}=await generate();
+  const selection=result.calls[1]!.request;
+  assert.equal(selection.provenance!.promptVersion,'1');
+  selection.provenance!.promptVersion='2';
+  await verifyBulkWord(result);
+  selection.systemPrompt=fs.readFileSync(new URL('../artifacts/invocation-prompts/c921642d51cb210d5ba3d023b0d3b1f1557a675e65243a67d584029e67b09e8b.txt',import.meta.url),'utf8');
+  await assert.rejects(verifyBulkWord(result),/Unrecognized retained Decisions prompt/);
+});
+
+test('fresh bulk stops after an empty inventory or an empty Decisions recommendation',async()=>{
+  const empty=await generate(false,false,false,'inventory');
+  assert.equal(empty.result.status,'empty_inventory');assert.deepEqual(empty.steps,['sense_inventory']);
+  const excluded=await generate(false,false,false,'selection');
+  assert.equal(excluded.result.status,'empty_selection');
+  assert.deepEqual(excluded.steps,['sense_inventory','default_useful_selection']);
+  assert.deepEqual(getVocabularySenses('w1'),[]);
+});
+
+test('combined inventory replay preserves its historical default recommendations and invocation provenance',async()=>{
+  const {result,steps}=await generate(false,false,true);
+  assert.deepEqual(steps,['sense_inventory','general_exercises']);
+  const receipt=await applyBulkRepertoireWord(result,authority);
+  assert.equal(receipt.invocationIds.length,2);
+  const senses=getVocabularySenses('w1');
+  const selected=getVocabularyWordSenseCoverage('w1').defaultUsefulSenseIds!;
+  assert.deepEqual(selected,[senses.find(sense=>(sense.description as {label:string}).label==='greeting')!.senseId]);
+  const event=db.prepare("SELECT data_json FROM backend_events WHERE name='vocabulary.default_selection.recommended'").get()!;
+  assert.equal(JSON.parse(String(event.data_json)).invocationId,receipt.invocationIds[0]);
+  assert.equal(db.prepare("SELECT count(*) n FROM invocation_sense_links WHERE role='input' AND invocation_id=?").get(receipt.invocationIds[0]!)!.n,0);
+});
+
 test('existing inventory with unknown defaults replays selection, preserving existing sense identities',async()=>{
   establish(false);const before=getVocabularySenses('w1');const {result,steps}=await generate();
   assert.deepEqual(steps,['default_useful_selection','general_exercises']);
-  await applyBulkRepertoireWord(result,authority);
+  const receipt=await applyBulkRepertoireWord(result,authority);
+  const selection=readInvocationPromptEvidence(db,receipt.invocationIds[0]!);
+  const body=JSON.parse(selection.requestJson!);
+  assert.equal(body.model,'gpt-6-luna');
+  assert.equal(body.questions[0].name,'s1');assert.equal(body.input[1].content[0].data.senses[0].senseId,'s1');
+  const row=db.prepare('SELECT response_snapshot_json,spend_usd,settings_json FROM model_invocations WHERE id=?').get(receipt.invocationIds[0]!)!;
+  assert.equal(JSON.parse(String(row.response_snapshot_json)).answers[0].probability,.8);
+  assert.equal(JSON.parse(String(row.settings_json)).api,'decisions');
+  assert.equal(row.spend_usd,(70*.10+10*.01+20*.125)/1e6);
   assert.deepEqual(getVocabularySenses('w1'),before);assert.deepEqual(getVocabularyWordSenseCoverage('w1').defaultUsefulSenseIds,['greeting']);
   assert.equal(db.prepare("SELECT status FROM vocabulary_default_selection_readiness WHERE word_id='w1'").get()!.status,'ready');
+});
+
+test('retained chat selection still replays offline under its original contract and spend basis',async()=>{
+  establish(false);
+  const {result}=await generate(false,true);
+  const call=result.calls[0]!;
+  assert.equal(call.request.model,'gpt-6-sol');assert.equal(call.request.decisions,undefined);
+  const receipt=await applyBulkRepertoireWord(result,authority);
+  const {requestJson}=readInvocationPromptEvidence(db,receipt.invocationIds[0]!);
+  const body=JSON.parse(requestJson!);
+  assert.equal(body.response_format.type,'json_schema');assert.equal(body.model,'gpt-6-sol');
+  assert.equal(JSON.parse(body.messages[1].content).senses[0].senseId,'s1');
+  assert.deepEqual(getVocabularyWordSenseCoverage('w1').defaultUsefulSenseIds,['greeting']);
 });
 
 test('additive publication preserves fallback identities and history and replays one receipt',async()=>{

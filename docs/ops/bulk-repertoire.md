@@ -65,7 +65,10 @@ to a larger run. There is no CLI spending cap; limit and concurrency are not cos
 guarantees.
 
 The ordinary inventory and useful-selection providers build and validate the
-prerequisite calls. Known inventories/defaults are reused. Partial inventories
+prerequisite calls. The run's model and reasoning effort apply to inventory and
+exercise generation. After inventory is available, whether reused or newly generated, unknown defaults use
+`gpt-6-luna` on the Decisions API for sense selection. Known inventories/defaults
+are reused. Partial inventories
 need operator review. An explicit empty selection remains empty. General
 repertoire uses canonical sense evidence with the shared general-exercise prompt,
 schema, local sense references and validation. The `result.json` in each numbered
@@ -96,11 +99,17 @@ cached before its dependent stage starts.
 
 Resume with the same command and run directory, including `--allow-provider-calls`
 and an available `OPENAI_API_KEY`. Configuration and request hashes must match.
-Completed output is replayed through current prompt builders and validators
-without provider calls; unfinished stages can make new paid calls.
+Resume, verification and offline application rebuild paid inventory and selection
+requests with their retained prompt bytes and verify their version and SHA-256.
+Only unfinished stages can make new paid calls.
 A retained successful attempt can recover a missing stage file. Concurrent runs
 are excluded by `run.lock`. After verifying that its owning local process is dead,
 `--recover-run-lock` permits recovery.
+
+Older combined inventory responses replay both their senses and their saved default choices.
+A retained successful standalone Chat Completions selector response replays
+under its original prompt and model. If that dispatch has an unknown outcome,
+`--retry-uncertain` authorizes a fresh Decisions call in the same run directory.
 An uncertain attempt blocks another dispatch of that request unless
 `--retry-uncertain` is supplied; other words can continue. Inspect retained
 evidence before opting in because that retry may incur duplicate provider spend.

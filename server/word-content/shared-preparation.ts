@@ -33,14 +33,14 @@ function linkSourceSenses(invocationId: string | null | undefined,contentId: str
     { kind: 'service',id: SERVICE_ID });
 }
 /** No learner context or private writes: background generation publishes only shared content. */
-export function createSharedWordPreparation(provider: WordIntroductionProvider = createWordIntroductionProvider(),options:{ensureSenses?:typeof ensureVocabularySenses;canPublish?:()=>boolean}={}) {
+export function createSharedWordPreparation(provider: WordIntroductionProvider = createWordIntroductionProvider(),options:{ensureSenses?:typeof ensureVocabularySenses;ensureDefaults?:typeof ensureVocabularyDefaultUsefulSelection;canPublish?:()=>boolean}={}) {
   function assertPublication(){if(options.canPublish&&!options.canPublish())throw new Error('Shared authoring publication is currently blocked');}
   async function prepareBootstrapSenses(wordId:string,workflowId:string,teachingSetKey=DEFAULT_TEACHING_SET){
     const ready=await (options.ensureSenses??ensureVocabularySenses)(wordId,{workflowId,canPublish:options.canPublish});
     if(!ready.senses.length)throw new VocabularyEmptySenseInventory();
     const requested = teachingSenseIds(teachingSetKey);
     if (requested?.some(id=>!ready.senses.some(sense=>sense.senseId===id && sense.status==='active'))) throw new VocabularySenseSelectionRequired('A requested teaching sense is unavailable; operator disposition is required.');
-    if (requested === null) await ensureVocabularyDefaultUsefulSelection(wordId,{workflowId,canPublish:options.canPublish});
+    if (requested === null) await (options.ensureDefaults??ensureVocabularyDefaultUsefulSelection)(wordId,{workflowId,canPublish:options.canPublish});
     const coverage=requested === null ? resolveVocabularySenseCoverage(wordId) : {selectionEstablished:true,includedSenseIds:requested};
     if(!coverage.selectionEstablished)throw new VocabularySenseSelectionRequired('Default useful senses are unknown; operator selection or the explicit legacy cutover is required.');
     if(!coverage.includedSenseIds.length)throw new VocabularySenseSelectionRequired('No useful senses are selected; teaching preparation requires operator disposition.');

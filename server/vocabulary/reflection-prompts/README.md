@@ -113,25 +113,24 @@ stage-result cache.
 
 `improvement-admission.ts` ensures an established sense inventory through
 `sense-readiness.ts`. Readiness reuses canonical senses or requests the shared
-inventory/default-selection call. It creates senses, not teaching or exercises.
+inventory generation call.
 The inventory tracks uses of the exact target, including grammatical constructions
 and uncommon uses, but excludes meanings realized only through larger compounds
-or fixed expressions. The call first establishes lexical ownership, then marks
-default usefulness among those eligible uses. A nonempty inventory marks at least
-one use, even when all are specialized; the selector follows the same rule.
+or fixed expressions. Inventory generation returns a label and notes for each supported use. A downstream
+workflow that needs unknown defaults invokes the shared Decisions selector on those
+saved senses. It can prioritize the central use even for a specialist word.
 
 Partial unestablished inventories require operator attention. An established
 inventory with no active senses is a valid result: improvement returns
 `no_senses_requested` without mapping or authoring. Unknown defaults resolve to
 `[]`, and the word is ineligible for new sessions while its stash membership and
-history are retained. A nonempty inventory with all `defaultUseful:false` violates
-the prompt's rule and suggests a suspect inventory; it retains the empty-selection
-recommendation for operator review.
+history are retained. If all Decisions answers for a nonempty inventory fall below the cutoff,
+the recommendation goes to operator review.
 
 The backend identifies dictionary fallback sources before requesting mapping.
 With no current authored general production practice accepting the word in the
 same publication scope and owner, a fallback takes `repertoire_bootstrap` directly.
-It captures useful defaults, including defaults established during sense readiness,
+It captures useful defaults, initializing unknown defaults through Decisions,
 and invokes shared general-exercise authoring. Existing practice, including pure
 cues, prevents first bootstrap. With saved useful defaults, a new assessment of
 that fallback opens operator repertoire review. An explicit **Generate for selected**

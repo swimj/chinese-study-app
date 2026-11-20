@@ -54,6 +54,11 @@ resulting system text in a file. Run this command from the repository root:
 node scripts/register-invocation-prompt.mjs <rendered-system-prompt-file>
 ```
 
+For inventory and default-selection prompts used by bulk repertoire, assign the
+prompt version relative to the last version merged to main. Pin each revision
+used for paid calls by digest in the corresponding bulk replay provider.
+Keep prior versions so paid stages can resume and apply after the edit.
+
 Review and commit the generated archive file and
 `server/db/invocation-prompt-catalog.json` with the caller change. Only
 shared, authored system text belongs in this archive. Learner messages, runtime

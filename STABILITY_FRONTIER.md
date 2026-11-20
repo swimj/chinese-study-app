@@ -50,7 +50,8 @@ the architectural boundary for implementation.
   An established empty inventory is a settled result: the word stays stashed but
   cannot participate in new sessions, including shared answers or contrast choices.
   Retained sessions and history are preserved. Unknown selection for every nonempty
-  established inventory uses an ID-preserving selector, including teaching imports;
+  established inventory, including a fresh bootstrap or teaching import, uses the same
+  ID-preserving Decisions selector when defaults are needed;
   an empty inventory resolves it to `[]`. A nonempty inventory with no model-selected useful senses needs operator
   review; explicit canonical/document scopes remain usable independently for
   nonempty inventories.
