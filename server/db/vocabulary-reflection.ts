@@ -197,6 +197,22 @@ export function recoverVocabularyReflectionJobs(at = timestamp()): number {
   return Number(getDb().prepare(`UPDATE vocabulary_reflection_jobs SET status='failed',lease_token=NULL,lease_expires_at=NULL,
     next_attempt_at=?,last_error='provider_outcome_unknown' WHERE status='running' AND lease_expires_at<=?`).run(at,at).changes);
 }
+function capturedReassessmentEditorial(jobId:string):VocabularyReassessmentEditorial|undefined {
+  const row=getDb().prepare("SELECT data_json FROM backend_events WHERE job_id=? AND name='vocabulary.reflection.reassessment_editorial_captured'").get(jobId) as {data_json:string}|undefined;
+  return row ? JSON.parse(row.data_json) as VocabularyReassessmentEditorial : undefined;
+}
+
+function reassessmentAuthoringContext(jobId:string):VocabularyReflectionJob['editorial'] {
+  const captured=capturedReassessmentEditorial(jobId);
+  if(!captured)return undefined;
+  const {priorProposal,...direction}=captured;
+  if(!priorProposal)return direction;
+  const revision=getDb().prepare('SELECT snapshot_json FROM proposal_revision_history WHERE proposal_id=? AND version=?')
+    .get(priorProposal.proposalId,priorProposal.version) as {snapshot_json:string}|undefined;
+  if(!revision)throw new Error('Captured reassessment proposal revision is missing');
+  return {...direction,priorProposal:JSON.parse(revision.snapshot_json) as VocabularyContentProposal};
+}
+
 export function claimVocabularyReflectionJob(input: { kind?: VocabularyReflectionJob['kind']; now?: string; leaseMs?: number } = {}): VocabularyReflectionJob | null {
   return atomic(() => {
     const at = timestamp(input.now), leaseMs = input.leaseMs ?? 15 * 60 * 1000;
@@ -211,10 +227,10 @@ export function claimVocabularyReflectionJob(input: { kind?: VocabularyReflectio
     getDb().prepare(`UPDATE vocabulary_reflection_jobs SET status='running',lease_token=?,lease_expires_at=?,
       attempt_number=attempt_number+1,last_error=NULL WHERE job_id=?`).run(token,expires,row.job_id);
     const evidence = getVocabularyReflectionCase(row.case_id);
-    const editorial=getDb().prepare("SELECT data_json FROM backend_events WHERE job_id=? AND name='vocabulary.reflection.reassessment_editorial_captured'").get(row.job_id) as {data_json:string}|undefined;
+    const editorial=reassessmentAuthoringContext(row.job_id);
     const identities=getDb().prepare("SELECT data_json FROM backend_events WHERE job_id=? AND name='vocabulary.reflection.response_identities_captured'").get(row.job_id) as {data_json:string}|undefined;
     return { jobId: row.job_id,caseId: row.case_id,learnerId: evidence.learnerId,kind: row.kind,
-      ...(editorial?{editorial:JSON.parse(editorial.data_json) as VocabularyReassessmentEditorial}:{}),
+      ...(editorial?{editorial}:{}),
       ...(identities?{responseIdentitySelection:JSON.parse(identities.data_json) as import('../../src/domain/vocabulary-reflection.ts').VocabularyResponseIdentitySelection}:{}),
       caseSequence:row.case_sequence,attemptNumber: row.attempt_number+1,leaseToken: token,leaseExpiresAt: expires,evidence,
       ...(row.repair_target_json ? {repairTarget:JSON.parse(row.repair_target_json) as import('../../src/domain/vocabulary-reflection.ts').VocabularyRepairTarget}:{}),
@@ -550,7 +566,8 @@ export function recordVocabularyImprovementResult(jobId: string, token: string, 
       acceptVocabularyRepairTarget(row.review_case_id,captured,at);
     }
     finish(jobId,token,input,output,at);
-    if(created&&!row.second_opinion_json&&input.admission?.outcome==='repertoire_bootstrap')autoApplyVocabularyRepertoireBootstrap(created.proposalId,input.admission);
+    if(created&&!row.second_opinion_json&&input.admission?.outcome==='repertoire_bootstrap' && !capturedReassessmentEditorial(jobId)?.priorProposal)
+      autoApplyVocabularyRepertoireBootstrap(created.proposalId,input.admission);
     if (!row.second_opinion_json&&(needsAttention || needsIdentity || input.pureCuePromotion?.outcome === 'needs_operator')) getDb().prepare("UPDATE reflection_cases SET status='open' WHERE case_id=?").run(row.case_id);
     return output;
   });
@@ -1121,10 +1138,10 @@ export function requestVocabularyCaseSecondOpinion(caseId:string, actorId:string
   });
 }
 
-export type ReassessmentOrigin = {kind:'case'} | {kind:'proposal';proposalId:string;expectedVersion:number};
+export type ReassessmentOrigin = {kind:'case'} | {kind:'proposal';proposalId:string;expectedVersion:number;includeInAssessment?:boolean};
 
 /** Queue a fresh assessment of the operator-selected current authored version. */
-export function requestVocabularyReassessment(caseId:string, actorId:string, modelChoice:ReflectionModelChoice, expectedContentVersion:number, origin:ReassessmentOrigin={kind:'case'},editorial?:VocabularyReassessmentEditorial,identities?:import('../../src/domain/vocabulary-reflection.ts').VocabularyResponseIdentitySelection): {caseId:string;jobId:string} {
+export function requestVocabularyReassessment(caseId:string, actorId:string, modelChoice:ReflectionModelChoice, expectedContentVersion:number, origin:ReassessmentOrigin={kind:'case'},direction?:Omit<VocabularyReassessmentEditorial,'priorProposal'>,identities?:import('../../src/domain/vocabulary-reflection.ts').VocabularyResponseIdentitySelection): {caseId:string;jobId:string} {
   const actor=operator(actorId);
   if(!isOfferedReflectionModelChoice(modelChoice)) throw new Error('Unsupported assessment model');
   return atomic(()=>{
@@ -1134,13 +1151,11 @@ export function requestVocabularyReassessment(caseId:string, actorId:string, mod
     const db=getDb();
     const source=currentAssessmentJob(caseId);
     if(!source) throw new VocabularyReflectionConflict('Completed assessment evidence is unavailable');
+    let editorial:VocabularyReassessmentEditorial|undefined=direction;
     const pending=caseImprovementResult(caseId)?.responseIdentityOptions;
     if(pending?.length){
-      const prior=db.prepare("SELECT data_json FROM backend_events WHERE job_id=? AND name='vocabulary.reflection.reassessment_editorial_captured'").get(source.job_id) as {data_json:string}|undefined;
-      if(prior){
-        const retained=JSON.parse(prior.data_json) as VocabularyReassessmentEditorial;
-        editorial={instructions:[retained.instructions,editorial?.instructions].filter(Boolean).join('\n\n'),...(editorial?.secondOpinion?{secondOpinion:editorial.secondOpinion}:retained.secondOpinion?{secondOpinion:retained.secondOpinion}:{})};
-      }
+      const retained=capturedReassessmentEditorial(source.job_id);
+      if(retained)editorial={...retained,...editorial,instructions:[retained.instructions,editorial?.instructions].filter(Boolean).join('\n\n')};
     }
     if(identities){
       const current=ambiguousVocabularyResponses({evidence});
@@ -1154,6 +1169,9 @@ export function requestVocabularyReassessment(caseId:string, actorId:string, mod
       const value=expectedProposal(origin.proposalId,origin.expectedVersion);
       if(!value.caseId||canonicalVocabularyCaseId(value.caseId)!==caseId||!['draft','awaiting_review','approved'].includes(value.status))
         throw new VocabularyReflectionConflict('Reassessment requires an unresolved proposal from this case');
+      if(editorial?.priorProposal && (editorial.priorProposal.proposalId!==value.proposalId || editorial.priorProposal.version!==value.version))
+        throw new VocabularyReflectionConflict('Continue the assessment with the retained proposal revision');
+      if(origin.includeInAssessment)editorial={instructions:'',...editorial,priorProposal:{proposalId:value.proposalId,version:value.version}};
       db.prepare('UPDATE vocabulary_case_reviews SET current_proposal_id=? WHERE case_id=?').run(value.proposalId,caseId);
     }
     const metadata=reassessmentSource(evidence);

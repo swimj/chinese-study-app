@@ -31,7 +31,9 @@ export type VocabularyRepairTargetWorkspace = {
   senses:{senseId:string;label:string}[];available:boolean;blocked:boolean;editable:boolean;
 };
 export type VocabularyReassessmentEditorialInput = {instructions:string;secondOpinionRequestId?:string};
-export type VocabularyReassessmentEditorial = {
+export type VocabularyProposalRevision = Pick<VocabularyContentProposal, 'proposalId' | 'version'>;
+export type VocabularyReassessmentEditorial<Proposal = VocabularyProposalRevision> = {
+  priorProposal?: Proposal;
   instructions:string;
   secondOpinion?:{requestId:string;jobId:string;verdict:VocabularySecondOpinionVerdict['verdict'];rationale:string};
 };
@@ -45,7 +47,7 @@ export type VocabularyReflectionJob = {
   evidence: VocabularyReflectionCase;
   reassessmentSourceJobId?: string;
   repairTarget?: VocabularyRepairTarget;
-  editorial?: VocabularyReassessmentEditorial;
+  editorial?: VocabularyReassessmentEditorial<VocabularyContentProposal>;
   responseIdentitySelection?: VocabularyResponseIdentitySelection;
   /** Current authored version explicitly selected by the operator; encounters remain historical. */
   reassessmentSource?: VocabularyContent;

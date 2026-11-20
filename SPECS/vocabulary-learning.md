@@ -528,7 +528,8 @@ its publication scope and owner automatically seeds a first repertoire proposal
 from useful defaults, including defaults established during sense bootstrap.
 That proposal applies without operator approval unless the source, inventory,
 source mapping or word defaults changed after generation; a changed proposal
-waits for ordinary operator review.
+waits for ordinary operator review. A repertoire generated with a prior proposal
+selected for critique also waits for explicit approval.
 An explicitly empty selection makes no authoring request.
 When authored practice already exists, including shared pure cues accepting the
 word, saved useful defaults support an operator review of gaps in that practice.
@@ -625,8 +626,12 @@ judgment remains visible but locked in review. Moving between these surfaces pre
 queue reads neither resolve records nor authorize retries. Second opinions are retained,
 advisory reviews bound to an exact proposal version; they do not replace edits
 or authorize application. Operators can also request a fresh improvement
-assessment of the current exercise version using a chosen model. If that version
-differs from the original assessment's source version, the operator sees both
+assessment of the current exercise version using a chosen model. An operator
+may include the displayed proposal for critique and give editorial direction.
+The assessment receives the exact saved revision alongside the current source
+and encounter evidence. Resulting changes require explicit operator review.
+If the current exercise version differs from the original assessment's source
+version, the operator sees both
 versions and must explicitly choose to proceed on the current version. Each
 reassessment performs fresh sense mapping where applicable and fresh assessment,
 including when the source version is unchanged. Each reassessment is a new

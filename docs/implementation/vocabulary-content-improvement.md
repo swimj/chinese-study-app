@@ -659,18 +659,20 @@ identical retry idempotent even after the case advances. Notes remain separate
 from action commentary and do not resolve a case or enter model context. The card's
 activity projection follows canonical lineage across closure events, proposal
 reviews, editorial snapshots, and second-opinion questions. It retains the latest
-20 nonempty operator commentaries (plus explicit opinion-only reassessment
-receipts), with a truncation flag, so archived Done reasons remain retrievable.
+20 operator commentaries (including reassessments with only attachment selections), with a truncation flag, so archived Done reasons remain retrievable.
 Service explanations and empty quick actions are omitted.
 
 Action dialogs own unsaved text until submission or cancellation. Reassessment
-can carry operator editorial instructions and an explicitly selected successful
-second opinion from the displayed assessment/proposal. Admission resolves the
-opinion on the server and captures its verdict, rationale, and identity in an
-immutable job-linked event. Claim and retry read that snapshot; later opinion
-changes cannot rewrite an admitted request. The invocation wrapper supplies
-`operatorEditorial` to exercise, pure-cue, and repertoire authoring, with an
-`editorial.v1` projection suffix. Mapping and ordinary jobs keep their existing
+can carry operator instructions, a selected successful second opinion, and the
+displayed proposal revision. In the same transaction as admission, the server
+verifies the case, proposal, and source versions. The job-linked editorial
+event records the instructions, selected opinion result, and selected proposal
+ID and version. Claim and retry resolve that reference from immutable proposal
+revision history. An identity continuation carries the retained inputs forward.
+The invocation wrapper supplies `operatorEditorial` to exercise, pure-cue, and
+repertoire authoring. The projection suffix is `editorial.v2` with a prior
+proposal and `editorial.v1` for instructions or an opinion alone. A first
+repertoire produced by a proposal critique also waits for operator approval. Mapping and ordinary jobs keep their existing
 inputs, and the linguistic prompt files remain unchanged. The wrapper directs
 the model to assess advisory analysis independently and retain source, target,
 privacy, and output-contract boundaries. Provider quality still requires separate
