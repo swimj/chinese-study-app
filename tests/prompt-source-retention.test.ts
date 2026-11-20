@@ -28,8 +28,11 @@ test('each committed prompt source version must survive in a tracked regular pro
   const active = join(cwd, 'server/example/prompts');
   const archive = join(cwd, 'server/example/other-prompts/archive');
   const catalog = join(cwd, 'server/db/invocation-prompt-catalog.json');
-  mkdirSync(join(cwd, 'server/db'), { recursive: true });
+  const usesDirectory = join(cwd, 'server/db/invocation-prompt-uses');
+  const uses = join(usesDirectory, 'recovered.json');
+  mkdirSync(usesDirectory, { recursive: true });
   writeFileSync(catalog, '[]');
+  writeFileSync(uses, '[]');
   mkdirSync(active, { recursive: true });
   mkdirSync(archive, { recursive: true });
   writeFileSync(join(active, 'example.md'), 'version one\n');
@@ -60,6 +63,23 @@ test('each committed prompt source version must survive in a tracked regular pro
   assert.deepEqual(readFileSync(prompt), readFileSync(retired));
   const outsideImage = commit();
   check(archived);
+
+  const use = { name: 'example', version: '1', hash };
+  writeFileSync(uses, JSON.stringify([use]));
+  commit();
+  check(outsideImage);
+  const duplicate = join(usesDirectory, 'duplicate.json');
+  writeFileSync(duplicate, JSON.stringify([use]));
+  commit();
+  check(outsideImage, /Duplicate invocation prompt use across files/);
+  rmSync(duplicate);
+  writeFileSync(uses, JSON.stringify([use, use]));
+  commit();
+  check(outsideImage, /without duplicates/);
+  writeFileSync(uses, JSON.stringify([{ ...use, hash: '0'.repeat(64) }]));
+  commit();
+  check(outsideImage, /Invalid invocation prompt use/);
+  writeFileSync(uses, '[]');
 
   writeFileSync(catalog, '[]');
   commit();
