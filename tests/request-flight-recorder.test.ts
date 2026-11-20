@@ -60,7 +60,7 @@ describe('request flight recorder', () => {
     for (let index = 1; index <= 5; index += 1) {
       flight.record(summary({
         at: `2026-10-27T21:00:0${index}.000Z`,
-        route: index % 2 === 0 ? '/api/session-payload' : '/api/status',
+        route: index % 2 === 0 ? '/api/vocabulary/sessions' : '/api/status',
         localMs: index * 100,
       }));
     }
@@ -71,7 +71,7 @@ describe('request flight recorder', () => {
     assert.equal(all.oldestRetainedAt, '2026-10-27T21:00:03.000Z');
     assert.deepEqual(all.requests.map((request) => request.localMs), [500, 400, 300]);
 
-    assert.deepEqual(flight.snapshot({ route: '/api/session-payload' }).requests.map((request) => request.localMs), [400]);
+    assert.deepEqual(flight.snapshot({ route: '/api/vocabulary/sessions' }).requests.map((request) => request.localMs), [400]);
     assert.deepEqual(flight.snapshot({ minLocalMs: 400 }).requests.map((request) => request.localMs), [500, 400]);
     assert.deepEqual(flight.snapshot({ since: '2026-10-27T21:00:05.000Z' }).requests.map((request) => request.localMs), [500]);
     const limited = flight.snapshot({ limit: 1 });
@@ -86,14 +86,14 @@ describe('request flight recorder', () => {
       summary({
         at: '2026-10-27T21:00:00.000Z',
         method: 'POST',
-        route: '/api/session-payload',
+        route: '/api/vocabulary/sessions',
         localMs: 90,
         durationMs: 90,
         phasesMs: { sqlite: 60, provider: 0, auth: 0, response: 10, other: 20 },
         sqlite: { statements: 1_116, transactions: 3, maxTransactionMs: 2.5, topStatements: [] },
       }),
     ]);
-    assert.deepEqual(routes.map((route) => route.route), ['/api/session-payload', '/api/status']);
+    assert.deepEqual(routes.map((route) => route.route), ['/api/vocabulary/sessions', '/api/status']);
     const status = routes[1]!;
     assert.equal(status.count, 4);
     assert.deepEqual(status.localMs, { p50: 20, p95: 40, max: 40 });

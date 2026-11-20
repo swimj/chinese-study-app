@@ -14,8 +14,6 @@ import type {
   SessionReflectionResultV10,
 } from '../src/domain/reflection.js';
 import { getCanonicalReviewContent } from '../server/db/review-content.ts';
-import { createInitialReflectionGenerationService } from '../server/reflection/generation.ts';
-import { createLunaReflectionProvider } from '../server/reflection/luna-provider.ts';
 import { hasActionLapseToCompensate } from '../server/db/pure-cues.ts';
 
 type DbModule = typeof import('../server/db.ts');
@@ -1532,82 +1530,6 @@ describe('reflection application adapters', { concurrency: false }, () => {
     assert.equal(dbModule.getProductionCompensationEligibilityDeadlines().get('target'),
       '2026-07-29T13:00:00.000Z');
     assert.deepEqual(dbModule.getSessionPayload('2026-07-29').buckets.review, []);
-  });
-
-  test('generates, accepts, and applies a cue repair from a learner-requested correct response', async () => {
-    insertStudyAttempt('correct-flow');
-    const sessionId = 'cue-evidence-session:correct-flow';
-    sqlite.prepare(`UPDATE study_attempt_events SET outcome = 'correct', rating = 'good',
-      response = '目标', metadata_json = ? WHERE id = 'correct-flow'`).run(JSON.stringify({ production: {
-      taskId: 'production-task:target:default_production', cueId: null,
-      cueType: 'definition_gloss', text: 'target', acceptedWordIds: ['target'],
-      anchorWordId: 'target', responseKind: 'typed', submittedText: '目标',
-      submittedWordId: 'target', result: 'accepted_anchor',
-    } }));
-    dbModule.appendProductionCueAttemptEvidenceWithoutTransaction({
-      evidenceId: 'correct-flow-evidence', occurredAt: appliedAt,
-      taskId: 'production-task:target:default_production', cueId: null,
-      sourceAttemptId: 'correct-flow', attemptResult: 'accepted_anchor', submittedWordId: 'target',
-    });
-    dbModule.recordReviewSessionSummary({ sessionId, completedAt: appliedAt,
-      completedReviewActionCount: 1, failedReviewActionCount: 0, activeDurationMs: 60_000 });
-    sqlite.prepare(`INSERT INTO word_skill_state
-      (word_id, skill_id, enabled, interval_hours, last_studied_at, next_due_at, ease_factor)
-      VALUES ('target', 'production', 1, 240, ?, '2026-08-08T12:01:00.000Z', 2.4)`).run(appliedAt);
-    const scheduleBefore = sqlite.prepare('SELECT * FROM word_skill_state').all();
-    const attemptsBefore = sqlite.prepare('SELECT * FROM study_attempt_events').all();
-    let transportCalls = 0;
-    const provider = createLunaReflectionProvider({
-      environment: { OPENAI_API_KEY: 'test-only-key' },
-      fetchImplementation: async (_input, init) => {
-        transportCalls += 1;
-        const request = JSON.parse(String(init?.body)) as { messages: Array<{ content: string }> };
-        const input = JSON.parse(request.messages[1]!.content) as {
-          items: Array<{ itemId: string; responseKind: string }>;
-        };
-        assert.equal(input.items[0]?.responseKind, 'correct');
-        return new Response(JSON.stringify({ id: 'correct-flow-response', model: 'gpt-5.6-luna',
-          choices: [{ finish_reason: 'stop', message: { content: JSON.stringify({
-            schemaVersion: 'staged_reflection_diagnosis_result.v4',
-            itemResults: [{ kind: 'ordinary', itemId: input.items[0]!.itemId,
-              diagnosisTags: ['production_cue_overloaded'], learnerExplanation: 'Recall succeeded, but the cue needs a more precise situation.',
-              proposals: [{ proposalGroupKey: null, rationale: 'Replace the broad fallback.', operation: {
-                kind: 'repair_production_cue', replacementCues: [{ cueType: 'circumstance', text: 'a fairer situation for 目标' }],
-                sourceAttemptJudgments: [{ kind: 'misleading_or_overloaded_cue' }],
-              } }], questions: [],
-            }],
-          }) } }], usage: { prompt_tokens: 10, completion_tokens: 10, total_tokens: 20 },
-        }), { headers: { 'content-type': 'application/json' } });
-      },
-    });
-    const service = createInitialReflectionGenerationService({ provider, now: () => appliedAt });
-    const generated = await service.generate(sessionId, {
-      schemaVersion: 'session_reflection_evidence_supplement.v2',
-      items: [{ itemId: 'production-mistake:cue-action:correct-flow', sessionActionId: 'cue-action:correct-flow',
-        targetWordId: 'target', learnerRequestedReview: true, rawResponse: '目标', responseKind: 'typed',
-        attemptIds: ['correct-flow'], cuesAsShown: [{ cueId: null, cueType: 'definition_gloss',
-          displayOrder: 0, text: 'target', displayedMeanings: ['target'] }],
-      }],
-    });
-    assert.equal(transportCalls, 1);
-    const artifact = dbModule.getReflectionArtifactDetail(generated.artifactId);
-    const proposal = artifact.proposals[0]!;
-    assert.equal(proposal.proposal.operation.kind, 'repair_production_cue');
-    if (proposal.proposal.operation.kind !== 'repair_production_cue' || proposal.proposal.operation.version !== 2) {
-      throw new Error('Expected a normalized V2 cue repair.');
-    }
-    assert.deepEqual(proposal.proposal.operation.sourceAttemptJudgments,
-      [{ kind: 'misleading_or_overloaded_cue', sourceAttemptId: 'correct-flow' }]);
-    const accepted = dbModule.acceptReflectionProposal({ proposalId: proposal.review.proposalId,
-      operation: proposal.proposal.operation, invocationId: 'correct-flow-repair', createdAt: appliedAt });
-    assert.equal(accepted.invocation.application.state.kind, 'pending');
-    const applied = dbModule.applyReflectionInvocation('correct-flow-repair', appliedAt).application.state;
-    assert.equal(applied.kind, 'applied', JSON.stringify(applied));
-    assert.ok(dbModule.getActiveProductionCuesForWord('target').some(cue => cue.text === 'a fairer situation for 目标'));
-    assert.deepEqual(sqlite.prepare('SELECT * FROM word_skill_state').all(), scheduleBefore);
-    assert.deepEqual(sqlite.prepare('SELECT * FROM study_attempt_events').all(), attemptsBefore);
-    if (applied.kind !== 'applied') throw new Error('Expected successful cue repair.');
-    assert.equal(applied.effectRefs.some(ref => ref.type === 'production_scheduler_compensation'), false);
   });
 
   test('rejects missing compensation sources and invalid stored outcomes', () => {

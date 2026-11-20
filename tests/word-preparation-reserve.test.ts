@@ -40,7 +40,6 @@ test('reserve is private, bounded and stable; snapshots are read-only; review wa
   const persistence = await import('../server/db/persistence.ts');
   const reserve = await import('../server/db/word-reserve.ts');
   const work = await import('../server/db/preparation-work.ts');
-  const { prepareSessionPayload } = await import('../server/word-content/session-preparation.ts');
   const sqlite = new DatabaseSync(path.join(directory, 'app.db'));
   sqlite.exec('PRAGMA foreign_keys = ON');
   sqlite.function('current_learner_id', () => 'reserve-a');
@@ -74,10 +73,6 @@ test('reserve is private, bounded and stable; snapshots are read-only; review wa
       persistence.reconcileWordPreparationReserve('2026-10-02');
       assert.deepEqual(reserve.getWordReserveCandidates(), first);
       assert.equal(persistence.getSessionPayload('2026-10-01').buckets.unstudied.length, 0);
-      let elapsed = 0; let wakes = 0;
-      const cold = await prepareSessionPayload('2026-10-01', { wake: () => { wakes += 1; }, budgetMs: 500,
-        now: () => elapsed, wait: async (ms) => { elapsed += ms; } });
-      assert.equal(elapsed, 500); assert.equal(wakes, 1); assert.equal(cold.preparation.pending, true);
       const wordId = first[0]!;
       const content = { schemaVersion: 1 as const, id: 'reserve-content', word: { wordId, hanzi: '你好', traditional: null, pinyin: 'nǐ hǎo' },
         uses: [{ id: 'use', label: 'greeting', notes: ['A greeting.'], exampleIds: ['example'] }],

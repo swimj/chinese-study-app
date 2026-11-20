@@ -5,14 +5,11 @@ import path from 'node:path';
 import { before, after, test } from 'node:test';
 import { getDb, openDatabase, setDb, closeDbConnection } from '../server/db/connection.ts';
 import { installLearnerContextSqlFunction, runWithLearnerId } from '../server/db/learner-context.ts';
-import { bootstrapLearner, setLearnerDisabled } from '../server/db/identity.ts';
+import { bootstrapLearner } from '../server/db/identity.ts';
 import { completeLearningWordSession, completeUnstudiedWordSession } from '../server/db/persistence.ts';
 import { stageSessionCompletion, getCurrentSessionCompletion, getSessionCompletion, undoSessionCompletion,
   closeSessionCompletion, closeDueSessionCompletions } from '../server/db/session-completion.ts';
 import { getSessionDebrief } from '../server/db/session-debrief.ts';
-import { createSessionCompletionWorker } from '../server/session-completion/worker.ts';
-import { getAttentionBadges } from '../server/db/attention.ts';
-import { startReflectionGenerationRun, listReflectionGenerationRuns } from '../server/db/reflections.ts';
 import { getSessionWordReport } from '../server/db/session-word-outcomes.ts';
 import type { StageSessionCompletionRequest } from '../src/domain/session-completion.ts';
 let dir: string;
@@ -98,58 +95,12 @@ test('an enqueue failure rolls back final scheduling and summary; explicit close
     assert.equal(closeSessionCompletion('failure', 'r1', plus(17_000)).status, 'closed');
   });
 });
-test('deadline and exact inventory survive DB reopen; provider disabled does not prevent closure', async () => {
+test('deadline and exact inventory survive DB reopen', () => {
   owner(() => stageSessionCompletion('restart', input('r1'), t0));
   closeDbConnection(); setDb(openDatabase(path.join(dir, 'app.db'))); installLearnerContextSqlFunction();
-  const worker = createSessionCompletionWorker({ now: () => Date.parse(plus(15_000)),
-    controls: () => ({ maintenanceMode: false, providerWorkEnabled: false }) });
-  assert.equal(await worker.step(), true); await worker.stop();
+  assert.equal(closeDueSessionCompletions(plus(15_000)), 1);
   owner(() => { assert.equal(getSessionCompletion('restart', plus(16_000))?.status, 'closed');
     assert.equal(getSessionDebrief('restart')?.exerciseCount, 0); });
-});
-test('durable reflection dispatch persists across worker recreation and fences unknown outcomes against replay', async () => {
-  owner(() => { const staged = input('r1'); staged.reflectionEvidence = { schemaVersion: 'session_reflection_evidence_supplement.v1', items: [] };
-    stageSessionCompletion('reflection', staged, t0); closeSessionCompletion('reflection', 'r1', plus(1_000));
-    assert.equal(getAttentionBadges().reflectionGenerating, true); });
-  let calls = 0;
-  const makeWorker = () => createSessionCompletionWorker({ now: () => Date.parse(plus(2_000)),
-    controls: () => ({ maintenanceMode: false, providerWorkEnabled: true }), providerWork: async w => w(),
-    reflectionService: { generate: async (id, evidence) => { calls++; assert.equal(id, 'reflection');
-      assert.deepEqual(evidence, { schemaVersion: 'session_reflection_evidence_supplement.v1', items: [] });
-      return { artifactId: 'result', proposalCount: 0, status: 'created' }; } } });
-  const first = makeWorker(); assert.equal(await first.step(), true); await first.stop();
-  const second = makeWorker(); assert.equal(await second.step(), false); await second.stop(); assert.equal(calls, 1);
-  owner(() => assert.equal(getAttentionBadges().reflectionGenerating, false));
-  owner(() => { const staged = input('r1'); staged.reflectionEvidence = { schemaVersion: 'session_reflection_evidence_supplement.v1', items: [] };
-    stageSessionCompletion('interrupted', staged, t0); closeSessionCompletion('interrupted', 'r1', plus(1_000)); });
-  owner(() => startReflectionGenerationRun({ runId: 'unknown-provider', sourceSessionId: 'interrupted',
-    reflectionFlowVersion: 'pure_cue_post_session_reflection.v1', startedAt: plus(1_000), provider: 'openai', model: 'gpt-5.6-luna-high',
-    providerModel: 'gpt-5.6-luna', promptVersion: 'pure-cue-reflection-v2.0', clientRequestId: 'unknown', eligibleItemCount: 0, includedItemCount: 0,
-    evidenceBundle: { schemaVersion: 'pure_cue_reflection_bundle.v1', generatedAt: plus(1_000),
-      session: { sessionId: 'interrupted', startedAt: t0, endedAt: t0, studyProfile: 'mandarin' }, items: [] } }));
-  getDb().prepare(`UPDATE learner_session_reflection_dispatches SET status = 'running', active_token = 'unknown', expires_at = ?
-    WHERE session_id = 'interrupted'`).run(plus(1_500));
-  const recovered = makeWorker(); assert.equal(await recovered.step(), false); await recovered.stop(); assert.equal(calls, 1);
-  assert.equal(getDb().prepare("SELECT status FROM learner_session_reflection_dispatches WHERE session_id = 'interrupted'").get()?.status, 'failed');
-  owner(() => { const failed = listReflectionGenerationRuns().find(run => run.runId === 'unknown-provider')!;
-    assert.equal(failed.state, 'failed'); assert.equal(failed.failureCode, 'interrupted'); assert.equal(failed.retryable, true); });
-});
-test('disabled queued learners cannot starve another learner; a crash before any provider start is safe to dispatch', async () => {
-  const evidence = { schemaVersion: 'session_reflection_evidence_supplement.v1', items: [] };
-  runWithLearnerId('b', () => { const staged = input('r1'); staged.reflectionEvidence = evidence;
-    stageSessionCompletion('disabled', staged, t0); closeSessionCompletion('disabled', 'r1', plus(1_000)); });
-  setLearnerDisabled('b', true);
-  owner(() => { const staged = input('r1'); staged.reflectionEvidence = evidence;
-    stageSessionCompletion('never-started', staged, t0); closeSessionCompletion('never-started', 'r1', plus(1_000)); });
-  getDb().prepare(`UPDATE learner_session_reflection_dispatches SET status = 'running', active_token = 'pre-call', expires_at = ?
-    WHERE session_id = 'never-started'`).run(plus(1_500));
-  let calls = 0;
-  const worker = createSessionCompletionWorker({ now: () => Date.parse(plus(2_000)),
-    controls: () => ({ maintenanceMode: false, providerWorkEnabled: true }), providerWork: async w => w(),
-    reflectionService: { generate: async id => { calls++; assert.equal(id, 'never-started');
-      return { artifactId: 'started', proposalCount: 0, status: 'created' }; } } });
-  assert.equal(await worker.step(), true); assert.equal(await worker.step(), false); await worker.stop();
-  assert.equal(calls, 1); assert.equal(getDb().prepare("SELECT status FROM learner_session_reflection_dispatches WHERE session_id = 'disabled'").get()?.status, 'queued');
 });
 test('staged learning day stays fixed across midnight; supplied extra summary identity cannot redirect completion', () => {
   word('midnight-grad', 'learning', 2);
@@ -173,22 +124,6 @@ test('malformed deferred learning flags and missing word references reject stagi
     assert.equal(getSessionCompletion('bad-word', plus(2_000)), null);
   });
 });
-test('slow reflection never delays another durable completion deadline', async () => {
-  owner(() => { const staged = input('r1'); staged.reflectionEvidence = { schemaVersion: 'session_reflection_evidence_supplement.v1', items: [] };
-    stageSessionCompletion('slow-reflection', staged, t0); closeSessionCompletion('slow-reflection', 'r1', plus(1_000)); });
-  let clock = Date.parse(plus(2_000)); let finishProvider!: () => void; let startedProvider!: () => void;
-  const started = new Promise<void>(resolve => { startedProvider = resolve; });
-  const provider = new Promise<void>(resolve => { finishProvider = resolve; });
-  const worker = createSessionCompletionWorker({ now: () => clock, pollMs: 5,
-    controls: () => ({ maintenanceMode: false, providerWorkEnabled: true }), providerWork: async w => w(),
-    reflectionService: { generate: async () => { startedProvider(); await provider; return { artifactId: 'slow', proposalCount: 0, status: 'created' }; } } });
-  worker.wake(); await started;
-  owner(() => stageSessionCompletion('during-reflection', input('r1'), plus(2_000)));
-  clock = Date.parse(plus(17_000));
-  await new Promise(resolve => setTimeout(resolve, 30));
-  owner(() => assert.equal(getDb().prepare('SELECT status FROM learner_session_completions WHERE session_id = ?').get('during-reflection')?.status, 'closed'));
-  finishProvider(); await worker.stop();
-});
 test('closed reports reject new attributed outcomes while exact accepted-unit retries remain idempotent', () => {
   word('report-late'); word('report-accepted');
   owner(() => {
@@ -201,42 +136,4 @@ test('closed reports reject new attributed outcomes while exact accepted-unit re
     assert.equal(completeUnstudiedWordSession('report-accepted', '2026-10-12', 'locked-report').status, 'learning');
     assert.deepEqual(getSessionCompletion('locked-report', plus(3_000))?.report.newWords.map(w => w.id), ['report-accepted']);
   });
-});
-test('completion route handlers acknowledge fixed deadlines, preserve ownership and expose validation/conflict statuses', async () => {
-  const { createApp } = await import('../server/index.ts');
-  const app = createApp({ frontendDistPath: null, resolveClerkProviderSubject: () => null });
-  type RouteLayer = { route?: { path: string; methods: Record<string, boolean>;
-    stack: Array<{ handle: (request: unknown, response: unknown) => unknown }> } };
-  const layers = (app as unknown as { _router: { stack: RouteLayer[] } })._router.stack;
-  const request = (pathname: string, method = 'GET', body?: unknown, learnerId = 'a') => runWithLearnerId(learnerId,
-    () => new Promise<{ status: number; json: unknown }>((resolve, reject) => {
-      let status = 200;
-      const response = { status: (next: number) => { status = next; return response; },
-        json: (value: unknown) => { resolve({ status, json: value }); return response; } };
-      for (const layer of layers) {
-        const route = layer.route; if (!route?.methods[method.toLowerCase()]) continue;
-        const actual = pathname.split('/'); const pattern = route.path.split('/');
-        if (actual.length !== pattern.length || pattern.some((part, i) => !part.startsWith(':') && part !== actual[i])) continue;
-        const params = Object.fromEntries(pattern.flatMap((part, i) => part.startsWith(':') ? [[part.slice(1), actual[i]!]] : []));
-        try { Promise.resolve(route.stack[0]!.handle({ params, body }, response)).catch(reject); } catch (error) { reject(error); }
-        return;
-      }
-      reject(new Error(`Missing route ${method} ${pathname}`));
-    }));
-  const route = '/api/study-sessions/http-session/completion';
-  assert.equal((await request(route)).status, 404);
-  assert.equal((await request(route, 'POST', { revisionId: 'bad' })).status, 400);
-  const first = await request(route, 'POST', input('r1')); assert.equal(first.status, 200);
-  const staged = first.json as { closeAt: string; revisionId: string };
-  const retry = await request(route, 'POST', input('r1')); assert.equal(retry.status, 200);
-  assert.equal((retry.json as { closeAt: string }).closeAt, staged.closeAt);
-  assert.equal((await request(route, 'GET', undefined, 'b')).status, 404);
-  assert.equal((await request(`${route}/undo`, 'POST', { revisionId: 'wrong' })).status, 404);
-  assert.equal((await request(`${route}/undo`, 'POST', { revisionId: 'r1' })).status, 409);
-  assert.equal((await request(route, 'POST', input('r2'))).status, 409);
-  const current = await request('/api/session-completions/current');
-  assert.equal((current.json as { completion: { revisionId: string } }).completion.revisionId, 'r1');
-  assert.equal((await request(`${route}/close`, 'POST', { revisionId: 'r1' })).status, 200);
-  assert.equal((await request(`${route}/close`, 'POST', { revisionId: 'r1' })).status, 200);
-  assert.equal(((await request('/api/session-completions/current')).json as { completion: null }).completion, null);
 });

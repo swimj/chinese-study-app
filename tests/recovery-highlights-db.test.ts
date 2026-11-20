@@ -284,24 +284,4 @@ describe('recovery highlights from durable learner evidence', { concurrency: fal
     } finally { database.prepare = originalPrepare; }
   });
 
-  test('HTTP route distinguishes a completed empty summary from a missing summary', async () => {
-    const { createApp } = await import('../server/index.ts');
-    const server = createApp({ frontendDistPath: null }).listen(0, '127.0.0.1');
-    await new Promise<void>(resolve => server.once('listening', resolve));
-    const address = server.address();
-    assert.ok(address && typeof address !== 'string');
-    try {
-      const base = `http://127.0.0.1:${address.port}/api/study-sessions`;
-      assert.equal((await fetch(`${base}/missing/recovery-highlights`)).status, 404);
-      db.recordReviewSessionSummary({ sessionId: 'empty', completedAt: '2026-10-06T12:00:00.000Z',
-        completedReviewActionCount: 0, failedReviewActionCount: 0, activeDurationMs: 0 });
-      const response = await fetch(`${base}/empty/recovery-highlights`);
-      assert.equal(response.status, 200);
-      assert.deepEqual(await response.json(), { highlights: [] });
-      const populated = await fetch(`${base}/recognition-session-6/recovery-highlights`);
-      assert.equal(populated.status, 200);
-      assert.equal((await populated.json()).highlights.length, 1);
-    } finally { await new Promise<void>(resolve => server.close(() => resolve())); }
-  });
-
 });

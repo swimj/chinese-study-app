@@ -11,6 +11,10 @@ import {
   resolveOperatorSubject,
   TRUSTED_LOCAL_OPERATOR_SENTINEL,
 } from '../server/operator-access.ts';
+import {
+  STUDY_COMMIT_DIAGNOSTICS_FILENAME,
+  type StudyCommitFailureDiagnostic,
+} from '../server/study-commit-diagnostics.ts';
 
 describe('operator allowlist helpers', () => {
   test('parses comma-separated clerk ids and ignores blanks', () => {
@@ -64,8 +68,6 @@ describe('usage pulse snapshots', { concurrency: false }, () => {
   let getDb: typeof import('../server/db/connection.ts').getDb;
   let PRIORITY_TIER_REGULAR: number;
   let PRIORITY_TIER_TOP: number;
-  let createStudyCommitDiagnosticSink: typeof import('../server/study-commit-diagnostics.ts').createStudyCommitDiagnosticSink;
-  let describeStudyCommitFailure: typeof import('../server/study-commit-diagnostics.ts').describeStudyCommitFailure;
 
   before(async () => {
     dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'chinese-study-app-usage-pulse-'));
@@ -82,7 +84,6 @@ describe('usage pulse snapshots', { concurrency: false }, () => {
     usagePulse = await import('../server/db/usage-pulse.ts');
     ({ getDb } = await import('../server/db/connection.ts'));
     ({ PRIORITY_TIER_REGULAR, PRIORITY_TIER_TOP } = await import('../server/db/types.ts'));
-    ({ createStudyCommitDiagnosticSink, describeStudyCommitFailure } = await import('../server/study-commit-diagnostics.ts'));
   });
 
   after(() => {
@@ -142,16 +143,32 @@ describe('usage pulse snapshots', { concurrency: false }, () => {
       });
     });
 
-    createStudyCommitDiagnosticSink(dataDir).record(describeStudyCommitFailure({
-      route: '/api/review-session-summaries',
-      responseStatus: 500,
-      learnerId: 'learner-a',
-      params: {},
-      body: { sessionId: 'broken' },
-      error: new Error('commit failed'),
+    const storedFailure: StudyCommitFailureDiagnostic = {
+      schemaVersion: 'study_commit_failure.v1',
+      event: 'study_commit.failed',
       diagnosticId: 'diag-1',
       at: `${dayKey}T15:00:00.000Z`,
-    }));
+      route: '/api/review-session-summaries',
+      responseStatus: 500,
+      elapsedMs: 0,
+      learnerId: 'learner-a',
+      correlation: {
+        sessionId: 'broken',
+        sessionActionId: null,
+        targetWordId: null,
+        actionKind: null,
+        promptTargetWordId: null,
+        selectedWordId: null,
+        eventIds: [],
+      },
+      request: { params: {}, body: { sessionId: 'broken' } },
+      error: { name: 'Error', message: 'commit failed', stack: null, details: {}, cause: null },
+      runtime: { appVersion: null, appRevision: null, flyMachineId: null, processId: process.pid },
+    };
+    fs.appendFileSync(
+      path.join(dataDir, STUDY_COMMIT_DIAGNOSTICS_FILENAME),
+      `${JSON.stringify(storedFailure)}\n`,
+    );
 
     const computed = usagePulse.computeUsagePulseDay({
       dayKey,

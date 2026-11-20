@@ -203,28 +203,22 @@ The supported adapters are:
   invocation-attributed English-frame/example/translation supplement for the
   exact definition cue or fallback without changing grading or scheduling.
 
-Pending application is recoverable through
-`listPendingReflectionInvocationIds()` and
-`recoverPendingReflectionInvocations()`. The proposal-review route applies a
-pending invocation immediately. Direct backend startup calls
-`recoverPendingReflectionApplicationsAtStartup()` before listening, so a
-process interruption between authorization and application can be resumed.
+`listPendingReflectionInvocationIds()` and `recoverPendingReflectionInvocations()`
+remain in the persistence module for retained records. The legacy proposal-review
+route and the startup recovery hook that called them have been removed.
 
 ## Reflection generation modules
 
-Generation is deliberately outside the DB module:
+The legacy session reflection generation runtime (evidence assembly, generation
+service, lifecycle logging, failure artifacts and provider diagnostics) has been
+removed with its routes. Shared model plumbing remains:
 
 | Module | Responsibility |
 | --- | --- |
-| [`server/reflection/evidence.ts`](../server/reflection/evidence.ts) | Strict supplement validation; completed-session and accepted-attempt verification; read-only word/content enrichment; canonical bundle construction |
-| [`server/reflection/generation.ts`](../server/reflection/generation.ts) | Prelookup idempotency, in-process session/flow request coalescing, bounded evidence counts, provider orchestration, exact-bundle retry, run logging, and valid-result materialization |
-| [`server/reflection/luna-provider.ts`](../server/reflection/luna-provider.ts) | Lazy credential loading, pinned Luna model configuration, production prompt loading, structured-output and domain validation, sanitized typed failures with available response metadata |
-| [`server/reflection/run-pricing.ts`](../server/reflection/run-pricing.ts) | Versioned direct-provider estimates plus OpenRouter response-cost preservation for reflection runs |
-| [`server/reflection/prompts/reflection.md`](../server/reflection/prompts/reflection.md) | Fixed active reflection prompt; previous stamped versions live under `prompts/archive/` |
+| [`server/reflection/model-arms.ts`](../server/reflection/model-arms.ts) and [`model-routing.ts`](../server/reflection/model-routing.ts) | Model choices and routing used by vocabulary reflection |
+| [`server/reflection/luna-provider.ts`](../server/reflection/luna-provider.ts), [`glm-provider.ts`](../server/reflection/glm-provider.ts) | Pinned provider model configurations and the provider config type reused by vocabulary reflection |
+| [`server/reflection/run-pricing.ts`](../server/reflection/run-pricing.ts) | Versioned direct-provider estimates plus OpenRouter response-cost preservation |
 | [`server/llm/`](../server/llm/) | Provider-neutral HTTP, OpenAI-compatible request, token/finish-reason, JSON-schema validation, and static run-pricing primitives |
-
-Provider or evidence failure occurs before artifact materialization and never
-alters durable study attempts, completion summaries, or scheduling state.
 
 ## Retired intake triage storage
 
@@ -492,13 +486,9 @@ action, writes the summary and debrief job, confirms word outcomes, and queues
 reflection in one transaction. Closed and canceled completion rows are terminal;
 new attributed word outcomes cannot mutate a closed session's report.
 
-[`server/session-completion/worker.ts`](../server/session-completion/worker.ts)
-closes overdue revisions independently of provider latency, restores learner
-context for dispatch, skips disabled learners, and fences running outcomes with
-an attempt token. Expired provider work preserves explicit failed-run retry;
-it does not replay unknown outcomes automatically. The worker also drives
-`attention.ts`'s `reflectionGenerating` read through queued/running dispatch
-storage. No historical completion or outcomes are backfilled. Existing databases
+The legacy completion routes and the worker that closed overdue revisions and
+dispatched reflection have been removed; the tables and persistence functions
+remain for retained records. No historical completion or outcomes are backfilled. Existing databases
 require the [offline schema upgrade](ops/schema-migrations.md#operator-procedure); see its
 [migration note](ops/migration-notes.md#durable-session-completion-0036).
 

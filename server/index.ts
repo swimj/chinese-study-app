@@ -13,9 +13,7 @@ import { listSenseContentReconciliationPracticeDemand } from './db/sense-content
 import { createVocabularyProcessingWorker } from './vocabulary/processing-worker.ts';
 import { getVocabularyApprovalRequests } from './vocabulary/approval-requests.ts';
 import { createVocabularyPracticeWorker } from './vocabulary/preparation-worker.ts';
-import { createSessionCompletionWorker } from './session-completion/worker.ts';
 import { registerContentImprovementRoutes } from './content-improvement-routes.ts';
-import { createFileReflectionFailureArtifactSink } from './reflection/failure-artifacts.ts';
 import { installModelInvocationLedger } from './llm/invocation-ledger.ts';
 import { startSessionDebriefRuntime } from './session-debrief/worker.ts';
 import cors from 'cors';
@@ -25,14 +23,7 @@ import type { Server } from 'node:http';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { createClerkRequestAuthentication, type ProviderSubjectResolver } from './authentication.ts';
-import {
-  dbConfig,
-  recoverPendingReflectionInvocations,
-  runWithLearnerId,
-  currentLearnerIdOrNull,
-  getHostedServiceControls,
-  readHostedServiceControl,
-} from './db.ts';
+import { dbConfig, runWithLearnerId, currentLearnerIdOrNull, getHostedServiceControls, readHostedServiceControl } from './db.ts';
 import { createServiceAccessMiddleware } from './service-access.ts';
 import { mountRepertoireQualityRoutes } from './operator/repertoire-quality-routes.ts';
 import { startUsagePulseScheduler } from './usage-pulse-scheduler.ts';
@@ -40,15 +31,6 @@ import {
   getActiveProviderWorkCount,
   MAINTENANCE_MODE_CODE,
 } from './hosted-runtime-controls.ts';
-import {
-  createInitialReflectionGenerationService,
-  type InitialReflectionGenerationService,
-} from './reflection/generation.ts';
-import {
-  createStdoutReflectionLifecycleLogger,
-  type ReflectionLifecycleLogger,
-} from './reflection/lifecycle-log.ts';
-import { createFileReflectionProviderDiagnosticSink } from './reflection/provider-diagnostics.ts';
 import { closeDbConnection } from './db/connection.ts';
 import {
   createServiceMetrics,
@@ -63,10 +45,6 @@ import {
   readSlowRequestThresholdMs,
 } from './request-timing.ts';
 import { createRequestFlightRecorder, type RequestFlightRecorder } from './request-flight-recorder.ts';
-import {
-  createStudyCommitDiagnosticSink,
-  type StudyCommitDiagnosticSink,
-} from './study-commit-diagnostics.ts';
 import {
   createClientIncidentDiagnosticSink,
   type ClientIncidentDiagnosticSink,
@@ -88,15 +66,11 @@ import { registerAttentionRoutes } from './routes/attention-routes.ts';
 import { defaultErrorLogger } from './routes/request-helpers.ts';
 import { registerWordsRoutes } from './routes/words-routes.ts';
 import { registerContentQualityRoutes } from './routes/content-quality-routes.ts';
-import { registerLegacyStudyRoutes } from './routes/legacy-study-routes.ts';
-import { registerLegacyReflectionRoutes } from './routes/legacy-reflection-routes.ts';
 
 const port = dbConfig.port;
 const defaultJsonBodyLimit = '100kb';
 
 export type CreateAppOptions = {
-  reflectionGenerationService?: InitialReflectionGenerationService;
-  reflectionLifecycleLogger?: ReflectionLifecycleLogger;
   resolveClerkProviderSubject?: ProviderSubjectResolver;
   /** `undefined` follows NODE_ENV; `null` explicitly disables frontend serving. */
   frontendDistPath?: string | null;
@@ -108,14 +82,12 @@ export type CreateAppOptions = {
     logSlowRequest?: (line: string) => void;
     flightRecorder?: RequestFlightRecorder;
   };
-  studyCommitDiagnosticSink?: StudyCommitDiagnosticSink;
   clientIncidentDiagnosticSink?: ClientIncidentDiagnosticSink;
   introductionLabService?: IntroductionLabService;
   wordIntroductionService?: WordIntroductionService;
   wakeWordPreparation?: () => void;
   canPrepareWords?: () => boolean;
   wakeSessionDebriefs?: () => void;
-  wakeSessionCompletions?: () => void;
   wakeVocabulary?: () => void;
   wakeVocabularyIntake?: () => void;
   vocabularyIntakeProvider?: ChatProvider;
@@ -125,17 +97,6 @@ export function createApp(options: CreateAppOptions = {}) {
   installModelInvocationLedger();
   const app = express();
   const frontendDistPath = resolveFrontendDistPath(options.frontendDistPath);
-  const reflectionLifecycleLogger = options.reflectionLifecycleLogger
-    ?? createStdoutReflectionLifecycleLogger();
-  const failureArtifactSink = createFileReflectionFailureArtifactSink(dbConfig.dataDir);
-  const reflectionGenerationService = options.reflectionGenerationService
-    ?? createInitialReflectionGenerationService({
-      lifecycleLogger: reflectionLifecycleLogger,
-      failureArtifactSink,
-      providerDiagnosticSink: createFileReflectionProviderDiagnosticSink(dbConfig.dataDir),
-    });
-  const studyCommitDiagnosticSink = options.studyCommitDiagnosticSink
-    ?? createStudyCommitDiagnosticSink(dbConfig.dataDir);
   const clientIncidentDiagnosticSink = options.clientIncidentDiagnosticSink
     ?? createClientIncidentDiagnosticSink(dbConfig.dataDir);
 
@@ -165,7 +126,6 @@ export function createApp(options: CreateAppOptions = {}) {
   app.use('/api/operator/content-improvements', express.json({ limit: '512kb' }));
   app.use('/api/operator/whats-new', express.json({ limit: '1mb' }));
   app.use('/api/whats-new-attention', express.json({ limit: '160kb' }));
-  app.use('/api/study-sessions/:sessionId/completion', express.json({ limit: '1mb' }));
   app.use(express.json({ limit: defaultJsonBodyLimit }));
   app.use(requestTiming.resume);
 
@@ -233,10 +193,8 @@ export function createApp(options: CreateAppOptions = {}) {
   registerSenseContentReconciliationRoutes(app, {wake: () => { options.wakeWordPreparation?.(); options.wakeVocabulary?.(); }});
   mountRepertoireQualityRoutes(app, dbConfig.dbPath);
   registerOperatorRoutes(app, { options });
-  registerLegacyStudyRoutes(app, { options, studyCommitDiagnosticSink, reflectionLifecycleLogger });
   registerLearnerSettingsRoutes(app);
   registerSessionDebriefRoutes(app, { options });
-  registerLegacyReflectionRoutes(app, { reflectionLifecycleLogger, reflectionGenerationService, options });
   registerAttentionRoutes(app);
   registerWhatsNewRoutes(app);
 
@@ -288,10 +246,6 @@ function readHttpErrorStatus(error: unknown): number {
   if (!error || typeof error !== 'object') return 500;
   const status = 'status' in error ? error.status : undefined;
   return status === 400 || status === 413 ? status : 500;
-}
-
-export function recoverPendingReflectionApplicationsAtStartup() {
-  return recoverPendingReflectionInvocations();
 }
 
 export type StartServerOptions = {
@@ -377,7 +331,6 @@ function closeServers(servers: Server[], done: (error?: Error) => void): void {
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
-  if (dbConfig.studyProfile !== 'mandarin') recoverPendingReflectionApplicationsAtStartup();
   const backupSource = startConfiguredBackupSource();
   const serviceMetrics = createServiceMetrics();
   const metricsPort = readMetricsPort(process.env.APP_METRICS_PORT);
@@ -394,13 +347,6 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
   installModelInvocationLedger();
   const wordPreparation = startWordPreparationRuntime();
   const sessionDebriefs = startSessionDebriefRuntime();
-  const sessionCompletions = createSessionCompletionWorker({ wakeDebriefs: sessionDebriefs.wake,
-    reflectionService: createInitialReflectionGenerationService({
-      lifecycleLogger: createStdoutReflectionLifecycleLogger(),
-      failureArtifactSink: createFileReflectionFailureArtifactSink(dbConfig.dataDir),
-      providerDiagnosticSink: createFileReflectionProviderDiagnosticSink(dbConfig.dataDir),
-    }), onError: () => console.error('Session completion worker failed') });
-  if (dbConfig.studyProfile !== 'mandarin') sessionCompletions.wake();
   const vocabularyProcessing = createVocabularyProcessingWorker({onError: error => console.error(error)});
   const vocabularyPreparation = createVocabularyPracticeWorker({
     demand: listSenseContentReconciliationPracticeDemand,
@@ -415,8 +361,8 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
   const wakeVocabularyIntake = () => { vocabularyIntake.wake(); wordPreparation.wake(); wakeVocabulary(); };
   if (dbConfig.studyProfile === 'mandarin') wakeVocabularyIntake();
   startServer({
-    app: createApp({ serviceMetrics, requestTiming: { flightRecorder: flightRecorder ?? undefined }, wakeWordPreparation: wordPreparation.wake, canPrepareWords: wordPreparation.canPrepare, wakeSessionDebriefs: sessionDebriefs.wake, wakeSessionCompletions: sessionCompletions.wake, wakeVocabulary, wakeVocabularyIntake }),
-    stopBackgroundWork: async () => { vocabularyApprovals.stop(); await Promise.all([wordPreparation.stop(), sessionDebriefs.stop(), sessionCompletions.stop(), vocabularyProcessing.stop(), vocabularyPreparation.stop(), vocabularyIntake.stop()]); },
+    app: createApp({ serviceMetrics, requestTiming: { flightRecorder: flightRecorder ?? undefined }, wakeWordPreparation: wordPreparation.wake, canPrepareWords: wordPreparation.canPrepare, wakeSessionDebriefs: sessionDebriefs.wake, wakeVocabulary, wakeVocabularyIntake }),
+    stopBackgroundWork: async () => { vocabularyApprovals.stop(); await Promise.all([wordPreparation.stop(), sessionDebriefs.stop(), vocabularyProcessing.stop(), vocabularyPreparation.stop(), vocabularyIntake.stop()]); },
     additionalServers: [...(metricsServer ? [metricsServer] : []), ...(backupSource ? [backupSource] : [])],
     closeDatabase: () => {
       usagePulseScheduler.stop();

@@ -32,13 +32,6 @@ reconcile membership. Session composition, opening, and abandonment do not
 consume the reserve. [The shared worker](word-content-generation.md#retaining-work-without-exposing-a-partial-lesson)
 handles generation and its retry budget independently of learner navigation.
 
-[Session preparation](../server/word-content/session-preparation.ts) waits at most
-30 seconds total, then admits ready new words within the existing stash/diet
-quotas. Quotas are computed before readiness filtering: stash words still
-preparing do not transfer their slots to diet. Top priority is best effort; a
-reduced or empty new-word set is valid. If no useful session exists yet, the UI
-explains preparation and offers waiting again or returning later.
-
 The complete introduction and exact source travel in the session payload.
 Consequently, the player can advance through the lesson and recall cards without
 model calls or fetching missing introduction content during study.

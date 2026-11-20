@@ -9,12 +9,10 @@ can and cannot prove. Deployment and Grafana setup remain in the
 
 | What the learner saw | First place to look | What it establishes |
 | --- | --- | --- |
-| `Failed to fetch` with a client incident ID during a review or contrast commit | `hosted:inspect-client-incidents`, then study-commit success logs for the same event IDs | The browser's auth-token or fetch promise rejected. A matching backend success proves the commit completed; no matching success does not prove it never arrived. |
-| An application error with `Diagnostic ID: ...` during a study commit | `hosted:inspect-study-commits -- --diagnostic-id=...` | The request reached the commit handler and the handler caught a validation or persistence failure. |
+| `Failed to fetch` with a client incident ID during a review or contrast commit | `hosted:inspect-client-incidents` | The browser's auth-token or fetch promise rejected. A matching backend success proves the commit completed; no matching success does not prove it never arrived. |
 | An HTTP error without an ID | Service metrics, `fly logs`, then the relevant domain store | The browser received an HTTP response. Existing route-specific logging varies. |
 | A shared introduction or teaching-exercise preparation failure | Operator view's [Preparation failures tab](#shared-word-preparation-failures) | The shared word/stage status, last error, and recorded attempt history. |
 | General-practice preparation fails after teaching | Content improvement → Needs attention | The failed preparation's source, attempt count, retained invocation, and whether operator retry is available; see [preparation retries](../vocabulary-learning.md#preparation-retries). |
-| A reflection-generation failure | Reflections run log, reflection lifecycle logs, then the provider diagnostics sidecar | The durable run state and safe provider classification; transport metadata is available for provider failures. |
 | A generic aborted request in Grafana | Prometheus route/method/outcome metrics | A response closed before completion. It is aggregate telemetry, not a per-request log, and `GET /api/*` may be unresolved to a specific route. |
 
 ## Client transport incidents
@@ -84,23 +82,13 @@ request timeouts, or session resume.
 
 ## Study-commit diagnostics
 
-Accepted review and contrast commits emit `study_commit.succeeded` stderr JSON
-events with stable learner/session/action/event correlations, outcome, rating,
-and elapsed time. These events are failure-isolated and are the primary way to
-match an ambiguous client incident to a backend-observed success. They are
-ordinary process logs, not a durable success ledger; repository policy does not
-specify Fly log retention.
-
-Caught review, contrast, and review-session-summary failures return a diagnostic
-ID to the browser, emit a compact `study_commit.failed` event, and append the
-complete parsed request plus error chain to
-`/data/study-commit-diagnostics.jsonl`. That private sidecar is mode `0600`,
-keeps valid failures for 30 days using lazy daily pruning, and is not backed up
-by Litestream. See [hosted observability](./hosted-observability.md#diagnose-a-failed-study-commit)
-for inspection commands and the exact privacy boundary.
-
-This surface only sees requests that enter the route handler. Absence of a
-failure record does not establish that a browser request reached the service.
+The legacy accepted-review, contrast, and review-summary commit routes that
+emitted `study_commit.*` events and wrote `/data/study-commit-diagnostics.jsonl`
+have been removed. Nothing writes the sidecar now, and its 30-day pruning ran
+only on a new failed write, so an existing file on the volume no longer ages out.
+It remains private operational evidence; see
+[hosted observability](./hosted-observability.md#diagnose-a-failed-study-commit)
+to read it. Deleting it is an explicit operator decision.
 
 ## Service metrics and Grafana
 
@@ -150,65 +138,21 @@ dependencies, component reuse, and publication eligibility.
 
 ## Reflection diagnostics
 
-Reflection work has four complementary surfaces:
+The legacy session reflection runtime has been removed, so the server no longer
+emits `reflection.*` lifecycle events, appends `reflection-provider-diagnostics.jsonl`,
+or writes failure artifacts under `<APP_DATA_DIR>/reflection-failures/`.
+Reflection generation run rows remain in SQLite as retained records and travel
+with the normal database backup.
 
-1. `reflection.*` stdout lifecycle events cover summary recording, generation
-   request, provider start, and terminal success/failure. They contain bounded
-   IDs, counts, elapsed time, and safe codes, but not prompts or response bodies.
-2. `reflection-provider-diagnostics.jsonl` records allowlisted provider
-   transport failures: session/client request IDs, failure kind, safe error
-   names/codes, HTTP status, and provider request/timing headers. It excludes
-   messages, stacks, prompts, bodies, and API keys. It is best-effort, has no
-   pruning policy or dedicated inspector, and is not Litestream-backed.
-3. Reflection generation run rows in SQLite record start and terminal states,
-   provider/model/token/cost metadata, exact retained evidence, and structured
-   failure diagnostics. They survive through the normal database backup path
-   and are visible through `GET /api/reflection-generation-runs` and the
-   Reflections page. There is no current retention policy; rejected raw model
-   output is intentionally retained for dogfood diagnosis and therefore needs
-   a retention/secret policy before broader productization.
+The failure-artifact directory was pruned only when the removed runtime started,
+so any files still present no longer expire. They contain private learner data
+(answers and model-generated text) and are not backed up. To check, list
+`/data/reflection-failures` through authenticated Fly SSH; deleting them is an
+explicit operator decision. The provider diagnostics file had no pruning policy
+and is likewise no longer written.
 
-4. Private JSON failure artifacts are written to
-   `<APP_DATA_DIR>/reflection-failures/` (`/data/reflection-failures/` when
-   hosted). They include run/client-request/session IDs, model and prompt
-   metadata, exact evidence, diagnostic issues, full rejected model text, and
-   error messages/stacks/causes for validation or internal failures. Transport
-   failures retain only their safe wrapper and allowlisted classification;
-   arbitrary upstream bodies, transport messages, and credentials are excluded.
-   Files are mode `0600` inside a `0700` directory, are not served through HTTP,
-   and are not backed up by SQLite/Litestream. Treat them as private learner
-   data, including answers and model-generated text.
-
-On every server startup, the artifact sink removes its own regular files whose
-capture timestamp in the filename is at least seven days old. Fresh files,
-unrecognized names, directories, and symlinks are left alone. There is no
-periodic timer: files can live longer than a week until the next restart.
-Capture happens before recording the failed run in SQLite, so a database
-logging failure does not discard the independent file. Capture/cleanup errors
-emit content-free `reflection.failure_artifact_write_failed` or
-`reflection.failure_artifact_cleanup_failed` warnings and never block startup
-or replace the generation failure.
-
-To investigate, list `/data/reflection-failures` through authenticated Fly SSH,
-then read the JSON file matching the run ID or client request ID from the run
-log. Each filename is `failure-<capture epoch milliseconds>-<uuid>.json`.
-These diagnostic files are distinct from successful learner reflection artifacts
-and grant no proposal authority. Existing SQLite diagnostics keep their prior
-retention and bounded output; the seven-day policy applies to the new files.
-
-The UI text “No structured issue detail was recorded.” means an older diagnostic
-has an empty `issues` array. Previously, JSON parsing discarded the actual parser
-exception; truncation and provider failures also deliberately supplied empty
-arrays. New failures record the parse exception, truncation finish reason, or
-safe transport classification. Schema/domain failures already included structured
-issues. Full output in the private artifact avoids the existing 4,000-character
-SQLite/UI excerpt hiding a parse error near the end. Historical failures cannot
-recover details that were never retained.
-
-A process interruption can leave a reflection run in `in_flight`. Most
-reflection internal failures have only safe lifecycle information; unexpected
-deferred second-opinion failures additionally receive a diagnostic ID and a
-bounded stderr record.
+Vocabulary reflection diagnostics are separate; see the
+[vocabulary learning guide](../vocabulary-learning.md).
 
 ## Generic server and frontend errors
 
