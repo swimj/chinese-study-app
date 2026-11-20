@@ -77,10 +77,12 @@ uses a single familiar example with cumulative reveals: target contrast and
 pronunciation, then sentence translation, then sense, then Continue. Space, Enter,
 and the Reveal button each advance one beat; a missing translation skips its beat.
 The first reveal emphasizes exact target occurrences and places the word pronunciation above them
-with native character-level ruby text. The authored sentence pinyin is aligned
-only when syllable boundaries and character counts match unambiguously. Target
-readings stay visible after Reveal; other characters show readings on hover or
-keyboard focus. Uncertain alignment retains the Pinyin disclosure. The sentence
+with native character-level ruby text. Spaces and supported punctuation, including
+double quotation marks, separate tokens in the authored sentence pinyin. Ruby
+requires unambiguous syllable boundaries, matching character counts, and
+agreement with the target's dictionary reading. Target readings stay visible
+after Reveal. Other characters show readings on hover or keyboard focus.
+Uncertain alignment retains the Pinyin disclosure. The sentence
 translation comes first, then the word-prefixed example-linked sense (with lexical
 meaning as fallback). An absent target keeps standalone word pronunciation. The warmup
 records no assessment or recall success. The session chooses words and skills, not a
