@@ -147,7 +147,11 @@ export function registerVocabularyReflectionRoutes(app:Express,options:{wake?:()
     const input=object(req.body,['expectedVersion','expectedContentVersion','modelChoice','originProposal','editorial','responseIdentities']);
     if(!isOfferedReflectionModelChoice(input.modelChoice))throw new VocabularyReflectionRequestError('Unsupported assessment model');
     let origin:import('../db/vocabulary-reflection.ts').ReassessmentOrigin={kind:'case'};
-    if(input.originProposal!==undefined){const proposal=object(input.originProposal,['proposalId','expectedVersion']);origin={kind:'proposal',proposalId:text(proposal.proposalId),expectedVersion:version(proposal.expectedVersion)};}
+    if(input.originProposal!==undefined){
+      const proposal=object(input.originProposal,['proposalId','expectedVersion','includeInAssessment']);
+      if(proposal.includeInAssessment!==undefined && typeof proposal.includeInAssessment!=='boolean')throw new VocabularyReflectionRequestError('Expected boolean proposal inclusion');
+      origin={kind:'proposal',proposalId:text(proposal.proposalId),expectedVersion:version(proposal.expectedVersion),...(proposal.includeInAssessment?{includeInAssessment:true}:{})};
+    }
     let editorial:import('../../src/domain/vocabulary-reflection.ts').VocabularyReassessmentEditorialInput|undefined;
     if(input.editorial!==undefined){const value=object(input.editorial,['instructions','secondOpinionRequestId']);const instructions=optionalText(value.instructions);if(instructions.length>10000)throw new VocabularyReflectionRequestError('Editorial instructions are too long');editorial={instructions,...(value.secondOpinionRequestId===undefined?{}:{secondOpinionRequestId:text(value.secondOpinionRequestId)})};}
     let identities:import('../../src/domain/vocabulary-reflection.ts').VocabularyResponseIdentitySelection|undefined;

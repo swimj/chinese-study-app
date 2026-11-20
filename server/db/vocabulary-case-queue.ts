@@ -281,7 +281,7 @@ function readCards(wanted:{caseId:string;proposalId?:string}[]):VocabularyCaseQu
         WHEN 'vocabulary.reflection.reassessment_editorial_captured' THEN json_extract(e.data_json,'$.instructions')
         WHEN 'vocabulary.reflection.case_second_opinion_requested' THEN json_extract(e.data_json,'$.notes') ELSE json_extract(e.data_json,'$.reason') END AS text,
       e.occurred_at AS createdAt,e.actor_id AS actorId,json_extract(e.data_json,'$.secondOpinion.requestId') AS secondOpinionRequestId,
-      json_extract(e.data_json,'$.requestId') AS noteId
+      json_extract(e.data_json,'$.priorProposal') AS priorProposal,json_extract(e.data_json,'$.requestId') AS noteId
     FROM members m JOIN backend_events e ON e.entity_kind='reflection' AND e.entity_id=m.memberId
       AND (e.actor_kind='operator' OR (e.actor_kind='service' AND e.name='vocabulary.reflection.case_source_conflict_resolved'))
     WHERE e.name IN ('vocabulary.reflection.case_note_added','vocabulary.reflection.admission_case_closed','vocabulary.reflection.teaching_case_closed','vocabulary.reflection.case_source_superseded','vocabulary.reflection.case_source_conflict_resolved',
@@ -289,25 +289,26 @@ function readCards(wanted:{caseId:string;proposalId?:string}[]):VocabularyCaseQu
     UNION ALL
     SELECT m.caseId,r.review_id,CASE r.disposition WHEN 'approved' THEN 'approve' ELSE 'dismiss' END,
       CASE WHEN json_type(r.notes_json)='text' THEN json_extract(r.notes_json,'$') ELSE json_extract(r.notes_json,'$.reason') END,
-      r.reviewed_at,r.operator_id,NULL,NULL
+      r.reviewed_at,r.operator_id,NULL,NULL,NULL
     FROM members m JOIN content_proposals p ON p.case_id=m.memberId JOIN proposal_reviews r ON r.proposal_id=p.proposal_id
     UNION ALL
-    SELECT m.caseId,o.request_id,'second_opinion',json_extract(j.second_opinion_json,'$.notes'),o.requested_at,o.requested_by,NULL,NULL
+    SELECT m.caseId,o.request_id,'second_opinion',json_extract(j.second_opinion_json,'$.notes'),o.requested_at,o.requested_by,NULL,NULL,NULL
     FROM members m JOIN content_proposals p ON p.case_id=m.memberId JOIN vocabulary_second_opinions o ON o.proposal_id=p.proposal_id
       JOIN vocabulary_reflection_jobs j ON j.job_id=o.job_id
   ), ranked AS (
     SELECT *,row_number() OVER(PARTITION BY caseId,action='note' ORDER BY createdAt DESC,activityId DESC) AS position,
       count(*) OVER(PARTITION BY caseId,action='note') AS total
-    FROM commentary WHERE (typeof(text)='text' AND length(trim(text))>0) OR secondOpinionRequestId IS NOT NULL
+    FROM commentary WHERE (typeof(text)='text' AND length(trim(text))>0) OR secondOpinionRequestId IS NOT NULL OR priorProposal IS NOT NULL
   ) SELECT * FROM ranked WHERE action='note' OR position<=20 ORDER BY createdAt,activityId`).all(selected) as {
-    caseId:string;activityId:string;action:'note'|NonNullable<VocabularyCaseQueueItem['activity']>[number]['action'];text:string;createdAt:string;actorId:string;secondOpinionRequestId:string|null;noteId:string|null;position:number;total:number
+    caseId:string;activityId:string;action:'note'|NonNullable<VocabularyCaseQueueItem['activity']>[number]['action'];text:string;createdAt:string;actorId:string;secondOpinionRequestId:string|null;priorProposal:string|null;noteId:string|null;position:number;total:number
   }[];
   for(const row of commentary){
     const card=cards.get(row.caseId)!;
     if(row.action==='note')(card.notes??=[]).push({noteId:row.noteId!,text:row.text,createdAt:row.createdAt,actorId:row.actorId});
     else {
       (card.activity??=[]).push({activityId:row.activityId,action:row.action,text:row.text,createdAt:row.createdAt,actorId:row.actorId,
-        ...(row.secondOpinionRequestId?{secondOpinionRequestId:row.secondOpinionRequestId}:{})});
+        ...(row.secondOpinionRequestId?{secondOpinionRequestId:row.secondOpinionRequestId}:{}),
+        ...(row.priorProposal?{priorProposal:JSON.parse(row.priorProposal) as VocabularyReassessmentEditorial['priorProposal']}:{})});
       if(row.total>20)card.activityHasMore=true;
     }
   }

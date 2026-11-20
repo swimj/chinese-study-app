@@ -224,6 +224,25 @@ test('historical private dictionary encounters generate shared repertoires after
   for(const operation of proposal.operations)assert.equal(getVocabularyContentForMaintenance(operation.content.contentId!)!.accessScope,'shared');
 });
 
+test('reassessing a prior proposal that produces a first repertoire requires explicit approval',async()=>{
+  const {id,work}=historicalDictionaryBaselineJob();
+  const trial=dictionaryRepertoireProvider('shared',2);
+  const initial=await trial.provider.run(work);
+  if(initial.kind!=='exercise_improvement')assert.fail('Expected bootstrap proposal');
+  // Supply a prior proposal for review, with the same source and eligible word defaults.
+  const {proposalId}=recordVocabularyImprovementResult(work.jobId,work.leaseToken,{diagnosis:'Initial draft',proposal:initial.result.proposal},judgedAt);
+  const origin={kind:'proposal' as const,proposalId:proposalId!,expectedVersion:1,includeInAssessment:true};
+  requestVocabularyReassessment(work.caseId,'editor','openai:gpt-6-sol-high',2,origin,{instructions:'Use a concise frame.'});
+  const child=claimVocabularyReflectionJob({kind:'exercise_improvement'})!;
+  const reassessed=await trial.provider.run(child);
+  if(reassessed.kind!=='exercise_improvement')assert.fail('Expected reassessment');
+  assert.equal(reassessed.result.admission?.outcome,'repertoire_bootstrap');
+  const replacement=recordVocabularyImprovementResult(child.jobId,child.leaseToken,reassessed.result);
+  assert.equal(getVocabularyProposal(replacement.proposalId!,'editor').status,'awaiting_review');
+  assert.equal(getVocabularyContentForMaintenance(id)!.availability,'active');
+  assert.equal(getVocabularyProposal(proposalId!,'editor').status,'closed');
+});
+
 test('a first repertoire bootstrap waits for operator review when its inventory changed after generation',async()=>{
   const {id,work}=historicalDictionaryBaselineJob();
   const result=await dictionaryRepertoireProvider('shared',2).provider.run(work);
@@ -1736,22 +1755,23 @@ for(const action of ['dismiss','apply','continuation'] as const)test(`an identit
   else if(action==='apply'){const review=approveVocabularyProposal(previous.proposalId!,1,'editor');applyVocabularyProposal(previous.proposalId!,1,review,'identity-prior','editor');}
 });
 
-test('continuing an identity pause preserves prior editorial direction and opinion',()=>{
+test('continuing an identity pause preserves direction, the prior proposal and the selected opinion',()=>{
   sql.exec("UPDATE lexical_words SET hanzi=CASE id WHEN 'a' THEN '字' ELSE 'answer' END");
   const sense=createVocabularySense({senseId:'character',wordId:'a',description:'character'},actor);establishVocabularySenseCatalog('a',getVocabularySenseCatalog('a').version,actor);
   ingest([present('one'),response('one')]);const first=claimVocabularyReflectionJob({kind:'exercise_improvement',now:judgedAt})!;
-  recordVocabularyImprovementResult(first.jobId,first.leaseToken,{diagnosis:'Earlier assessment',proposal:null},judgedAt);
+  const {proposalId}=recordVocabularyImprovementResult(first.jobId,first.leaseToken,{diagnosis:'Earlier assessment',proposal:{rationale:'First cue',operations:[op()]}},judgedAt);
   const direction={instructions:'Consider the learner context.',secondOpinion:{requestId:'opinion',jobId:'opinion-job',verdict:'revise' as const,rationale:'Clarify the target.'}};
-  const next=requestVocabularyReassessment(first.caseId,'editor','openai:gpt-6-sol-high',1,{kind:'case'},direction);
+  const next=requestVocabularyReassessment(first.caseId,'editor','openai:gpt-6-sol-high',1,{kind:'proposal',proposalId:proposalId!,expectedVersion:1,includeInAssessment:true},direction);
   const paused=claimVocabularyReflectionJob({kind:'exercise_improvement',now:new Date(Date.now()+1000).toISOString()})!;
   assert.equal(paused.jobId,next.jobId);
   const choices=(sql.prepare("SELECT id AS wordId,hanzi,traditional,pinyin,meaning FROM lexical_words WHERE hanzi='answer' ORDER BY id").all() as {wordId:string;hanzi:string;traditional:string|null;pinyin:string;meaning:string}[]).map(row=>({...row}));
   const options=[{form:'answer',choices}];
   recordVocabularyImprovementResult(paused.jobId,paused.leaseToken,{diagnosis:'Choose an entry',proposal:null,responseIdentityOptions:options,admission:{outcome:'single_sense',rationale:'Character',wordId:'a',sourceContentId:'one',sourceContentVersion:1,catalogVersion:getVocabularySenseCatalog('a').version,senseIds:[sense.senseId],sourceMapping:{senseId:null,establishedAt:null}}});
-  assert.deepEqual(getVocabularyCaseCard(first.caseId,'editor').pendingEditorial,direction);
+  assert.deepEqual(getVocabularyCaseCard(first.caseId,'editor').pendingEditorial,{...direction,priorProposal:{proposalId,version:1}});
   const resumed=requestVocabularyReassessment(first.caseId,'editor','openai:gpt-6-sol-high',1,{kind:'case'},{instructions:'Also preserve the cue.'},{options,selections:{answer:'b'}});
   const child=claimVocabularyReflectionJob({kind:'exercise_improvement',now:new Date(Date.now()+2000).toISOString()})!;assert.equal(child.jobId,resumed.jobId);
-  assert.deepEqual(child.editorial,{...direction,instructions:'Consider the learner context.\n\nAlso preserve the cue.'});
+  assert.ok(paused.editorial?.priorProposal);
+  assert.deepEqual(child.editorial,{...direction,priorProposal:paused.editorial.priorProposal,instructions:'Consider the learner context.\n\nAlso preserve the cue.'});
 });
 test('an existing assessment can resolve response identity when reassessment is opened',()=>{
   sql.exec("UPDATE lexical_words SET hanzi=CASE id WHEN 'a' THEN '字' ELSE 'answer' END");

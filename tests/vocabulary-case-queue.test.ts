@@ -9,7 +9,7 @@ import { installLearnerContextSqlFunction } from '../server/db/learner-context.t
 import { createBaselineSchema } from '../server/db/persistence.ts';
 import { migrateDatabase } from '../server/db/migrations.ts';
 import { createVocabularyContent,createVocabularySense,establishVocabularySenseCatalog,getVocabularySenseCatalog,getVocabularyContentForMaintenance,updateVocabularyContent,emitBackendEvent } from '../server/db/vocabulary-content.ts';
-import { createVocabularyProposal,claimVocabularyReflectionJob,recordVocabularyImprovementResult,retryVocabularyReflectionJob,approveVocabularyProposal,applyVocabularyProposal,closeVocabularyProposal } from '../server/db/vocabulary-reflection.ts';
+import { createVocabularyProposal,saveVocabularyProposal,getVocabularyProposal,claimVocabularyReflectionJob,recordVocabularyImprovementResult,retryVocabularyReflectionJob,approveVocabularyProposal,applyVocabularyProposal,closeVocabularyProposal } from '../server/db/vocabulary-reflection.ts';
 import { abandonVocabularyReassessment,listVocabularyCaseQueue,getVocabularyCaseCard,setVocabularyCaseDeferred,resolveVocabularyCaseReview,proposeVocabularyCaseRetirement,getVocabularyFallbackRepertoire,generateVocabularyFallbackRepertoire,reassessVocabularyCaseReview,addVocabularyCaseNote } from '../server/db/vocabulary-case-queue.ts';
 import { getVocabularyRepertoireSelection } from '../server/db/vocabulary-repertoire-selection.ts';
 import { getVocabularyWordSenseCoverage, writeVocabularyDefaultUsefulSenses } from '../server/db/vocabulary-sense-coverage.ts';
@@ -155,6 +155,9 @@ test('HTTP queue validates limits and case versions and keeps operator authoriza
   assert.equal(call('post','case-queue/:id/notes',{expectedVersion:1,requestId:'note',text:'Useful note'}).status,200);
   assert.equal(call('post','case-queue/:id/notes',{expectedVersion:1,requestId:'note',text:'Useful note'}).status,200);
   assert.equal(call('post','case-queue/:id/reassess',{expectedVersion:2,expectedContentVersion:1,modelChoice:'openai:gpt-6-sol-high',editorial:{instructions:123}}).status,400);
+  for(const extra of [{includeInAssessment:'true'},{operations:[]}]){
+    assert.equal(call('post','case-queue/:id/reassess',{expectedVersion:2,expectedContentVersion:1,modelChoice:'openai:gpt-6-sol-high',originProposal:{proposalId:'untrusted',expectedVersion:1,...extra}}).status,400);
+  }
   assert.equal(call('post','case-queue/:id/reassess',{expectedVersion:2,expectedContentVersion:1,modelChoice:'openai:gpt-6-sol-high',editorial:{instructions:'Revise',secondOpinionRequestId:'missing'}}).status,409);
   assert.equal(call('post','case-queue/:id/deferred',{expectedVersion:1,deferred:'true'}).status,400);
   assert.equal(call('post','case-queue/:id/deferred',{expectedVersion:99,deferred:true}).status,409);
@@ -376,6 +379,40 @@ test('reassessment pins only the explicitly selected current second opinion with
   sql.prepare("UPDATE vocabulary_reflection_jobs SET status='failed',lease_token=NULL,lease_expires_at=NULL,last_error='provider_error' WHERE job_id=?").run(queued.jobId);
   retryVocabularyReflectionJob(queued.jobId,'editor');
   assert.deepEqual(claimVocabularyReflectionJob()!.editorial,claimed.editorial);
+});
+
+for(const includeInAssessment of [false,true])test(`reassessment of an edited alternative pins its displayed revision only on opt-in (${includeInAssessment})`,()=>{
+  const caseId='critique',actor='editor',model='openai:gpt-6-sol-high';
+  const proposalId=seedCase(caseId,{proposal:true})!;
+  const original=getVocabularyProposal(proposalId,actor);
+  const revised=saveVocabularyProposal(proposalId,1,{operations:original.operations.map(op=>({...op,content:{...op.content,body:{prompt:'A revised draft cue'}}})),rationale:'Updated rationale'},actor);
+  const sibling=createVocabularyProposal({caseId,operations:original.operations,rationale:'Different proposal'},actor);
+  const otherId=seedCase('other-case',{proposal:true})!;
+  const card=getVocabularyCaseCard(caseId,actor,proposalId);
+  assert.equal(card.currentProposalId,sibling.proposalId);
+  const origin={kind:'proposal' as const,proposalId,expectedVersion:revised.version,includeInAssessment};
+  const critique={instructions:'The revised cue gives the answer away.'};
+  assert.throws(()=>reassessVocabularyCaseReview(caseId,card.version,actor,model,1,{...origin,expectedVersion:1},critique),/version changed/);
+  assert.throws(()=>reassessVocabularyCaseReview(caseId,card.version,actor,model,1,{...origin,proposalId:otherId,expectedVersion:1},critique),/from this case/);
+  assert.throws(()=>reassessVocabularyCaseReview(caseId,card.version,actor,model,2,origin,critique),/source version changed/);
+  assert.equal(getVocabularyCaseCard(caseId,actor).currentProposalId,sibling.proposalId);
+  const queued=reassessVocabularyCaseReview(caseId,card.version,actor,model,1,origin,critique);
+  const selection={proposalId,version:2};
+  assert.deepEqual(queued.item.activity?.[0].priorProposal,includeInAssessment?selection:undefined);
+  const input=claimVocabularyReflectionJob()!;
+  assert.deepEqual(input.reassessmentSource?.body,{prompt:'Original cue'});
+  assert.equal(input.editorial?.instructions,critique.instructions);
+  assert.deepEqual(input.editorial?.priorProposal,includeInAssessment?revised:undefined);
+  sql.prepare("UPDATE vocabulary_reflection_jobs SET status='failed',lease_token=NULL,lease_expires_at=NULL,last_error='provider_error' WHERE job_id=?").run(queued.jobId);
+  retryVocabularyReflectionJob(queued.jobId,actor);
+  const retried=claimVocabularyReflectionJob()!;
+  assert.deepEqual(retried.editorial,input.editorial);
+  const replacement=recordVocabularyImprovementResult(queued.jobId,retried.leaseToken,{diagnosis:'Shorter.',proposal:{operations:original.operations,rationale:'Shorter.'}});
+  assert.equal(getVocabularyProposal(replacement.proposalId!,actor).status,'awaiting_review');
+  assert.equal(getVocabularyContentForMaintenance('source')!.version,1);
+  assert.equal(getVocabularyProposal(proposalId,actor).status,'closed');
+  const history=sql.prepare('SELECT snapshot_json FROM proposal_revision_history WHERE proposal_id=? AND version=?').get(proposalId,revised.version)!;
+  assert.deepEqual(JSON.parse(String(history.snapshot_json)),revised);
 });
 
 test('plain reassessment does not implicitly capture notes or advisory context',()=>{
