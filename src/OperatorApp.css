@@ -36,5 +36,6 @@
   .operator-rail-toggle { display: block; position: absolute; top: .7rem; left: 1rem; z-index: 21; padding: .4rem .6rem; }
   .operator-rail-toggle span { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
   .operator-main { padding: 0 1rem; }
-  .operator-main .vocabulary-case-review-page > header { padding-left: 2.9rem; }
+  .operator-main .vocabulary-case-review-page > header,
+  .operator-main .operator-usage-heading { padding-left: 2.9rem; }
 }

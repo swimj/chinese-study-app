@@ -6,9 +6,10 @@ import path from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import type { Server } from 'node:http';
 import { after, before, beforeEach, describe, test } from 'node:test';
-import { deckIdentityProbeSql, deckWordProbeSql, getResolvedDeckWordIds, invalidateDeckWordIds, queryManifestDeckWords, DECK_WORD_STUDY_DATES_SQL } from '../server/db/deck-words.ts';
+import { deckIdentityProbeSql, getResolvedDeckWordIds, invalidateDeckWordIds, DECK_WORD_STUDY_DATES_SQL } from '../server/db/deck-words.ts';
 
 import { getDb } from '../server/db/connection.ts';
+import { getVocabularyWordsCollection } from '../server/db/vocabulary-words.ts';
 import { loadDeckManifest } from '../server/decks/manifest.ts';
 
 type DbModule = typeof import('../server/db.ts');
@@ -17,7 +18,7 @@ let sqlite: DatabaseSync;
 let directory: string;
 let server: Server;
 let origin: string;
-let rawLearner = 'test-learner';
+const rawLearner = 'test-learner';
 const previousManifestPath = process.env.APP_DECK_MANIFEST_PATH;
 
 describe('My words collections', { concurrency: false }, () => {
@@ -54,7 +55,6 @@ describe('My words collections', { concurrency: false }, () => {
 
   beforeEach(() => {
     clearWordPreparationFixtures(sqlite);
-    rawLearner = 'test-learner';
     sqlite.exec('DELETE FROM study_attempt_events; DELETE FROM study_sessions; DELETE FROM word_skill_state; DELETE FROM user_word_priority; DELETE FROM words;');
     sqlite.exec("DELETE FROM learner_settings WHERE setting_key = 'diet_profile'");
   });
@@ -69,138 +69,14 @@ describe('My words collections', { concurrency: false }, () => {
     else process.env.APP_DECK_MANIFEST_PATH = previousManifestPath;
   });
 
-  test('personal membership includes waiting and studied words; removal and dismissal exclude words', () => {
-    insert('waiting'); insert('required'); insert('removed'); insert('dismissed'); insert('ordinary', 'learning');
-    for (const id of ['waiting', 'removed', 'dismissed']) db.updateWordUserPriority(id, { bumpDelta: 1 });
-    db.updateWordUserPriority('required', { requiredForNextSession: true });
-    introduce('required', '2026-09-13');
-    db.updateWordUserPriority('removed', { reset: true });
-    sink('dismissed');
-    assert.deepEqual(new Set(db.getMyWords({ view: 'personal' }).words.map((entry) => entry.word.id)), new Set(['waiting', 'required']));
-    assert.deepEqual(new Set(db.getMyWords().words.map((entry) => entry.word.id)), new Set(['required', 'ordinary']));
-  });
-
-  test('recency includes failed accepted reviews, combines sources, and sorts missing dates last', () => {
-    insert('missing', 'learning'); insert('learning', 'learning', '2026-09-10');
-    insert('review', 'review', '2026-09-01');
-    sqlite.prepare(`INSERT INTO study_sessions (id, started_at, processing_state) VALUES ('session', '2026-09-01T00:00:00Z', 'processed')`).run();
-    insertAttempt('accepted', '2026-09-12T20:00:00.000Z', '2026-09-12T20:00:01.000Z');
-    insertAttempt('unprojected', '2026-09-14T20:00:00.000Z', null);
-    sqlite.prepare(`INSERT INTO word_skill_state (word_id, skill_id, enabled, interval_hours, last_studied_at, next_due_at, ease_factor) VALUES ('review', 'recognition', 1, 24, '2026-09-11T00:00:00.000Z', NULL, 2.5)`).run();
-    const entries = db.getMyWords().words;
-    assert.deepEqual(entries.map((entry) => entry.word.id), ['learning', 'missing', 'review']);
-    assert.deepEqual(entries.map((entry) => entry.lastStudiedAt), ['2026-09-10', null, '2026-09-12']);
-    sqlite.prepare('UPDATE words SET hanzi = ?, pinyin = ? WHERE id = ?').run('我', 'wǒ', 'review');
-    place({ 'hsk2-l1': 1 });
-    const deck = db.getMyWords({ view: 'deck' });
-    assert.equal(deck.words.length, 1);
-    assert.equal(deck.words[0].lastStudiedAt, '2026-09-12');
-  });
-
-  test('search spans the collection before pagination and treats wildcard characters literally', () => {
-    for (let index = 0; index < 55; index++) insert(`word-${String(index).padStart(2, '0')}`, 'learning');
-    sqlite.prepare('UPDATE words SET meaning = ? WHERE id = ?').run('100% under_score \\ unique', 'word-54');
-    sqlite.prepare('UPDATE words SET meanings_json = ? WHERE id = ?').run('["first gloss", "secondary gloss"]', 'word-53');
-    const first = db.getMyWords();
-    assert.equal(first.words.length, 50); assert.equal(first.hasMore, true);
-    assert.equal(first.total, 55);
-    assert.equal(db.getMyWords({ offset: 50 }).words.length, 5);
-    for (const query of ['unique', '%', '_', '\\']) {
-      assert.deepEqual(db.getMyWords({ query }).words.map((entry) => entry.word.id), ['word-54']);
-    }
-    assert.equal(db.getMyWords({ query: 'unique', view: 'personal' }).words.length, 0);
-    assert.deepEqual(db.getMyWords({ query: 'secondary gloss' }).words.map((entry) => entry.word.id), ['word-53']);
-    assert.equal(db.getMyWords({ offset: 55 }).hasMore, false);
-  });
-
-  test('lists sort learning recent, unstudied by pinyin, then review recent, and filter before pagination', () => {
-    const rows: Array<[string, 'learning' | 'review' | 'unstudied', string | null, string]> = [
-      ['learn-new', 'learning', '2026-09-11', 'learn-new'],
-      ['learn-old', 'learning', '2026-09-02', 'learn-old'],
-      ['wait-a', 'unstudied', null, 'aa'],
-      ['wait-b', 'unstudied', null, 'ba'],
-      ['review-new', 'review', '2026-09-12', 'review-new'],
-      ['review-old', 'review', '2026-09-01', 'review-old'],
-    ];
-    for (const [id, status, covered, pinyin] of rows) {
-      insert(id);
-      db.updateWordUserPriority(id, { bumpDelta: 1 });
-      sqlite.prepare('UPDATE words SET status = ?, last_learning_covered_on = ?, pinyin = ? WHERE id = ?')
-        .run(status, covered, pinyin, id);
-    }
-    assert.deepEqual(db.getMyWords({ view: 'personal' }).words.map((entry) => entry.word.id),
-      ['learn-new', 'learn-old', 'wait-a', 'wait-b', 'review-new', 'review-old']);
-    assert.deepEqual(db.getMyWords().words.map((entry) => entry.word.id),
-      ['learn-new', 'learn-old', 'review-new', 'review-old']);
-    assert.deepEqual(db.getMyWords({ view: 'personal', statuses: ['unstudied'] }).words.map((entry) => entry.word.id),
-      ['wait-a', 'wait-b']);
-    assert.deepEqual(db.getMyWords({ statuses: ['unstudied'] }).words.map((entry) => entry.word.id),
-      ['learn-new', 'learn-old', 'review-new', 'review-old']);
-    for (let index = 0; index < 40; index++) {
-      const id = `page-learn-${String(index).padStart(2, '0')}`;
-      insert(id);
-      db.updateWordUserPriority(id, { bumpDelta: 1 });
-      sqlite.prepare("UPDATE words SET status = 'learning' WHERE id = ?").run(id);
-    }
-    const first = db.getMyWords({ view: 'personal', statuses: ['learning'], limit: 50, offset: 0 });
-    assert.equal(first.words.length, 42);
-    assert.equal(first.total, 42);
-    assert.equal(first.hasMore, false);
-    assert.ok(first.words.every((entry) => entry.word.status === 'learning'));
-  });
-
-  test('recent lapses keep recent forgots or a post-success unsuccessful learning day', () => {
-    const today = new Date().toISOString().slice(0, 10);
-    const inWindow = shiftUtcDay(today, -2);
-    const outside = shiftUtcDay(today, -3);
-    sqlite.prepare(`INSERT INTO study_sessions (id, started_at, processing_state) VALUES ('session', ?, 'processed')`).run(`${today}T00:00:00Z`);
-    insert('review-forgot', 'review', today);
-    insert('review-recovered', 'review', today);
-    insert('review-old', 'review', outside);
-    insert('learn-fail', 'learning', today);
-    insert('learn-ok', 'learning', today);
-    insert('learn-graduate', 'learning', today);
-    insert('waiting');
-    db.updateWordUserPriority('waiting', { bumpDelta: 1 });
-    sqlite.prepare('UPDATE words SET last_learning_success_on = last_learning_covered_on WHERE id IN (?, ?, ?)').run('review-forgot', 'review-recovered', 'review-old');
-    sqlite.prepare('UPDATE words SET last_learning_success_on = ? WHERE id = ?').run(shiftUtcDay(today, -5), 'learn-fail');
-    sqlite.prepare('UPDATE words SET last_learning_success_on = ? WHERE id = ?').run(today, 'learn-ok');
-    // Same shape as unstudied -> learning graduation: covered today, never succeeded.
-    insertAttempt('forgot-now', `${inWindow}T12:00:00.000Z`, `${inWindow}T12:00:01.000Z`, 'review-forgot', 'incorrect', 'forgot');
-    insertAttempt('forgot-then-ok', `${inWindow}T08:00:00.000Z`, `${inWindow}T08:00:01.000Z`, 'review-recovered', 'incorrect', 'forgot');
-    insertAttempt('later-ok', `${inWindow}T09:00:00.000Z`, `${inWindow}T09:00:01.000Z`, 'review-recovered', 'correct', 'good');
-    insertAttempt('forgot-old', `${outside}T12:00:00.000Z`, `${outside}T12:00:01.000Z`, 'review-old', 'incorrect', 'forgot');
-    insertAttempt('unprojected', `${today}T12:00:00.000Z`, null, 'review-old', 'incorrect', 'forgot');
-    const recent = db.getMyWords({ recentLapses: true });
-    assert.deepEqual(new Set(recent.words.map((entry) => entry.word.id)), new Set(['learn-fail', 'review-forgot', 'review-recovered']));
-    assert.equal(recent.total, 3);
-    assert.ok(!recent.words.some((entry) => entry.word.id === 'learn-graduate'));
-    assert.equal(db.getMyWords({ view: 'personal', recentLapses: true, statuses: ['unstudied'] }).total, 0);
-    sqlite.prepare('UPDATE words SET hanzi = ?, pinyin = ? WHERE id = ?').run('我', 'wǒ', 'review-forgot');
-    sqlite.prepare('UPDATE words SET hanzi = ?, pinyin = ? WHERE id = ?').run('你', 'nǐ', 'learn-fail');
-    place({ 'hsk2-l1': 1 });
-    assert.deepEqual(new Set(db.getMyWords({ view: 'deck', recentLapses: true }).words.map((entry) => entry.word.id)),
-      new Set(['review-forgot', 'learn-fail']));
-  });
-
-  test('learner context isolates membership, notes and study dates', () => {
-    insert('shared', 'learning', '2026-09-12');
-    db.updateWordPersonalNotes('shared', 'private note');
-    assert.equal(db.runWithLearnerId('other-learner', () => db.getMyWords()).words.length, 0);
-    db.runWithLearnerId('other-learner', () => db.updateWordUserPriority('shared', { bumpDelta: 1 }));
-    const other = db.runWithLearnerId('other-learner', () => db.getMyWords({ view: 'personal' })).words[0];
-    assert.equal(other.word.status, 'unstudied');
-    assert.equal(other.word.personalNotes, '');
-    assert.equal(other.lastStudiedAt, null);
-    assert.equal(db.getMyWords({ view: 'personal' }).words.length, 0);
-  });
-
   test('HTTP validates pagination and filters, and returns the bounded payload', async () => {
-    insert('http', 'learning');
-    for (const query of ['view=unknown', 'limit=0', 'limit=101', 'limit=1.5', 'offset=-1', 'offset=9007199254740992', 'q[x]=a', 'view=recent&view=personal', 'status=nope', 'lapses=maybe']) {
-      assert.equal((await fetch(`${origin}/api/my-words?${query}`)).status, 400, query);
+    assert.equal((await fetch(`${origin}/api/my-words`)).status, 404);
+    insertDeckWord('http', '我', 'wǒ');
+    place({ 'hsk2-l1': 1 });
+    for (const query of ['view=unknown', 'limit=0', 'limit=101', 'limit=1.5', 'offset=-1', 'offset=9007199254740992', 'q[x]=a', 'view=recent&view=personal', 'mode=nope', 'lapses=maybe']) {
+      assert.equal((await fetch(`${origin}/api/vocabulary/word-collection?${query}`)).status, 400, query);
     }
-    const response = await fetch(`${origin}/api/my-words?view=recent&limit=1&offset=0&q=http&status=learning&lapses=0`);
+    const response = await fetch(`${origin}/api/vocabulary/word-collection?view=deck&limit=1&offset=0&q=http&mode=unstudied&lapses=0`);
     assert.equal(response.status, 200);
     const payload = await response.json() as { words: Array<{ word: { id: string } }>; hasMore: boolean; total: number };
     assert.equal(payload.words[0]?.word.id, 'http'); assert.equal(payload.hasMore, false);
@@ -208,8 +84,8 @@ describe('My words collections', { concurrency: false }, () => {
   });
 
   test('current deck is unavailable until placement is stored; the fallback does not create placement', () => {
-    assert.equal(db.getMyWords().currentDeck, null);
-    assert.deepEqual(db.getMyWords({ view: 'deck' }), { words: [], hasMore: false, total: 0, currentDeck: null });
+    assert.equal(getVocabularyWordsCollection().currentDeck, null);
+    assert.deepEqual(getVocabularyWordsCollection({ view: 'deck' }), { words: [], hasMore: false, total: 0, currentDeck: null });
     assert.equal(db.getStoredDietProfile(), null);
   });
 
@@ -225,14 +101,13 @@ describe('My words collections', { concurrency: false }, () => {
     sink('dismissed');
     place({ 'hsk2-l1': 1 });
     const before = db.getStoredDietProfile();
-    const result = db.getMyWords({ view: 'deck' });
+    const result = getVocabularyWordsCollection({ view: 'deck' });
     assert.equal(result.currentDeck?.label, 'HSK 1');
     assert.deepEqual(new Set(result.words.map((entry) => entry.word.id)), new Set(['unseen', 'personal', 'studied', 'normalized']));
     assert.equal(result.words.find((entry) => entry.word.id === 'unseen')?.word.status, 'unstudied');
     assert.equal(result.total, 4);
     assert.deepEqual(db.getStoredDietProfile(), before);
-    assert.equal(db.getMyWords({ view: 'personal' }).words.length, 1);
-    const response = await fetch(`${origin}/api/my-words?view=deck&q=我`);
+    const response = await fetch(`${origin}/api/vocabulary/word-collection?view=deck&q=我`);
     assert.equal(response.status, 200);
     const payload = await response.json();
     assert.equal(payload.words.length, 1);
@@ -240,13 +115,13 @@ describe('My words collections', { concurrency: false }, () => {
     assert.equal(payload.total, 1);
   });
 
-  test('deck mix follows positive weights and nudges, not cumulative HSK levels or automatic spill', () => {
+  test('deck mix follows positive weights and excludes unrelated levels', () => {
     insertDeckWord('l1', '我', 'wǒ'); insertDeckWord('l2', '猫', 'māo');
     insertDeckWord('l3', '抽象', 'chōu xiàng');
     place({ 'hsk2-l2': 1, 'hsk2-l1': 0 });
-    assert.deepEqual(db.getMyWords({ view: 'deck' }).words.map((entry) => entry.word.id), ['l2']);
-    db.nudgeDietProfile('harder');
-    const mix = db.getMyWords({ view: 'deck' });
+    assert.deepEqual(getVocabularyWordsCollection({ view: 'deck' }).words.map((entry) => entry.word.id), ['l2']);
+    place({ 'hsk2-l2': 0.9, 'hsk2-l3-s1': 0.1 });
+    const mix = getVocabularyWordsCollection({ view: 'deck' });
     assert.deepEqual(new Set(mix.words.map((entry) => entry.word.id)), new Set(['l2', 'l3']));
     assert.equal(mix.currentDeck?.label, 'HSK 2 + HSK 3 · part 1');
   });
@@ -265,13 +140,18 @@ describe('My words collections', { concurrency: false }, () => {
     place({ 'hsk2-l1': 1 });
     insert('unrelated');
     try {
-      const all = db.getMyWords({ view: 'deck' });
-      assert.equal(all.words.length, 455);
+      const all = getVocabularyWordsCollection({ view: 'deck' });
+      assert.equal(all.words.length, 50);
       assert.equal(all.total, 455);
-      assert.equal(new Set(all.words.map((entry) => entry.word.id)).size, 455);
-      assert.equal(all.hasMore, false);
-      assert.equal(db.getMyWords({ view: 'deck', query: '测试454' }).total, 1);
-      assert.equal(db.getMyWords({ view: 'deck', query: 'unrelated' }).total, 0);
+      assert.equal(all.hasMore, true);
+      const ids = new Set(all.words.map(entry => entry.word.id));
+      for (let offset = 50; offset < all.total; offset += 100) {
+        const page = getVocabularyWordsCollection({ view: 'deck', offset, limit: 100 });
+        for (const entry of page.words) ids.add(entry.word.id);
+      }
+      assert.equal(ids.size, 455);
+      assert.equal(getVocabularyWordsCollection({ view: 'deck', query: '测试454' }).total, 1);
+      assert.equal(getVocabularyWordsCollection({ view: 'deck', query: 'unrelated' }).total, 0);
     } finally { process.env.APP_DECK_MANIFEST_PATH = previousPath; }
   });
 
@@ -280,10 +160,10 @@ describe('My words collections', { concurrency: false }, () => {
     db.updateWordPersonalNotes('shared', 'private note');
     sqlite.prepare('UPDATE words SET last_learning_covered_on = ? WHERE id = ?').run('2026-09-13', 'shared');
     place({ 'hsk2-l1': 1 });
-    assert.equal(db.getMyWords({ view: 'deck' }).words[0].lastStudiedAt, '2026-09-13');
-    assert.equal(db.runWithLearnerId('other-learner', () => db.getMyWords()).currentDeck, null);
+    assert.equal(getVocabularyWordsCollection({ view: 'deck' }).words[0].lastStudiedAt, '2026-09-13');
+    assert.equal(db.runWithLearnerId('other-learner', () => getVocabularyWordsCollection()).currentDeck, null);
     db.runWithLearnerId('other-learner', () => place({ 'hsk2-l1': 1 }));
-    const other = db.runWithLearnerId('other-learner', () => db.getMyWords({ view: 'deck' }));
+    const other = db.runWithLearnerId('other-learner', () => getVocabularyWordsCollection({ view: 'deck' }));
     assert.equal(other.words.length, 1);
     assert.equal(other.words[0].word.personalNotes, '');
     assert.equal(other.words[0].word.status, 'unstudied');
@@ -295,8 +175,8 @@ describe('My words collections', { concurrency: false }, () => {
     const mixes: Record<string, number>[] = [{ 'beyond-hsk': 1 }, { 'hsk2-l1': 0.9, 'beyond-hsk': 0.1 }];
     for (const weights of mixes) {
       place(weights);
-      assert.deepEqual(db.getMyWords({ view: 'deck' }), { words: [], hasMore: false, total: 0, currentDeck: null });
-      assert.equal(db.getMyWords().currentDeck, null);
+      assert.deepEqual(getVocabularyWordsCollection({ view: 'deck' }), { words: [], hasMore: false, total: 0, currentDeck: null });
+      assert.equal(getVocabularyWordsCollection().currentDeck, null);
     }
   });
 
@@ -309,11 +189,15 @@ describe('My words collections', { concurrency: false }, () => {
     assert.deepEqual(cached.get('hsk2-l2'), ['second']);
     db.updateWordUserPriority('first', { bumpDelta: 1 });
     assert.strictEqual(getResolvedDeckWordIds(manifest), cached);
-    assert.equal(queryManifestDeckWords(manifest, ['hsk2-l1'], 'diet').length, 0);
-    assert.equal(queryManifestDeckWords(manifest, ['hsk2-l1'], 'browse').length, 1);
+    place({ 'hsk2-l1': 1 });
+    assert.equal(getVocabularyWordsCollection({ view: 'deck' }).words[0]?.word.id, 'first');
+    assert.ok(getVocabularyWordsCollection({ view: 'deck' }).words[0]?.personalUpdatedAt);
     db.runWithLearnerId('other-learner', () => {
       assert.strictEqual(getResolvedDeckWordIds(manifest), cached);
-      assert.equal(queryManifestDeckWords(manifest, ['hsk2-l1'], 'diet').length, 1);
+      place({ 'hsk2-l1': 1 });
+      const other = getVocabularyWordsCollection({ view: 'deck' }).words[0];
+      assert.equal(other?.word.id, 'first');
+      assert.equal(other?.personalUpdatedAt, null);
     });
   });
 
@@ -342,15 +226,9 @@ describe('My words collections', { concurrency: false }, () => {
     assert.deepEqual(cached.get('hsk2-l1'), ['first']);
   });
 
-  test('production queries probe lexical identities and IDs; dates make one learner-scoped history pass', () => {
+  test('production queries probe lexical identities; dates make one learner-scoped history pass', () => {
     const identityPlan = sqlite.prepare(`EXPLAIN QUERY PLAN ${deckIdentityProbeSql(2)}`).all('我', '猫') as Array<{ detail: string }>;
     assert.match(identityPlan.map((row) => row.detail).join('\n'), /SEARCH lexical_words USING INDEX idx_lexical_words_hanzi/);
-    for (const purpose of ['browse', 'diet'] as const) {
-      const plan = sqlite.prepare(`EXPLAIN QUERY PLAN ${deckWordProbeSql(2, purpose)}`).all('word-1', 'word-2') as Array<{ detail: string }>;
-      const details = plan.map((row) => row.detail).join('\n');
-      assert.match(details, /SEARCH lexical_words USING INDEX sqlite_autoindex_lexical_words_1/);
-      assert.doesNotMatch(details, /SCAN (lexical_words|learner_word_state|learner_owned_user_word_priority)/);
-    }
     const datePlan = sqlite.prepare(`EXPLAIN QUERY PLAN ${DECK_WORD_STUDY_DATES_SQL}`).all(JSON.stringify(['word'])) as Array<{ detail: string }>;
     const details = datePlan.map((row) => row.detail).join('\n');
     assert.match(details, /SEARCH learner_owned_study_attempt_events USING INDEX .*\(learner_id=\?\)/);
@@ -365,21 +243,14 @@ describe('My words collections', { concurrency: false }, () => {
     const manifestPath = process.env.APP_DECK_MANIFEST_PATH;
     process.env.APP_DECK_MANIFEST_PATH = path.join(directory, 'absent.json');
     try {
-      assert.equal(db.getMyWords().currentDeck, null);
-      assert.deepEqual(db.getMyWords({ view: 'deck' }), { words: [], hasMore: false, total: 0, currentDeck: null });
+      assert.equal(getVocabularyWordsCollection().currentDeck, null);
+      assert.deepEqual(getVocabularyWordsCollection({ view: 'deck' }), { words: [], hasMore: false, total: 0, currentDeck: null });
     } finally { process.env.APP_DECK_MANIFEST_PATH = manifestPath; }
   });
 });
 
 function place(weights: Record<string, number>) {
   db.saveDietProfile({ version: 1, weights, provenance: [], updatedAt: '2026-09-13T00:00:00Z' });
-}
-
-/** The durable rows a completed introduction leaves for the word and its priority overlay. */
-function introduce(id: string, studyDayKey: string) {
-  sqlite.prepare(`UPDATE words SET status = 'learning', last_learning_covered_on = ? WHERE id = ?`).run(studyDayKey, id);
-  sqlite.prepare(`UPDATE user_word_priority SET required_for_next_session = 0, updated_at = ? WHERE word_id = ?`)
-    .run(new Date().toISOString(), id);
 }
 
 /** Dismissing an unstudied word sinks its priority overlay (sunk tier is -1). */
@@ -401,23 +272,4 @@ function insert(id: string, status: 'unstudied' | 'learning' | 'review' = 'unstu
   sqlite.prepare(`INSERT INTO words (id, hanzi, traditional, pinyin, meaning, meanings_json, examples_json, personal_notes, status, priority, created_at, learning_streak, last_learning_success_on, last_learning_covered_on)
     VALUES (?, ?, NULL, ?, ?, '[]', '[]', '', ?, 1, '2026-01-01T00:00:00.000Z', 0, NULL, ?)`)
     .run(id, id, id, id, status, covered);
-}
-
-function insertAttempt(
-  id: string,
-  occurred: string,
-  projected: string | null,
-  targetWordId = 'review',
-  outcome = 'incorrect',
-  rating: string | null = null,
-) {
-  sqlite.prepare(`INSERT INTO study_attempt_events (id, occurred_at, session_id, session_action_id, session_event_sequence, action_attempt_sequence, action_kind, target_word_id, sampled_skill_ids_json, response, outcome, rating, content_ref_json, metadata_json, projected_at)
-    VALUES (?, ?, 'session', ?, ?, 1, 'recognition', ?, '["recognition"]', NULL, ?, ?, NULL, '{}', ?)`)
-    .run(id, occurred, id, projected ? 1 : 2, targetWordId, outcome, rating, projected);
-}
-
-function shiftUtcDay(day: string, delta: number): string {
-  const date = new Date(`${day}T00:00:00.000Z`);
-  date.setUTCDate(date.getUTCDate() + delta);
-  return date.toISOString().slice(0, 10);
 }

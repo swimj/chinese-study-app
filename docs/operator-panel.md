@@ -108,55 +108,42 @@ See the [delivery contract](../SPECS/sense-content-reconciliation.md) and
 
 ## Usage metrics
 
-Usage shows today live and seven completed UTC days as saved snapshots. Each day
-counts practice words that gain a correct day as **Practice**, separately from
-new words. Practice occurs at most once per word per day, so session totals can
-be summed directly. Failed practice still counts as covered in the learner
-summary but adds no correct day to Usage. **Review correct** and **Review wrong**
-count completed review exercises
-without and with a lapse, including contrast selection and pure cues. Successful
-reinforcement after a lapse adds no exercise and does not turn that exercise into
-a correct review. These counts and total active session time come from completed
-session summaries; work in incomplete sessions is not included.
+Usage shows today live and seven completed UTC days as saved snapshots.
+**DAU** counts distinct learners with a completion that day. **Sessions**
+combines closed vocabulary sessions and historical study summaries. A
+vocabulary completion takes precedence over a historical summary for the
+same learner and session.
 
-**New words** sums the persisted new-word counts in completed session summaries
-on each summary's UTC completion day, alongside Sessions and Practice. The
-count comes from accepted `unstudied → learning` outcomes in that session,
-including the final action after acceptance. Opening a teaching package,
-previewing an undoable final action, and repeating Practice add no new words.
-An unfinished session contributes no Usage count. A session spanning UTC
-midnight belongs wholly to its summary's completion day.
+Vocabulary sessions count on their UTC closure day, including sessions that
+span midnight. **New words** counts teaching completions attributed to the
+session. **Practice** counts covered words without a teaching completion in
+that session. **Review correct** and **Review wrong** count effective accepted
+and rejected responses in the frozen completion report. Undo withdraws the
+response from these totals. **Session time** sums recorded active duration.
 
-The learner's daily admission count is separate: it updates as new words are
-accepted and uses the study caller's day key for respecting the daily limit.
-Usage does not change that key or scheduling. Summary writes persist the
-new-word total and refresh affected daily snapshots, including a summary saved
-after its reporting day's snapshot was captured. Retrying a summary replaces
-its total rather than incrementing it. The panel reads persisted counts.
+Historical sessions supply their saved summary counts. Review outcomes count
+exercises completed with or without a lapse. Practice sums recorded learning
+counts, and New words sums first-study outcomes attributed to the summary's UTC
+completion day. These counts have a different day boundary from the learner's
+admission quota. A summary written after capture refreshes the affected
+new-word total. Replaying the same summary leaves that total unchanged.
 
-Migration `0038_usage_new_word_totals` backfills completed summaries from saved
-word outcomes or confirmed completion reports and corrects saved daily totals.
-Older sessions without this evidence retain an unknown count. Usage sums known
-counts, treating missing counts as zero, so New words is a lower bound when
-historical evidence is missing. Admission counts alone cannot reconstruct
-completed-session Usage. Capture-time metrics such as **Mean stash** retain
+**Mean stash** retain
 their saved values.
 
-**Proposals accepted** counts durable proposal-acceptance invocations on their UTC
-creation day, including exact and revised acceptances, regardless of later
-application outcome or withdrawn authorization. Manual operations and replacement
-operations are excluded. **Mean stash** averages all learners, including empty
-stashes, at the snapshot capture time. Late captures use the stash at capture time,
-not a reconstruction of the earlier day's stash.
+**Mean stash** averages all learners, including empty stashes, at capture time.
+**Inactive learners** counts learners with zero completions in the seven days
+ending on the reporting day, excluding the configured smoke account.
+**Abandoned sessions** counts sessions started on the reporting day that have
+no completion when Usage is measured.
 
 A dash marks unavailable data. Existing snapshot medians cannot supply historical
 means. Practice sums recorded counts, treating missing counts as zero, so it is
 a lower bound when records are missing. A historical snapshot with a null
 practice total reads the sum of available session counts for that day.
-Counts submitted by older clients before this qualification change measured
-covered practice encounters; those saved counts are not reclassified. A day
-with no completed sessions has zero practice. Spend accounting is available in
-Model invocations; the existing sparse spend-without-accepts signal remains.
+Some older summaries counted covered practice encounters. Daily totals preserve
+those recorded counts. Missing historical new-word counts also contribute zero.
+The Model invocations panel provides spend accounting.
 
 ## Repertoire quality metrics
 

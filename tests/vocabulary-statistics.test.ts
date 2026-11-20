@@ -60,11 +60,11 @@ test('operator usage unions new activity, disposition-aware stash and abandonmen
  completion('new');
  db.exec("INSERT INTO vocabulary_sessions VALUES ('a','new','2026-10-17T00:00:00.000Z'),('b','abandoned','2026-10-17T00:00:00.000Z')");
  db.exec("INSERT INTO learner_words VALUES ('a','w1','unstudied',1,NULL),('a','w2','practice',1,NULL),('b','w3','unstudied',0,'2026-10-17T00:00:00.000Z')");
- const pulse=computeUsagePulseDay({dayKey:'2026-10-17',studyCommitFailures:[],smokeClerkUserId:null});
+ const pulse=computeUsagePulseDay({dayKey:'2026-10-17',smokeClerkUserId:null});
  assert.equal(pulse.dau,1);assert.equal(pulse.sessionsCompleted,1);assert.equal(pulse.newWords,1);
  assert.equal(pulse.practiceCompleted,1);assert.equal(pulse.reviewCorrect,1);assert.equal(pulse.reviewWrong,1);
  assert.equal(pulse.sessionActiveMs,1200);assert.equal(pulse.learnersInactive7d,1);assert.equal(pulse.sessionsAbandoned,1);
- assert.equal(pulse.meanStashSize,0.5);assert.equal(pulse.proposalsAccepted,0);
+ assert.equal(pulse.meanStashSize,0.5);
  assert.equal(db.prepare('SELECT COUNT(*) n FROM learner_owned_review_session_summaries').get()!.n,0);
 });
 
@@ -79,7 +79,7 @@ test('operator new-word totals use closed summaries, add vocabulary teaching and
           ('a','new','2026-10-17',99,99,99000,99,99),
           ('a','yesterday','2026-10-16',20,0,20000,20,20);
    INSERT INTO learner_owned_daily_new_word_intake VALUES ('2026-10-17',500);`);
- const pulse=computeUsagePulseDay({dayKey:'2026-10-17',studyCommitFailures:[],smokeClerkUserId:null});
+ const pulse=computeUsagePulseDay({dayKey:'2026-10-17',smokeClerkUserId:null});
  assert.equal(pulse.newWords,3);
  assert.equal(pulse.sessionsCompleted,2);
  assert.equal(pulse.practiceCompleted,5);

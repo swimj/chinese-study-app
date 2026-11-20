@@ -1,6 +1,5 @@
 export {
   getWords,
-  getMyWords,
   searchWords,
   getWordMeanings,
   updateWordMeaningVisibility,

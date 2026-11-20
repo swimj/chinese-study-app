@@ -90,11 +90,10 @@ with neither a legacy boundary nor per-post state start with published posts
 eligible for notification. New clients do not silently mark the catalog read
 on their first refresh.
 
-The server retains `whatsNewSeenThroughSequence`, `whatsNewSeenThroughDate`,
-and their endpoints for older clients. These remain parameters in `learner_params`, named
-`whats_new_seen_through_sequence` and `whats_new_seen_through_date`. When the
-sequence parameter is absent, the server derives the legacy boundary from the
-immutable imported revisions; corrections to those posts cannot move it.
+Per-post attention reads honor existing `whats_new_seen_through_sequence` and
+`whats_new_seen_through_date` values in `learner_params`. For a date-only
+cursor, the server derives the boundary from immutable imported revisions, so
+later corrections to a post preserve its acknowledged state.
 
 ## Persistence and live updates
 
@@ -114,7 +113,7 @@ Routine content updates require no build, deployment, maintenance mode, or app
 restart. The [app-owned catalog](../src/features/attention/useWhatsNewCatalog.ts)
 loads posts when the app opens or a failed load is explicitly retried. Home and
 About navigation reuse that catalog; reload the browser page to load current
-content. [Attention refreshes](../src/features/attention/useAttentionBadges.ts)
+content. [Attention refreshes](../src/features/attention/useWhatsNewAttention.ts)
 independently when the browser regains focus or visibility, providing active
 unread post IDs to Home for each post’s independent exposure window. Blog
 content is not pushed to open tabs or continuously polled.

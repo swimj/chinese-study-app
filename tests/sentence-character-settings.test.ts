@@ -80,42 +80,21 @@ test('sentence setting rejects both, missing and unknown presentations', async (
 });
 
 
-test('new-word ordering defaults off, validates booleans, persists and remains learner-private', async () => {
-  assert.equal(db.getStudyNewWordsFirst(), false);
+test('status resolves a stored legacy introduction preference for its owner', async () => {
+  assert.equal((await fetch(`${base}/api/learner-settings/study-new-words-first`, { method: 'PATCH' })).status, 404);
   assert.equal(db.getStudyIntroductionOrder(), 'random');
-  assert.equal(db.getStudyIntroductionSpacing(), 3);
-  const { getDb: getSettingsDb } = await import('../server/db/connection.ts');
-  getSettingsDb().prepare(`INSERT INTO learner_settings (learner_id, setting_key, value_json, updated_at)
-    VALUES (?, 'study_new_words_first', 'true', ?)`).run('sentence-settings-learner', new Date().toISOString());
-  assert.equal(db.getStudyIntroductionOrder(), 'first');
-
-  for (const value of [true, false, true]) {
-    const response = await fetch(`${base}/api/learner-settings/study-new-words-first`, {
-      method: 'PATCH', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ studyNewWordsFirst: value, learnerId: 'forged' }),
-    });
-    assert.equal(response.status, 200);
-    assert.deepEqual(await response.json(), { studyNewWordsFirst: value });
-    assert.equal(db.getStudyNewWordsFirst(), value);
-  }
-  for (const value of ['true', 1, null, undefined]) {
-    const response = await fetch(`${base}/api/learner-settings/study-new-words-first`, {
-      method: 'PATCH', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ studyNewWordsFirst: value }),
-    });
-    assert.equal(response.status, 400);
-  }
-  const status = await fetch(`${base}/api/status?studyDayKey=2026-10-07`).then(response => response.json());
-  assert.equal(status.studyNewWordsFirst, true);
   const { getDb } = await import('../server/db/connection.ts');
-  const stored = getDb().prepare("SELECT learner_id, value_json FROM learner_settings WHERE setting_key = 'study_new_words_first'").all();
-  assert.deepEqual(stored.map(row => ({ ...row })), [
-    { learner_id: 'sentence-settings-learner', value_json: 'true' },
-  ]);
-  db.runWithLearnerId('sentence-settings-other', () => assert.equal(db.getStudyNewWordsFirst(), false));
-  assert.equal(db.getStudyNewWordsFirst(), true);
-});
+  getDb().prepare(`INSERT INTO learner_settings (learner_id, setting_key, value_json, updated_at)
+    VALUES (?, 'study_new_words_first', 'true', ?)`).run('sentence-settings-learner', new Date().toISOString());
 
+  const status = await fetch(`${base}/api/status`).then(response => response.json());
+  assert.equal(status.studyIntroductionOrder, 'first');
+  assert.equal(status.studyIntroductionSpacing, 3);
+  for (const obsolete of ['studyNewWordsFirst', 'wordStatusCounts', 'sessionActiveTimeMetrics', 'reviewFailureRateDays', 'learningCoverageDate', 'dietDecksActive']) {
+    assert.equal(Object.hasOwn(status, obsolete), false, obsolete);
+  }
+  db.runWithLearnerId('sentence-settings-other', () => assert.equal(db.getStudyIntroductionOrder(), 'random'));
+});
 
 test('paced introduction settings validate atomically, persist, and remain learner-private', async () => {
   const update = (studyIntroductionOrder: unknown, studyIntroductionSpacing: unknown) => fetch(
@@ -129,7 +108,6 @@ test('paced introduction settings validate atomically, persist, and remain learn
     assert.deepEqual(await response.json(), { studyIntroductionOrder: 'paced', studyIntroductionSpacing: spacing });
     assert.equal(db.getStudyIntroductionOrder(), 'paced');
     assert.equal(db.getStudyIntroductionSpacing(), spacing);
-    assert.equal(db.getStudyNewWordsFirst(), false);
   }
   for (const order of ['unknown', true, null, undefined]) {
     assert.equal((await update(order, 3)).status, 400);
@@ -146,16 +124,8 @@ test('paced introduction settings validate atomically, persist, and remain learn
     assert.equal(db.getStudyIntroductionOrder(), 'random');
     assert.equal(db.getStudyIntroductionSpacing(), 3);
     db.setStudyIntroductionOrder('first', 2);
-    assert.equal(db.getStudyNewWordsFirst(), true);
   });
   assert.equal(db.getStudyIntroductionOrder(), 'paced');
-  assert.equal(db.getStudyIntroductionSpacing(), 10);
-  // Existing clients can still select either former policy without resetting pacing.
-  db.setStudyNewWordsFirst(true);
-  assert.equal(db.getStudyIntroductionOrder(), 'first');
-  assert.equal(db.getStudyIntroductionSpacing(), 10);
-  db.setStudyNewWordsFirst(false);
-  assert.equal(db.getStudyIntroductionOrder(), 'random');
   assert.equal(db.getStudyIntroductionSpacing(), 10);
 });
 
@@ -166,9 +136,8 @@ test('introduction settings roll back together when a persisted write fails', as
     BEGIN SELECT RAISE(ABORT, 'test spacing write failure'); END`);
   try {
     assert.throws(() => db.setStudyIntroductionOrder('paced', 4), /test spacing write failure/);
-    assert.equal(db.getStudyIntroductionOrder(), 'random');
+    assert.equal(db.getStudyIntroductionOrder(), 'paced');
     assert.equal(db.getStudyIntroductionSpacing(), 10);
-    assert.equal(db.getStudyNewWordsFirst(), false);
   } finally {
     getDb().exec('DROP TRIGGER reject_introduction_spacing');
   }

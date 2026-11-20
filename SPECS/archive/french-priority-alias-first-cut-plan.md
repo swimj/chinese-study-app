@@ -10,7 +10,7 @@ UX.
 
 Related plan:
 
-- `SPECS/french-reading-corpus-compatibility-plan.md`
+- [French reading corpus plan](french-reading-corpus-compatibility-plan.md)
 
 ## Scope
 

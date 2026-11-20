@@ -1,19 +1,12 @@
-import { getActiveServiceBanner, dbConfig, getWordStatusCounts, getReviewFailureRateDays, getSessionActiveTimeMetrics, isDietDeckModeActive, toPublicServiceBanner, getLearningPolicy, getCharacterPresentation, getSentenceCharacterPresentation, getStudyNewWordsFirst, getStudyIntroductionOrder, getStudyIntroductionSpacing, setDailyNewWordLimit, setUnstudiedAdmissionSource, setCharacterPresentation, setStudyIntroductionOrder, setStudyNewWordsFirst, setSentenceCharacterPresentation } from '../db.ts';
+import { getActiveServiceBanner, dbConfig, toPublicServiceBanner, getLearningPolicy, getCharacterPresentation, getSentenceCharacterPresentation, getStudyIntroductionOrder, getStudyIntroductionSpacing, setDailyNewWordLimit, setUnstudiedAdmissionSource, setCharacterPresentation, setStudyIntroductionOrder, setSentenceCharacterPresentation } from '../db.ts';
 import { getDailyStudyMinutes, vocabularyTimedSessionsEnabled, setDailyStudyMinutes, VocabularyTimedSessionInputError } from '../db/vocabulary-timed-sessions.ts';
 import { getDebriefInterests } from '../db/session-debrief.ts';
 import { isStudyIntroductionOrder, isStudyIntroductionSpacing } from '../../src/domain/introduction-order.ts';
-import { readStudyDayKeyFromQuery } from './request-helpers.ts';
 import type { Express } from 'express';
 
 /** Learner status, learning policy, and display and study settings. */
 export function registerLearnerSettingsRoutes(app: Express): void {
-  app.get('/api/status', (req, res) => {
-    const studyDayKey = readStudyDayKeyFromQuery(req.query?.studyDayKey);
-    if (!studyDayKey) {
-      res.status(400).json({ error: 'Expected YYYY-MM-DD studyDayKey query parameter' });
-      return;
-    }
-
+  app.get('/api/status', (_req, res) => {
     const banner = getActiveServiceBanner();
     res.json({
       status: 'ok',
@@ -22,15 +15,10 @@ export function registerLearnerSettingsRoutes(app: Express): void {
       studyProfile: dbConfig.studyProfile,
       dataDir: dbConfig.dataDir,
       dbPath: dbConfig.dbPath,
-      wordStatusCounts: getWordStatusCounts(),
-      reviewFailureRateDays: getReviewFailureRateDays(),
-      sessionActiveTimeMetrics: getSessionActiveTimeMetrics(studyDayKey),
-      dietDecksActive: isDietDeckModeActive(),
       serviceBanner: banner ? toPublicServiceBanner(banner) : null,
-      ...getLearningPolicy(studyDayKey),
+      ...getLearningPolicy(),
       characterPresentation: getCharacterPresentation(),
       sentenceCharacterPresentation: getSentenceCharacterPresentation(),
-      studyNewWordsFirst: getStudyNewWordsFirst(),
       studyIntroductionOrder: getStudyIntroductionOrder(),
       studyIntroductionSpacing: getStudyIntroductionSpacing(),
       dailyStudyMinutes: getDailyStudyMinutes().minutes,
@@ -108,17 +96,6 @@ export function registerLearnerSettingsRoutes(app: Express): void {
       res.json(setStudyIntroductionOrder(studyIntroductionOrder, studyIntroductionSpacing));
     } catch {
       res.status(500).json({ error: 'Failed to update introduction ordering' });
-    }
-  });
-  app.patch('/api/learner-settings/study-new-words-first', (req, res) => {
-    if (typeof req.body?.studyNewWordsFirst !== 'boolean') {
-      res.status(400).json({ error: 'Expected studyNewWordsFirst to be a boolean' });
-      return;
-    }
-    try {
-      res.json(setStudyNewWordsFirst(req.body.studyNewWordsFirst));
-    } catch {
-      res.status(500).json({ error: 'Failed to update new-word ordering' });
     }
   });
   app.patch('/api/learner-settings/sentence-character-presentation', (req, res) => {

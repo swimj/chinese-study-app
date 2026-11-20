@@ -61,10 +61,15 @@ test('per-post attention validates atomic snapshots and repeated tabs preserve f
   assert(!read.unseenPostIds.includes('api-post'));
   assert(read.items.find((item: { postId: string }) => item.postId === 'api-post').readAt);
 });
-test('sequence endpoint initializes newcomers, is monotonic, and bounds cursors to publication history', async () => {
-  assert.equal((await (await fetch(`${base}/api/attention-badges`)).json()).whatsNewSeenThroughSequence, null);
-  let response = await write('whats-new-seen-sequence', { throughSequence: 13, mode: 'ensure' }, 'POST');
-  assert.equal(response.status, 200); assert.equal((await response.json()).whatsNewSeenThroughSequence, 13);
-  response = await write('whats-new-seen-sequence', { throughSequence: 0, mode: 'seen' }, 'POST'); assert.equal((await response.json()).whatsNewSeenThroughSequence, 13);
-  for (const body of [{ throughSequence: 14, mode: 'seen' }, { throughSequence: -1, mode: 'seen' }, { throughSequence: 1.1, mode: 'seen' }, { throughSequence: 1, mode: 'other' }]) assert.equal((await write('whats-new-seen-sequence', body, 'POST')).status, 400);
+
+test('retired reflection badge and catalog-wide seen endpoints are unavailable', async () => {
+  assert.equal((await fetch(`${base}/api/attention-badges`)).status, 404);
+  for (const [path, body] of [
+    ['reflection-inbox-seen', { kind: 'proposal', proposalId: 'old' }],
+    ['failed-reflection-runs-seen', {}],
+    ['whats-new-seen', { throughDate: '2026-09-16', mode: 'seen' }],
+    ['whats-new-seen-sequence', { throughSequence: 1, mode: 'seen' }],
+  ] as const) {
+    assert.equal((await write(path, body, 'POST')).status, 404, path);
+  }
 });

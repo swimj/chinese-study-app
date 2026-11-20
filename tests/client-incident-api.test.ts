@@ -5,89 +5,16 @@ import path from 'node:path';
 import { after, before, describe, test } from 'node:test';
 import { pathToFileURL } from 'node:url';
 import type { ClientTransportIncident } from '../src/domain/client-incidents.ts';
-import {
-  readStudyCommitDiagnostics,
-  STUDY_COMMIT_DIAGNOSTICS_FILENAME,
-  type StudyCommitFailureDiagnostic,
-} from '../server/study-commit-diagnostics.ts';
 
 type IndexModule = typeof import('../server/index.ts');
 type ExpressApp = ReturnType<IndexModule['createApp']>;
-
-test('reads retained study commit failures, filtering by diagnostic id and counting malformed records', () => {
-  const isolatedDir = fs.mkdtempSync(path.join(os.tmpdir(), 'chinese-study-app-commit-record-'));
-  try {
-    const diagnostic = storedFailure({
-      diagnosticId: 'diagnostic-1',
-      response: '保留这份失败答案',
-      error: {
-        name: 'Error',
-        message: 'failed to persist exact attempt payload',
-        stack: 'Error: failed to persist exact attempt payload',
-        details: {},
-        cause: {
-          name: 'Error',
-          message: 'constraint detail',
-          stack: null,
-          details: { code: 'SQLITE_CONSTRAINT' },
-          cause: null,
-        },
-      },
-    });
-    const other = storedFailure({ diagnosticId: 'diagnostic-2', response: 'other' });
-    fs.writeFileSync(
-      path.join(isolatedDir, STUDY_COMMIT_DIAGNOSTICS_FILENAME),
-      [
-        JSON.stringify(diagnostic),
-        'not json',
-        JSON.stringify({ schemaVersion: 'something-else' }),
-        JSON.stringify(other),
-      ].join('\n') + '\n',
-    );
-
-    const stored = readStudyCommitDiagnostics({ dataDir: isolatedDir, limit: 10 });
-    assert.equal(stored.totalRecordCount, 2);
-    assert.equal(stored.malformedRecordCount, 2);
-    assert.deepEqual(stored.diagnostics.map((item) => item.diagnosticId), ['diagnostic-1', 'diagnostic-2']);
-    assert.equal(JSON.stringify(stored.diagnostics[0]?.request.body).includes('保留这份失败答案'), true);
-    assert.equal(stored.diagnostics[0]?.error.cause?.message, 'constraint detail');
-    assert.equal(stored.diagnostics[0]?.error.cause?.details.code, 'SQLITE_CONSTRAINT');
-    assert.match(stored.diagnostics[0]?.error.stack ?? '', /failed to persist exact attempt payload/);
-    assert.deepEqual(
-      readStudyCommitDiagnostics({ dataDir: isolatedDir, limit: 1 }).diagnostics.map((item) => item.diagnosticId),
-      ['diagnostic-2'],
-    );
-    assert.equal(readStudyCommitDiagnostics({
-      dataDir: isolatedDir,
-      diagnosticId: 'diagnostic-1',
-    }).diagnostics[0]?.diagnosticId, 'diagnostic-1');
-    assert.equal(readStudyCommitDiagnostics({
-      dataDir: isolatedDir,
-      diagnosticId: 'missing-diagnostic',
-    }).diagnostics.length, 0);
-  } finally {
-    fs.rmSync(isolatedDir, { recursive: true, force: true });
-  }
-});
-
-test('reads an absent diagnostics file as empty', () => {
-  const isolatedDir = fs.mkdtempSync(path.join(os.tmpdir(), 'chinese-study-app-commit-record-'));
-  try {
-    const stored = readStudyCommitDiagnostics({ dataDir: isolatedDir });
-    assert.equal(stored.totalRecordCount, 0);
-    assert.equal(stored.malformedRecordCount, 0);
-    assert.deepEqual(stored.diagnostics, []);
-  } finally {
-    fs.rmSync(isolatedDir, { recursive: true, force: true });
-  }
-});
 
 describe('client incident route', { concurrency: false }, () => {
   let dataDir = '';
   let indexModule: IndexModule;
 
   before(async () => {
-    dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'chinese-study-app-commit-diagnostics-'));
+    dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'chinese-study-app-client-incident-api-'));
     const previousMode = process.env.APP_MODE;
     const previousDataDir = process.env.APP_DATA_DIR;
     try {
@@ -156,38 +83,6 @@ describe('client incident route', { concurrency: false }, () => {
     assert.equal(recorded.length, 1);
   });
 });
-
-function storedFailure(input: {
-  diagnosticId: string;
-  response: string;
-  error?: StudyCommitFailureDiagnostic['error'];
-}): StudyCommitFailureDiagnostic {
-  return {
-    schemaVersion: 'study_commit_failure.v1',
-    event: 'study_commit.failed',
-    diagnosticId: input.diagnosticId,
-    at: '2026-09-05T04:00:00.000Z',
-    route: '/api/study-sessions/:sessionId/accepted-review-attempt-batch',
-    responseStatus: 500,
-    elapsedMs: 7,
-    learnerId: 'learner-1',
-    correlation: {
-      sessionId: 'session-1',
-      sessionActionId: 'review/word-1/production',
-      targetWordId: 'word-1',
-      actionKind: 'production',
-      promptTargetWordId: null,
-      selectedWordId: null,
-      eventIds: ['attempt-1'],
-    },
-    request: {
-      params: { sessionId: 'session-1' },
-      body: { events: [{ id: 'attempt-1', response: input.response }] },
-    },
-    error: input.error ?? { name: 'Error', message: 'failed', stack: null, details: {}, cause: null },
-    runtime: { appVersion: null, appRevision: null, flyMachineId: null, processId: 1 },
-  };
-}
 
 async function request(
   app: ExpressApp,

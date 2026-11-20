@@ -11,7 +11,6 @@ import { setDb } from '../server/db/connection.ts';
 import { runWithLearnerId } from '../server/db/learner-context.ts';
 import { getWhatsNewAttention, updateWhatsNewAttention } from '../server/db/whats-new-attention.ts';
 import { saveWhatsNewPost } from '../server/db/whats-new.ts';
-import { upsertLearnerParam } from '../server/db/identity.ts';
 import { WhatsNewInputError } from '../src/domain/whats-new.ts';
 import type { WhatsNewAttention } from '../src/domain/whats-new-attention.ts';
 
@@ -90,11 +89,12 @@ test('each newly published post has its own exposure window and old snapshots ca
 test('legacy sequence and date acknowledgements preserve old reads without mutating or swallowing new posts', () => {
   const f = fixture();
   try {
-    runWithLearnerId('reader', () => upsertLearnerParam('whats_new_seen_through_sequence', 5, start));
+    const storedCursor = f.db.prepare('INSERT INTO learner_params (learner_id, param_key, value_json, updated_at) VALUES (?, ?, ?, ?)');
+    storedCursor.run('reader', 'whats_new_seen_through_sequence', JSON.stringify(5), start);
     const sequence = get(later);
     assert.equal(sequence.unseenPostIds.length, 7);
     assert.equal(sequence.items.filter(item => item.readAt === start).length, 5);
-    runWithLearnerId('other', () => upsertLearnerParam('whats_new_seen_through_date', '2026-09-16', start));
+    storedCursor.run('other', 'whats_new_seen_through_date', JSON.stringify('2026-09-16'), start);
     assert.deepEqual(get(later, 'other').items, sequence.items);
     assert.equal(f.db.prepare('SELECT count(*) n FROM learner_whats_new_attention').get()!.n, 0);
     const latest = sequence.items[0];

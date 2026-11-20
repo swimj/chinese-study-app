@@ -11,10 +11,6 @@ import {
   resolveOperatorSubject,
   TRUSTED_LOCAL_OPERATOR_SENTINEL,
 } from '../server/operator-access.ts';
-import {
-  STUDY_COMMIT_DIAGNOSTICS_FILENAME,
-  type StudyCommitFailureDiagnostic,
-} from '../server/study-commit-diagnostics.ts';
 
 describe('operator allowlist helpers', () => {
   test('parses comma-separated clerk ids and ignores blanks', () => {
@@ -117,11 +113,6 @@ describe('usage pulse snapshots', { concurrency: false }, () => {
       });
       insertNewWordIntake(dayKey, 9); // admission totals are independent of Usage
       getDb().prepare("UPDATE review_session_summaries SET new_word_count = 2 WHERE session_id = 'session-a1'").run();
-      insertReflectionSpend({
-        runId: 'run-a',
-        completedAt: `${dayKey}T13:00:00.000Z`,
-        costUsd: 0.25,
-      });
     });
 
     dbModule.runWithLearnerId('learner-b', () => {
@@ -129,11 +120,6 @@ describe('usage pulse snapshots', { concurrency: false }, () => {
       insertStudySession({
         sessionId: 'session-b-abandoned',
         startedAt: `${dayKey}T10:00:00.000Z`,
-      });
-      insertReflectionSpend({
-        runId: 'run-b',
-        completedAt: `${dayKey}T11:00:00.000Z`,
-        costUsd: 0.5,
       });
       insertSessionSummary({
         sessionId: 'session-b1',
@@ -143,37 +129,9 @@ describe('usage pulse snapshots', { concurrency: false }, () => {
       });
     });
 
-    const storedFailure: StudyCommitFailureDiagnostic = {
-      schemaVersion: 'study_commit_failure.v1',
-      event: 'study_commit.failed',
-      diagnosticId: 'diag-1',
-      at: `${dayKey}T15:00:00.000Z`,
-      route: '/api/review-session-summaries',
-      responseStatus: 500,
-      elapsedMs: 0,
-      learnerId: 'learner-a',
-      correlation: {
-        sessionId: 'broken',
-        sessionActionId: null,
-        targetWordId: null,
-        actionKind: null,
-        promptTargetWordId: null,
-        selectedWordId: null,
-        eventIds: [],
-      },
-      request: { params: {}, body: { sessionId: 'broken' } },
-      error: { name: 'Error', message: 'commit failed', stack: null, details: {}, cause: null },
-      runtime: { appVersion: null, appRevision: null, flyMachineId: null, processId: process.pid },
-    };
-    fs.appendFileSync(
-      path.join(dataDir, STUDY_COMMIT_DIAGNOSTICS_FILENAME),
-      `${JSON.stringify(storedFailure)}\n`,
-    );
-
     const computed = usagePulse.computeUsagePulseDay({
       dayKey,
       capturedAt: `${dayKey}T23:59:00.000Z`,
-      dataDir,
     });
 
     assert.equal(computed.dau, 1);
@@ -182,28 +140,34 @@ describe('usage pulse snapshots', { concurrency: false }, () => {
     assert.equal(computed.practiceCompleted, 0);
     assert.equal(computed.reviewCorrect, 1);
     assert.equal(computed.reviewWrong, 0);
-    assert.equal(computed.proposalsAccepted, 0);
     assert.equal(computed.sessionActiveMs, 120_000);
     assert.equal(computed.meanStashSize, 0.75);
     assert.equal(computed.sessionsAbandoned, 1);
-    assert.equal(computed.learnersSpendWithoutAccepts, 2);
-    assert.equal(computed.studyCommitFailures, 1);
     assert.equal(computed.learnersInactive7d, 2);
 
     usagePulse.captureUsagePulseDay({
       dayKey,
-      dataDir,
       capturedAt: `${dayKey}T23:59:00.000Z`,
     });
+    getDb().prepare(`
+      UPDATE usage_daily_snapshots SET proposals_accepted = 5, learners_spend_without_accepts = 3,
+        study_commit_failures = 7 WHERE day_key = ?
+    `).run(dayKey);
     usagePulse.captureUsagePulseDay({
       dayKey,
-      dataDir,
       capturedAt: `${dayKey}T23:59:30.000Z`,
     });
     const stored = usagePulse.listUsageDailySnapshots([dayKey]);
     assert.equal(stored.length, 1);
     assert.equal(stored[0]?.capturedAt, `${dayKey}T23:59:30.000Z`);
     assert.equal(stored[0]?.dau, 1);
+    const counters = getDb().prepare(`
+      SELECT proposals_accepted, learners_spend_without_accepts, study_commit_failures
+      FROM usage_daily_snapshots WHERE day_key = ?
+    `).get(dayKey);
+    assert.deepEqual({ ...counters }, {
+      proposals_accepted: 5, learners_spend_without_accepts: 3, study_commit_failures: 7,
+    });
   });
 
   test('sums completed exercises and time; practice counts known records as a lower bound for partial legacy days', () => {
@@ -366,39 +330,6 @@ describe('usage pulse snapshots', { concurrency: false }, () => {
       .map(day => day.newWords), [0, 2]);
   });
 
-  test('counts proposal acceptance events by creation day regardless of application state', () => {
-    const dayKey = '2026-10-03';
-    dbModule.runWithLearnerId('learner-a', () => {
-      getDb().exec(`INSERT INTO reflection_artifacts
-        (artifact_id, reflection_flow_version, generated_at, provider, model, prompt_version,
-          bundle_schema_version, result_schema_version, evidence_bundle_json, result_json)
-        VALUES ('usage-artifact', 'test', '2026-10-03T00:00:00.000Z', 'test', 'test', 'test', 'test', 'test', '{}', '{}');`);
-      const entries = [
-        ['accepted-start', `${dayKey}T00:00:00.000Z`, 'authorization_withdrawn', 'proposal_acceptance'],
-        ['accepted-failed', `${dayKey}T23:59:59.999Z`, 'failed', 'proposal_acceptance'],
-        ['accepted-next', '2026-10-04T00:00:00.000Z', 'pending', 'proposal_acceptance'],
-        ['manual', `${dayKey}T12:00:00.000Z`, 'pending', 'manual'],
-        ['replacement', `${dayKey}T12:00:00.000Z`, 'pending', 'user_replacement'],
-      ];
-      entries.forEach(([id, createdAt, state, origin], index) => {
-        getDb().prepare(`INSERT INTO reflection_proposal_reviews
-          (proposal_id, artifact_id, item_id, proposal_index, disposition, updated_at)
-          VALUES (?, 'usage-artifact', 'item', ?, 'pending', ?)`).run(`proposal-${id}`, index, createdAt);
-        getDb().prepare(`INSERT INTO reflection_operation_invocations
-          (invocation_id, created_at, origin_kind, origin_proposal_id, origin_superseded_proposal_id,
-            operation_kind, operation_version, operation_json, application_state, application_updated_at, application_error)
-          VALUES (?, ?, ?, ?, ?, 'suppress_skill', 1, '{}', ?, ?, ?)`).run(id, createdAt, origin,
-            origin === 'proposal_acceptance' ? `proposal-${id}` : null,
-            origin === 'user_replacement' ? `proposal-${id}` : null, state,
-            '2026-10-07T12:00:00.000Z', state === 'failed' ? 'failure' : null);
-      });
-    });
-    assert.equal(usagePulse.computeUsagePulseDay({ dayKey }).proposalsAccepted, 2);
-    assert.equal(usagePulse.computeUsagePulseDay({ dayKey: '2026-10-04' }).proposalsAccepted, 1);
-    usagePulse.captureUsagePulseDay({ dayKey });
-    assert.equal(usagePulse.listUsageDailySnapshots([dayKey])[0]?.proposalsAccepted, 2);
-  });
-
   test('excludes the configured smoke learner from inactive 7d count', () => {
     const dayKey = '2026-09-15';
     const smokeClerkUserId = 'user_smokePulse1';
@@ -411,13 +342,11 @@ describe('usage pulse snapshots', { concurrency: false }, () => {
     const included = usagePulse.computeUsagePulseDay({
       dayKey,
       capturedAt: `${dayKey}T12:00:00.000Z`,
-      dataDir,
       smokeClerkUserId: null,
     });
     const excluded = usagePulse.computeUsagePulseDay({
       dayKey,
       capturedAt: `${dayKey}T12:00:00.000Z`,
-      dataDir,
       smokeClerkUserId,
     });
     assert.equal(excluded.learnersInactive7d, included.learnersInactive7d - 1);
@@ -426,7 +355,6 @@ describe('usage pulse snapshots', { concurrency: false }, () => {
     const fromEnv = usagePulse.computeUsagePulseDay({
       dayKey,
       capturedAt: `${dayKey}T12:00:00.000Z`,
-      dataDir,
     });
     assert.equal(fromEnv.learnersInactive7d, excluded.learnersInactive7d);
     restoreEnv('APP_SMOKE_CLERK_USER_ID', previousSmokeClerkUserId);
@@ -437,7 +365,6 @@ describe('usage pulse snapshots', { concurrency: false }, () => {
     const first = usagePulse.ensureUsagePulseSnapshots({
       todayDayKey: today,
       windowDays: 3,
-      dataDir,
       now: new Date(`${today}T08:00:00.000Z`),
     });
     assert.deepEqual(first.capturedDayKeys, [
@@ -448,7 +375,6 @@ describe('usage pulse snapshots', { concurrency: false }, () => {
     const second = usagePulse.ensureUsagePulseSnapshots({
       todayDayKey: today,
       windowDays: 3,
-      dataDir,
       now: new Date(`${today}T09:00:00.000Z`),
     });
     assert.deepEqual(second.capturedDayKeys, []);
@@ -456,7 +382,7 @@ describe('usage pulse snapshots', { concurrency: false }, () => {
 
   test('getUsagePulse returns live today plus persisted historical days', () => {
     const now = new Date('2026-09-14T10:00:00.000Z');
-    const pulse = usagePulse.getUsagePulse({ dataDir, now, windowDays: 3 });
+    const pulse = usagePulse.getUsagePulse({ now, windowDays: 3 });
     assert.equal(pulse.today.dayKey, usagePulse.utcDayKey(now));
     assert.equal(pulse.days.length, 3);
     assert.equal(pulse.days.at(-1)?.dayKey, usagePulse.addUtcDays(usagePulse.utcDayKey(now), -1));
@@ -546,34 +472,6 @@ describe('usage pulse snapshots', { concurrency: false }, () => {
       ON CONFLICT(learner_id, day_key) DO UPDATE SET
         new_study_count = excluded.new_study_count
     `).run(dayKey, count);
-  }
-
-  function insertReflectionSpend(input: {
-    runId: string;
-    completedAt: string;
-    costUsd: number;
-  }): void {
-    getDb().prepare(`
-      INSERT INTO reflection_generation_runs (
-        run_id, source_session_id, reflection_flow_version, started_at, completed_at,
-        provider, model, provider_model, prompt_version, response_id, finish_reason,
-        client_request_id, state, failure_code, eligible_item_count, included_item_count,
-        pricing_snapshot_id, pricing_as_of, pricing_basis_json, estimated_cost_usd,
-        evidence_bundle_json
-      ) VALUES (
-        ?, NULL, 'v1', ?, ?,
-        'openai', 'test-model', 'test-model', 'v0', NULL, 'stop',
-        NULL, 'succeeded', NULL, 1, 1,
-        'price-1', ?, '{"source":"test"}', ?,
-        '{}'
-      )
-    `).run(
-      input.runId,
-      input.completedAt,
-      input.completedAt,
-      input.completedAt,
-      input.costUsd,
-    );
   }
 });
 
@@ -714,9 +612,14 @@ describe('operator usage pulse API', { concurrency: false }, () => {
   test('allows trusted_local operators and rejects empty allowlist', async () => {
     const allowed = await fetch(`${baseUrl}/api/operator/usage-pulse`);
     assert.equal(allowed.status, 200);
-    const body = await allowed.json() as { today: { dayKey: string }; days: unknown[] };
+    const body = await allowed.json() as import('../server/db/usage-pulse.ts').UsagePulsePayload;
     assert.match(body.today.dayKey, /^\d{4}-\d{2}-\d{2}$/);
-    assert.equal(Array.isArray(body.days), true);
+    assert.equal(body.days.length, 7);
+    const fields = [
+      'dayKey', 'capturedAt', 'dau', 'sessionsCompleted', 'newWords', 'practiceCompleted',
+      'reviewCorrect', 'reviewWrong', 'meanStashSize', 'sessionActiveMs', 'learnersInactive7d', 'sessionsAbandoned',
+    ].sort();
+    for (const day of [body.today, ...body.days]) assert.deepEqual(Object.keys(day).sort(), fields);
 
     process.env.APP_OPERATOR_CLERK_USER_IDS = '';
     const denied = await fetch(`${baseUrl}/api/operator/usage-pulse`);

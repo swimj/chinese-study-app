@@ -4,7 +4,6 @@ import { TimestampColumnDialog } from './TimestampColumnDialog';
 import { createTimestampFormatter, timestampDisplayLabel } from './operator-timestamps';
 import {
   CONTENT_QUALITY_KINDS,
-  type ContentQualityBreakdown,
   type ContentQualityKind,
   type ContentQualityRatingEntry,
   type ContentQualityRatedSnapshot,
@@ -21,25 +20,6 @@ const KIND_LABELS: Record<ContentQualityKind, string> = {
   rehearsal: 'Word rehearsal',
   supplement: 'Supplement',
 };
-const SOURCE_LABELS: Record<string, string> = {
-  reflection: 'Session feedback',
-  'definition fallback': 'Definition fallback',
-  manual: 'Manually authored',
-  'prepared review': 'Prepared review generation',
-  'served pure cue': 'Pure cue (served version)',
-  'teaching package': 'Prepared word teaching',
-  'production supplement': 'Production supplement',
-  'contrast prompt': 'Contrast prompt',
-};
-
-function sourceLabel(source: string): string {
-  return SOURCE_LABELS[source] ?? (source || 'Unknown source');
-}
-
-function percent(numerator: number, denominator: number): string {
-  return denominator === 0 ? '—' : `${(100 * numerator / denominator).toFixed(1)}%`;
-}
-
 export function ContentQualityPanel() {
   const [timestampOptionsOpen, setTimestampOptionsOpen] = useState(false);
   const [timestampDisplay, setTimestampDisplay] = useTimestampDisplay('content-quality');
@@ -194,35 +174,6 @@ function SnapshotRow({ item, formatTimestamp }: { formatTimestamp: (timestamp: s
     <dl className="content-quality-readable">{textBlocks.map((block, index) => <div key={index}><dt>{block.label}</dt><dd>{block.text}</dd></div>)}</dl>
     <details><summary>Exact content snapshot (JSON)</summary><pre className="content-quality-snapshot">{JSON.stringify(item.content, null, 2)}</pre></details>
   </details></th><td>{KIND_LABELS[item.kind]}</td><td>{item.up}</td><td>{item.down}</td><td>{item.totalRatings}</td></tr>;
-}
-
-export function ContentQualityBreakdowns({ groups }: { groups: ContentQualityBreakdown[] }) {
-  if (groups.length === 0) return null;
-  return <details>
-    <summary>By content type and generation source</summary>
-    <p className="notes content-quality-definition">
-      All content matching the applied filters, across every page. These are voluntary impressions,
-      not controlled model comparisons; content and learners can differ between groups.
-    </p>
-    <div className="operator-usage-table-wrap">
-      <table className="operator-usage-table">
-        <caption>Current votes and display coverage by source</caption>
-        <thead><tr>
-          <th scope="col">Type</th><th scope="col">Source</th><th scope="col">Model</th>
-          <th scope="col">Displays</th><th scope="col">Seen learner–content pairs</th>
-          <th scope="col">Up</th><th scope="col">Down</th><th scope="col">Coverage</th><th scope="col">Down / votes</th>
-        </tr></thead>
-        <tbody>{groups.map((group) => <tr key={JSON.stringify([group.kind, group.source, group.model])}>
-          <th scope="row">{KIND_LABELS[group.kind]}</th><td>{sourceLabel(group.source)}</td>
-          <td>{group.model ?? 'Unknown / not recorded'}</td>
-          <td>{group.totals.exposures}</td><td>{group.totals.learnerContentPairs}</td>
-          <td>{group.totals.up}</td><td>{group.totals.down}</td>
-          <td>{percent(group.totals.ratedLearners, group.totals.learnerContentPairs)}</td>
-          <td>{percent(group.totals.down, group.totals.up + group.totals.down)}</td>
-        </tr>)}</tbody>
-      </table>
-    </div>
-  </details>;
 }
 
 function QualityMetric({ label, value }: { label: string; value: string }) {

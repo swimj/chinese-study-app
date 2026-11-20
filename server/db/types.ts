@@ -46,16 +46,6 @@ export type PriorityWordsPayload = {
   words: PriorityWord[];
 };
 
-export type ReviewFailureRateDay = {
-  dayKey: string;
-  completedReviewActionSessions: number;
-  failedReviewActionSessions: number;
-  compensatedReviewActionSessions: number;
-  failureRate: number | null;
-  rolling3DayFailureRate: number | null;
-  rolling7DayFailureRate: number | null;
-};
-
 export type WordRow = {
   id: string;
   hanzi: string;
@@ -97,12 +87,6 @@ export type UserWordPriorityPatch = {
   forceTop?: boolean;
   reset?: boolean;
   requiredForNextSession?: boolean;
-};
-
-export type ReviewSessionResultRow = {
-  day_key: string;
-  completed_count: number;
-  failed_count: number;
 };
 
 export type StudySkillId = 'recognition' | 'production' | 'contextual_selection';

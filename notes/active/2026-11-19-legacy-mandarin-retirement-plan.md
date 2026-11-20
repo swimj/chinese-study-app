@@ -81,8 +81,11 @@ fixtures through legacy write paths: `vocabulary-preparation`,
 ## Decisions for Justin
 
 **Outcome (2026-11-19):** Justin accepted the recommendations for decisions 1–5.
-Decision 6 is deferred until R5. Findings from R1–R4 may change what that
-decision has to cover.
+Decision 6 was settled during R5 on November 20. Home already displays vocabulary
+progress and Feedback already reads vocabulary attention. Preserve those views.
+Remove the unused legacy status and attention requests. Operator Usage drops
+Proposals accepted, Learners with spend and zero accepts, and Study-commit
+failures from the page and API. Retain stored snapshots and the other measures.
 
 1. **The French profile.** It is the only remaining user of `LegacyApp`, and it
    exists as a local "try-out mode" (README, `dev:french:*`, `french-dev.json`,

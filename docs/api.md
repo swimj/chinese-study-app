@@ -256,38 +256,6 @@ and reserved work. Reload into the new client. The legacy study and reflection
 route handlers themselves have been removed; this fence keeps the explicit 409
 answer for stale clients.
 
-## My words
-
-`GET /api/my-words?view=recent|personal|deck&q=<query>&status=unstudied,learning,review&lapses=1&limit=50&offset=0`
-returns `{ words, hasMore, total, currentDeck }` for the current learner. `currentDeck`
-is a display `{ label }` for the placed learner's current deck mix, or null
-when placement/deck data is unavailable. Each entry contains the
-word, nullable UTC-day `lastStudiedAt`, and nullable `personalUpdatedAt`.
-`total` is the full matching count for the current collection, stage filter,
-lapses filter, and search — not the size of the returned page.
-`recent` selects learning/review words; `personal` selects retained non-sunk
-personal overlays including waiting words. `deck` includes all non-dismissed
-words in positive-weight current HSK decks, including unseen words. Missing
-placement/manifest or any Beyond HSK weight returns an empty list and null
-metadata. The deck view returns the entire explicit deck mix with `hasMore:
-false`; omit limit/offset for it (these parameters only page recent/personal
-collections). Search is applied across the whole selected collection. Optional
-`status` is a comma-separated subset of `unstudied`, `learning`, `review`
-(repeated `status` parameters are also accepted). Omitted, empty, or all three
-values mean no stage narrowing. Combined with search as AND. Recently studied
-ignores `unstudied`; if that leaves no stages, the collection's learning and
-review membership is used. Optional `lapses=1` or `lapses=true` further keeps
-words with a projected Forgot/incorrect attempt in the last three UTC days or
-an unsuccessful last learning day after a prior successful learning day
-(never-succeeded / just-graduated learning words excluded); omit or `0`/`false`
-leaves that filter off.
-The lapses predicate is independent of the selected stages. Results are ordered
-learning (last study date descending, missing last), unstudied (pronunciation),
-review (last study date descending, missing last), then word id. For
-paged views, limit is 1–100; offset is a nonnegative integer.
-Invalid parameters, including unknown status or lapses values, return 400. These legacy query semantics are distinct from the current
-[vocabulary word collection](#vocabulary-word-collection).
-
 ## Content diagnostics
 
 Content Bin uses this read-only API to inspect words, contrast clusters, and
@@ -330,16 +298,9 @@ It does not expose a content mutation path.
 | --- | --- | --- |
 | GET | `/api/status` | Config / health |
 
-`GET /api/status?studyDayKey=YYYY-MM-DD` also returns `sessionActiveTimeMetrics`: today's completed active-session duration, plus 3-day and 7-day calendar-day averages in milliseconds. Averages include zero-activity days.
-
-The status payload also returns `serviceBanner`: `null`, or `{ message, postedAt, expiresAt, kickoffAt? }`
-for the current unexpired operator-posted signed-in notice. Expired and cleared
-notices are omitted. Operators can also read and manage the banner through the
-operator API below.
-
-The status payload also returns `dietDecksActive`: deck-based diet admission
-is active when the Mandarin profile has a deck manifest. The former
-`dietIntakeRequired` field has been removed.
+Home reads study time and progress from `GET /api/vocabulary/progress`.
+The status response includes the active service banner (message, posting and
+expiry times, and optional kickoff), or null when no notice is active.
 
 The status payload also returns `dailyNewWordLimit` and
 `unstudiedAdmissionSource`, the resolved settings used when composing a new
@@ -377,7 +338,6 @@ Conversion preserves stored content and exact attempt evidence. See
 | PATCH | `/api/learner-settings/character-presentation` | Learner settings |
 | PATCH | `/api/learner-settings/sentence-character-presentation` | Learner settings |
 | PATCH | `/api/learner-settings/daily-study-minutes` | Accept/return `{dailyStudyMinutes:10\|20\|30}`; read by timed sessions; status returns it with `timedSessions`; invalid values return 400 |
-| PATCH | `/api/learner-settings/study-new-words-first` | Accept/return `{studyNewWordsFirst:boolean}`; legacy private learner setting, default false; selects Introductions first when true and Random when false, retaining the saved spacing; also returned in status; invalid values return 400 |
 | PATCH | `/api/learner-settings/study-introduction-order` | Accept/return `{studyIntroductionOrder:"random"\|"first"\|"paced",studyIntroductionSpacing:number}`; atomically saves private order and integer spacing 1–10 (default 3); status returns both fields; existing boolean preferences map to Random/Introductions first; invalid values return 400 |
 
 The first route accepts
@@ -420,8 +380,8 @@ rules and coverage limits.
 
 `GET /api/operator/usage-pulse` returns content-free cohort aggregates: live
 `today` plus the last 7 completed UTC-day snapshots (`dau`, sessions, new words,
-practice completed, review correct/wrong, proposals accepted, mean stash, total
-active session time, and sparse scenario counts). The
+practice completed, review correct/wrong, mean stash, active session time,
+inactive learners over seven days, and abandoned sessions). The
 configured hosted smoke learner (`APP_SMOKE_CLERK_USER_ID`) is omitted from the
 inactive-7d count. See [usage metric definitions](operator-panel.md#usage-metrics)
 for units and historical availability.
@@ -523,20 +483,6 @@ initialization and adjustment behavior. A profile response contains `version`,
 evidence. Provenance actors are `learner-nudge`, `operator`, and historical
 `intake` entries.
 
-| Method | Path | Handler domain |
-| --- | --- | --- |
-| POST | `/api/diet/nudge` | `diet-profile` |
-
-`POST /api/diet/nudge` accepts `{ direction: 'easier' | 'harder' }` and shifts
-a fixed internal weight quantum from the current max-weight deck toward the
-adjacent deck (harder = successor by deck order, easier = predecessor),
-renormalized, with provenance appended. It is clamped at the ends: a nudge
-past the first/last deck is a no-op (`changed: false`, no provenance entry).
-Returns `200` with `{ profile, changed }`; `400` for an invalid direction;
-`409` when the deck manifest is unavailable on the installation.
-
-The `/api/diet/intake` and `/api/diet/intake/assess` routes are retired.
-
 Operator jumps (100% weight on a chosen deck, provenance actor `operator`)
 are performed with `scripts/set-diet-deck.ts`; there is no HTTP endpoint.
 
@@ -544,67 +490,16 @@ are performed with `scripts/set-diet-deck.ts`; there is no HTTP endpoint.
 
 | Method | Path | Purpose |
 | --- | --- | --- |
-| GET | `/api/attention-badges` | Unseen Help-queue count, durable reflection generation state, unseen failed generation-run ids, failed-run seen-through cursor, and What’s New read cursors |
-| POST | `/api/reflection-inbox-seen` | Stamp one Help card as displayed |
 | GET | `/api/whats-new` | Read shared published blog posts |
 | GET | `/api/operator/whats-new` | Operator-only current posts including drafts |
 | PUT | `/api/operator/whats-new` | Operator-only validated, revision-checked post save |
-| POST | `/api/whats-new-seen-sequence` | Ensure or advance the What’s New publication sequence |
 | GET | `/api/whats-new-attention` | Read per-post learner attention and active badge IDs without starting clocks |
 | POST | `/api/whats-new-attention` | Record visible badge exposure or reading for a published-post snapshot |
-| POST | `/api/whats-new-seen` | Ensure or advance the What’s New seen-through date |
-| POST | `/api/failed-reflection-runs-seen` | Advance the failed-reflection-run seen-through timestamp |
 
 ### Attention badges
 
-`GET /api/attention-badges` returns the cheap nav-badge payload:
-
-```ts
-{
-  reflectionUnseenCount: number;
-  reflectionGenerating: boolean;
-  failedReflectionRunIds: string[];
-  failedReflectionRunsSeenThroughAt: string | null;
-  whatsNewSeenThroughDate: string | null;
-  whatsNewSeenThroughSequence: number | null;
-}
-```
-
-`reflectionUnseenCount` is pending Help proposals plus open explanation-only
-inbox rows whose `inbox_seen_at` is still null. It is not the Help queue length.
-`reflectionGenerating` is true when this learner has a queued or running durable
-post-session reflection dispatch, including after browser navigation or reload.
-It becomes false for succeeded, skipped, or failed dispatches. The client uses it
-for the Reflections spinner; it does not count artifacts or pending proposals.
-`failedReflectionRunIds` are concluded generation runs whose durable `state` is
-`failed` and whose `completed_at` is later than the learner’s stored
-seen-through timestamp, newest completion first. A null cursor means every
-failed run is unseen. The client hides both Reflections markers while that tab
-is current and gives the failure marker priority over the count. Opening Run
-meta durably acknowledges currently failed runs. `failedReflectionRunsSeenThroughAt`
-is that ISO-8601 UTC cursor in `learner_params`
-(`failed_reflection_runs_seen_through_at`), or null if it has never been
-written.
-
-The What’s New cursor fields follow the
-[blog's unread-update contract](whats-new.md#unread-updates).
-
-`POST /api/reflection-inbox-seen` accepts one of:
-
-```ts
-| { kind: 'proposal'; proposalId: string }
-| { kind: 'explanation'; artifactId: string; itemId: string }
-```
-
-It stamps `inbox_seen_at` once and returns `{ marked, reflectionUnseenCount }`.
-Missing proposals return `404`. A missing explanation inbox row is a no-op
-`200` so Done races do not fail the pager.
-
-`POST /api/failed-reflection-runs-seen` accepts `{}` or `{ seenThroughAt }`
-where `seenThroughAt` is an ISO-8601 UTC timestamp. An empty body uses the
-server clock. Success advances the cursor monotonically and returns
-`{ failedReflectionRunIds, failedReflectionRunsSeenThroughAt }`, where the ids
-are the remaining unseen failed runs.
+The learner Feedback badge reads `GET /api/vocabulary/feedback/attention`.
+What’s New uses the per-post attention endpoints below.
 
 ### What’s New blog
 
@@ -639,16 +534,6 @@ IDs return 400 without partial writes.
 Existing legacy cursors retain acknowledged reads, with their parameter update
 time used as `readAt`; a learner without a cursor starts with all published
 posts eligible, however old their publication dates are.
-
-The compatibility `POST /api/whats-new-seen-sequence` accepts
-`{ throughSequence: number, mode: 'ensure' | 'seen' }` and returns
-`{ whatsNewSeenThroughSequence: number }`. An invalid mode, negative/noninteger
-sequence, or sequence beyond publication history returns 400.
-The retained `POST /api/whats-new-seen` accepts
-`{ throughDate: string, mode: 'ensure' | 'seen' }`, where the date is
-`YYYY-MM-DD`, and returns `{ whatsNewSeenThroughDate: string }`.
-The [blog contract](whats-new.md#unread-updates) explains acknowledgement,
-initialization, and compatibility behavior.
 
 ## Client incidents
 
@@ -712,16 +597,6 @@ review fallback remain available.
 
 ## Content quality
 
-- `POST /api/content-quality/encounters`, body `{target, encounterId}`: record an
-  idempotent visible-content encounter and return `{contentKey, rating}` for the
-  authenticated learner. References are validated against accessible content.
-- `PUT /api/content-quality/ratings`, body `{contentKey, rating}`: set `up`,
-  `down`, or `null` to clear the learner's standing vote; requires a prior own
-  encounter. This does not modify study or content state.
-- `GET /api/operator/content-quality`: operator-allowlisted aggregate triage.
-  Optional `kind`, `since`, `until` (inclusive UTC dates), `limit`, and `offset`
-  select an exposure cohort with current standing votes. Returns full-filter
-  totals and paginated exact-content snapshots without learner identifiers.
 - `GET /api/operator/content-quality/ratings`: operator-allowlisted current
   non-null ratings ordered by last change plus the total count. Learner
   identifiers are omitted; the operator table applies its date window and

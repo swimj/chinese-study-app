@@ -70,9 +70,9 @@ scope and implementation before carrying a rule into the current runtime.
 - [diet-deck-distribution.md](diet-deck-distribution.md) mixes durable design
   material with delivery planning; preserve the useful intent while separating
   historical sequencing when this area is reconciled.
-- French [compatibility](french-compatibility-profile-plan.md),
-  [priority-alias](french-priority-alias-first-cut-plan.md), and
-  [reading-corpus](french-reading-corpus-compatibility-plan.md) plans are context
+- French [compatibility](archive/french-compatibility-profile-plan.md),
+  [priority-alias](archive/french-priority-alias-first-cut-plan.md), and
+  [reading-corpus](archive/french-reading-corpus-compatibility-plan.md) plans are context
   for retired experimentation, not a current hosted compatibility promise.
 - [archive/](archive/), [PLANS/](../PLANS/), and
   [adaptive vocabulary product notes](adaptive_vocabulary_training_product_notes.md)

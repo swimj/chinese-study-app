@@ -26,11 +26,11 @@ describe('retired diet intake HTTP surface', () => {
   });
   after(() => { fs.rmSync(dataDir, { recursive: true, force: true }); });
 
-  test('survey submission routes are absent while learner diet steering remains available', () => {
+  test('survey submission and learner diet nudge routes are absent', () => {
     const app = indexModule.createApp({ frontendDistPath: null });
     assert.equal(findRoute(app, 'POST', '/api/diet/intake'), null);
     assert.equal(findRoute(app, 'POST', '/api/diet/intake/assess'), null);
-    assert.ok(findRoute(app, 'POST', '/api/diet/nudge'));
+    assert.equal(findRoute(app, 'POST', '/api/diet/nudge'), null);
   });
 
   test('status no longer asks a new learner to complete an intake survey', async () => {

@@ -67,21 +67,17 @@ function UsagePulsePanel() {
 
   return (
     <section>
-      <h2>Usage pulse</h2>
+      <h2 className="operator-usage-heading">Usage pulse</h2>
       <p className="notes">
         Operator-only cohort view. Days use UTC. Historical days are daily snapshots; today is live.
         Mean stash is as-of each snapshot&apos;s capture time.
       </p>
       <details><summary>Metric definitions</summary><p className="notes">
-        New words sums accepted first-study counts in completed sessions on their UTC
-        completion day. Repeated Practice adds no new words. Missing historical counts
-        contribute zero, so New words is a lower bound when evidence is missing.
-        Practice sums recorded correct-day gains in completed sessions. Missing counts
-        contribute zero, so Practice is a lower bound when records are missing. Review correct and wrong count completed
-        exercises without and with a lapse, including contrast and pure cues; reinforcement attempts
-        do not add exercises. Session time totals active time in completed sessions. Proposals accepted
-        counts acceptance events, regardless of application outcome. A dash means unavailable historical
-        data.
+        Vocabulary sessions count on their UTC closure day. New words counts completed teaching,
+        Practice counts covered words outside teaching, and Review correct and wrong count
+        effective accepted and rejected responses. Session time sums recorded active time.
+        Historical study sessions contribute their saved summary counts. Missing historical
+        new-word and practice counts contribute zero. A dash marks unavailable data.
       </p></details>
       {loading ? <p className="notes">Loading…</p> : null}
       {error ? <p className="notes">{error}</p> : null}
@@ -94,7 +90,6 @@ function UsagePulsePanel() {
             <MetricTile label="Practice (today)" value={formatNullableNumber(payload.today.practiceCompleted)} />
             <MetricTile label="Review correct (today)" value={formatInt(payload.today.reviewCorrect)} />
             <MetricTile label="Review wrong (today)" value={formatInt(payload.today.reviewWrong)} />
-            <MetricTile label="Proposals accepted (today)" value={formatInt(payload.today.proposalsAccepted)} />
             <MetricTile label="Mean stash" value={formatNullableNumber(payload.today.meanStashSize)} />
             <MetricTile
               label="Total session time"
@@ -106,8 +101,6 @@ function UsagePulsePanel() {
           <ul className="notes">
             <li>Inactive learners (0 completes in 7d): {payload.today.learnersInactive7d}</li>
             <li>Abandoned sessions: {payload.today.sessionsAbandoned}</li>
-            <li>Learners with spend and 0 accepts: {payload.today.learnersSpendWithoutAccepts}</li>
-            <li>Study-commit failures: {payload.today.studyCommitFailures}</li>
           </ul>
 
           <h3>Last 7 completed days + today</h3>
@@ -122,13 +115,10 @@ function UsagePulsePanel() {
                   <th>Practice</th>
                   <th>Review correct</th>
                   <th>Review wrong</th>
-                  <th>Proposals accepted</th>
                   <th>Mean stash</th>
                   <th>Session time</th>
                   <th>Inactive 7d</th>
                   <th>Abandoned</th>
-                  <th>Spend∅accept</th>
-                  <th>Commit fail</th>
                 </tr>
               </thead>
               <tbody>
@@ -159,13 +149,10 @@ function SnapshotRow({ row, isToday }: { row: UsageDailySnapshot; isToday: boole
       <td>{formatNullableNumber(row.practiceCompleted)}</td>
       <td>{formatInt(row.reviewCorrect)}</td>
       <td>{formatInt(row.reviewWrong)}</td>
-      <td>{formatInt(row.proposalsAccepted)}</td>
       <td>{formatNullableNumber(row.meanStashSize)}</td>
       <td>{formatDuration(row.sessionActiveMs)}</td>
       <td>{formatInt(row.learnersInactive7d)}</td>
       <td>{formatInt(row.sessionsAbandoned)}</td>
-      <td>{formatInt(row.learnersSpendWithoutAccepts)}</td>
-      <td>{formatInt(row.studyCommitFailures)}</td>
     </tr>
   );
 }

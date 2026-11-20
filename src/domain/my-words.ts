@@ -28,69 +28,6 @@ export const MY_WORDS_STAGE_CHIPS: ReadonlyArray<{ status: MyWordsStatus; label:
   { status: 'review', label: WORD_STAGE_LABELS.review },
 ];
 
-export const ALL_MY_WORDS_STATUSES: readonly MyWordsStatus[] = MY_WORDS_STAGE_CHIPS.map(
-  (chip) => chip.status,
-);
-
-const STAGE_SORT_RANK: Record<MyWordsStatus, number> = {
-  learning: 0,
-  unstudied: 1,
-  review: 2,
-};
-
-export function isMyWordsStatus(value: string): value is MyWordsStatus {
-  return value === 'unstudied' || value === 'learning' || value === 'review';
-}
-
-export function isMyWordsStageSelectionAll(
-  statuses: readonly MyWordsStatus[],
-): boolean {
-  // Empty means all implicitly; an explicit full set is the same filter.
-  return statuses.length === 0
-    || (
-      statuses.length === ALL_MY_WORDS_STATUSES.length
-      && ALL_MY_WORDS_STATUSES.every((status) => statuses.includes(status))
-    );
-}
-
-export function toggleMyWordsStatus(
-  current: readonly MyWordsStatus[],
-  status: MyWordsStatus,
-): MyWordsStatus[] {
-  // From the implicit/explicit all state, one click isolates that stage.
-  if (isMyWordsStageSelectionAll(current)) return [status];
-  const selected = new Set(current);
-  if (selected.has(status)) selected.delete(status);
-  else selected.add(status);
-  // Empty selection means all again (no chips pressed).
-  return ALL_MY_WORDS_STATUSES.filter((stage) => selected.has(stage));
-}
-
-export function normalizeMyWordsStatuses(
-  view: MyWordsView,
-  statuses: readonly MyWordsStatus[] | undefined,
-): MyWordsStatus[] {
-  const selected = statuses && statuses.length > 0
-    ? ALL_MY_WORDS_STATUSES.filter((status) => statuses.includes(status))
-    : [...ALL_MY_WORDS_STATUSES];
-  const available = view === 'recent'
-    ? selected.filter((status) => status !== 'unstudied')
-    : selected;
-  if (available.length === 0) {
-    return view === 'recent' ? ['learning', 'review'] : [...ALL_MY_WORDS_STATUSES];
-  }
-  return available;
-}
-
-export function isMyWordsStageFilterNarrowed(
-  view: MyWordsView,
-  statuses: readonly MyWordsStatus[] | undefined,
-): boolean {
-  const effective = normalizeMyWordsStatuses(view, statuses);
-  const full = normalizeMyWordsStatuses(view, ALL_MY_WORDS_STATUSES);
-  return effective.length !== full.length || full.some((status) => !effective.includes(status));
-}
-
 export const MY_WORDS_RECENT_LAPSE_DAYS = 3;
 
 export function myWordsRecentLapseSinceDay(todayUtcDay: string): string {
@@ -101,10 +38,6 @@ export function myWordsRecentLapseSinceDay(todayUtcDay: string): string {
 
 export function shouldShowMyWordsCount(view: MyWordsView, recentLapses: boolean): boolean {
   return view !== 'recent' || recentLapses;
-}
-
-export function compareMyWords(left: MyWord, right: MyWord): number {
-  return compareWordBrowserEntries(left, right, STAGE_SORT_RANK);
 }
 
 export function compareWordBrowserEntries<Stage extends string>(left: WordBrowserEntry<Stage>, right: WordBrowserEntry<Stage>, ranks: Readonly<Record<Stage, number>>): number {

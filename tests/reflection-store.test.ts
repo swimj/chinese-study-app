@@ -64,4 +64,23 @@ describe('reflection durable store', { concurrency: false }, () => {
     `).get();
     assert(ownershipTrigger);
   });
+
+  test('historical help inbox membership is immutable and its seen timestamp can be recorded', () => {
+    sqlite.exec(`
+      INSERT INTO reflection_artifacts (
+        artifact_id, reflection_flow_version, generated_at, provider, model, prompt_version,
+        bundle_schema_version, result_schema_version, evidence_bundle_json, result_json
+      ) VALUES ('artifact', 'initial_post_session_reflection.v6', '2026-08-18T08:00:00.000Z',
+        'openai', 'test', 'reflection-staged-v4', 'session_reflection_bundle.v6',
+        'session_reflection_result.v10', '{}', '{}');
+      INSERT INTO reflection_help_inbox (inbox_id, artifact_id, item_id, opened_at)
+      VALUES ('inbox', 'artifact', 'item', '2026-08-18T08:00:00.000Z');
+    `);
+    assert.throws(() => sqlite.exec(`
+      UPDATE reflection_help_inbox SET opened_at = '2026-08-18T09:00:00.000Z' WHERE inbox_id = 'inbox'
+    `), /reflection help inbox entries are immutable/);
+    const seenAt = '2026-08-18T10:00:00.000Z';
+    sqlite.prepare('UPDATE reflection_help_inbox SET inbox_seen_at = ? WHERE inbox_id = ?').run(seenAt, 'inbox');
+    assert.equal(sqlite.prepare('SELECT inbox_seen_at FROM reflection_help_inbox WHERE inbox_id = ?').get('inbox')?.inbox_seen_at, seenAt);
+  });
 });

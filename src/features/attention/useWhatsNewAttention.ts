@@ -24,7 +24,17 @@ export function useWhatsNewAttention() {
     queue.current = result;
     return result;
   }, []);
-  const refresh = useCallback(() => run(fetchWhatsNewAttention), [run]);
+  useEffect(() => {
+    function load() { void run(fetchWhatsNewAttention).catch(() => undefined); }
+    function onVisibility() { if (document.visibilityState === 'visible') load(); }
+    load();
+    document.addEventListener('visibilitychange', onVisibility);
+    window.addEventListener('focus', load);
+    return () => {
+      document.removeEventListener('visibilitychange', onVisibility);
+      window.removeEventListener('focus', load);
+    };
+  }, [run]);
   const read = useCallback((postIds: string[]) => run(() => updateWhatsNewAttention({ postIds, kind: 'read' })), [run]);
   const serverNow = snapshot ? Date.parse(snapshot.attention.serverNow) + Math.max(0, clock - snapshot.receivedAt) : 0;
   const unseenIds = snapshot ? activeWhatsNewPostIds(snapshot.attention, serverNow) : [];
@@ -49,5 +59,5 @@ export function useWhatsNewAttention() {
     return () => window.clearTimeout(timer);
   }, [snapshot, serverNow]);
 
-  return { unseenPostIds: unseenIds, refresh, read, exposeBadge };
+  return { unseenPostIds: unseenIds, read, exposeBadge };
 }

@@ -62,7 +62,6 @@ import { registerOperatorRoutes } from './routes/operator-routes.ts';
 import { registerLearnerSettingsRoutes } from './routes/learner-settings-routes.ts';
 import { registerSessionDebriefRoutes } from './routes/session-debrief-routes.ts';
 import { registerWhatsNewRoutes } from './routes/whats-new-routes.ts';
-import { registerAttentionRoutes } from './routes/attention-routes.ts';
 import { defaultErrorLogger } from './routes/request-helpers.ts';
 import { registerWordsRoutes } from './routes/words-routes.ts';
 import { registerContentQualityRoutes } from './routes/content-quality-routes.ts';
@@ -195,7 +194,6 @@ export function createApp(options: CreateAppOptions = {}) {
   registerOperatorRoutes(app, { options });
   registerLearnerSettingsRoutes(app);
   registerSessionDebriefRoutes(app, { options });
-  registerAttentionRoutes(app);
   registerWhatsNewRoutes(app);
 
   if (frontendDistPath) {

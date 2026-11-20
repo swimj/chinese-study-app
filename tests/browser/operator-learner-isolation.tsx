@@ -11,7 +11,6 @@ window.fetch = async input => {
   requests.push(path);
   if (path === '/api/operator/vocabulary/case-queue') return Response.json({items:[],nextCursor:null,previousCursor:null,anchorCursor:null,total:0,startIndex:0});
   if (path.endsWith('/completion/current')) return Response.json(null);
-  if (path === '/api/attention-badges') return Response.json({reflectionUnseenCount:0,reflectionGenerating:false,failedReflectionRunIds:[]});
   if (path === '/api/whats-new-attention') return Response.json({serverNow:new Date().toISOString(),items:[],unseenPostIds:[]});
   if (path === '/api/whats-new') return Response.json({posts:[]});
   if (path.endsWith('/feedback/attention')) return Response.json({unseenCount:0,hasFailure:false,generating:false});

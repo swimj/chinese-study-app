@@ -2,10 +2,6 @@ import { getDb } from './connection.ts';
 import { getVocabularyCompletionUsage } from './vocabulary-statistics.ts';
 import { CLERK_AUTH_PROVIDER, resolveLearnerId } from './identity.ts';
 import { PRIORITY_TIER_REGULAR } from './types.ts';
-import {
-  readStudyCommitDiagnostics,
-  type StudyCommitFailureDiagnostic,
-} from '../study-commit-diagnostics.ts';
 
 export const USAGE_PULSE_WINDOW_DAYS = 7;
 
@@ -18,13 +14,10 @@ export type UsageDailySnapshot = {
   practiceCompleted: number;
   reviewCorrect: number;
   reviewWrong: number;
-  proposalsAccepted: number;
   meanStashSize: number | null;
   sessionActiveMs: number;
   learnersInactive7d: number;
   sessionsAbandoned: number;
-  learnersSpendWithoutAccepts: number;
-  studyCommitFailures: number;
 };
 
 export type UsagePulsePayload = {
@@ -42,13 +35,10 @@ type SnapshotRow = {
   practice_completed: number;
   review_correct: number;
   review_wrong: number;
-  proposals_accepted: number;
   mean_stash_size: number | null;
   session_active_ms: number;
   learners_inactive_7d: number;
   sessions_abandoned: number;
-  learners_spend_without_accepts: number;
-  study_commit_failures: number;
 };
 
 export function utcDayKey(date: Date = new Date()): string {
@@ -78,8 +68,6 @@ export function enumerateUtcDayKeys(endDayKey: string, dayCount: number): string
 export function computeUsagePulseDay(input: {
   dayKey: string;
   capturedAt?: string;
-  dataDir?: string | null;
-  studyCommitFailures?: StudyCommitFailureDiagnostic[] | null;
   smokeClerkUserId?: string | null;
 }): UsageDailySnapshot {
   const dayKey = input.dayKey.trim();
@@ -115,12 +103,6 @@ export function computeUsagePulseDay(input: {
     review_correct: number; review_wrong: number; session_active_ms: number;
     practice_completed: number; new_words: number;
   };
-  const proposals = getDb().prepare(`
-    SELECT COUNT(*) AS value FROM learner_owned_reflection_operation_invocations
-    WHERE origin_kind = 'proposal_acceptance'
-      AND created_at >= ? AND created_at < ?
-  `).get(`${dayKey}T00:00:00.000Z`, `${addUtcDays(dayKey, 1)}T00:00:00.000Z`) as { value: number };
-
   const stashSizes = (getDb().prepare(`
     SELECT learners.learner_id AS learner_id,
       (
@@ -165,31 +147,6 @@ export function computeUsagePulseDay(input: {
       )
   `).get(dayKey) as { value: number };
 
-  const spendWithoutAcceptsRow = getDb().prepare(`
-    SELECT COUNT(*) AS value
-    FROM (
-      SELECT runs.learner_id AS learner_id
-      FROM learner_owned_reflection_generation_runs AS runs
-      WHERE runs.estimated_cost_usd IS NOT NULL
-        AND runs.estimated_cost_usd > 0
-        AND substr(runs.completed_at, 1, 10) = ?
-      GROUP BY runs.learner_id
-      HAVING NOT EXISTS (
-        SELECT 1
-        FROM learner_owned_reflection_proposal_reviews AS reviews
-        WHERE reviews.learner_id = runs.learner_id
-          AND reviews.disposition = 'accepted'
-          AND substr(reviews.updated_at, 1, 10) = ?
-      )
-    )
-  `).get(dayKey, dayKey) as { value: number };
-
-  const studyCommitFailures = countStudyCommitFailuresForDay({
-    dayKey,
-    dataDir: input.dataDir,
-    diagnostics: input.studyCommitFailures,
-  });
-
   return {
     dayKey,
     capturedAt,
@@ -199,36 +156,21 @@ export function computeUsagePulseDay(input: {
     practiceCompleted: totals.practice_completed+vocabulary.practiceCompleted,
     reviewCorrect: totals.review_correct+vocabulary.acceptedResponses,
     reviewWrong: totals.review_wrong+vocabulary.rejectedResponses,
-    proposalsAccepted: proposals.value,
     meanStashSize: stashSizes.length ? stashSizes.reduce((sum, size) => sum + size, 0) / stashSizes.length : null,
     sessionActiveMs: totals.session_active_ms+vocabulary.activeDurationMs,
     learnersInactive7d: Number(learnersInactive7dRow.value),
     sessionsAbandoned: Number(sessionsAbandonedRow.value)+Number((getDb().prepare(`SELECT COUNT(*) value FROM vocabulary_sessions s WHERE substr(s.started_at,1,10)=? AND NOT EXISTS (SELECT 1 FROM vocabulary_session_completions c WHERE c.session_id=s.session_id AND c.learner_id=s.learner_id AND c.status='closed')`).get(dayKey) as {value:number}).value),
-    learnersSpendWithoutAccepts: Number(spendWithoutAcceptsRow.value),
-    studyCommitFailures,
   };
 }
 
 export function upsertUsageDailySnapshot(snapshot: UsageDailySnapshot): void {
+  // Retired NOT NULL counters need values on insert. Omit them from conflict updates to preserve history.
   getDb().prepare(`
     INSERT INTO usage_daily_snapshots (
-      day_key,
-      captured_at,
-      dau,
-      sessions_completed,
-      new_words,
-      model_spend_usd,
-      practice_completed,
-      review_correct,
-      review_wrong,
-      proposals_accepted,
-      mean_stash_size,
-      session_active_ms,
-      learners_inactive_7d,
-      sessions_abandoned,
-      learners_spend_without_accepts,
-      study_commit_failures
-    ) VALUES (?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      day_key, captured_at, dau, sessions_completed, new_words, practice_completed,
+      review_correct, review_wrong, mean_stash_size, session_active_ms, learners_inactive_7d, sessions_abandoned,
+      model_spend_usd, learners_spend_without_accepts, study_commit_failures
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 0, 0)
     ON CONFLICT(day_key) DO UPDATE SET
       captured_at = excluded.captured_at,
       dau = excluded.dau,
@@ -237,13 +179,10 @@ export function upsertUsageDailySnapshot(snapshot: UsageDailySnapshot): void {
       practice_completed = excluded.practice_completed,
       review_correct = excluded.review_correct,
       review_wrong = excluded.review_wrong,
-      proposals_accepted = excluded.proposals_accepted,
       mean_stash_size = excluded.mean_stash_size,
       session_active_ms = excluded.session_active_ms,
       learners_inactive_7d = excluded.learners_inactive_7d,
-      sessions_abandoned = excluded.sessions_abandoned,
-      learners_spend_without_accepts = excluded.learners_spend_without_accepts,
-      study_commit_failures = excluded.study_commit_failures
+      sessions_abandoned = excluded.sessions_abandoned
   `).run(
     snapshot.dayKey,
     snapshot.capturedAt,
@@ -253,13 +192,10 @@ export function upsertUsageDailySnapshot(snapshot: UsageDailySnapshot): void {
     snapshot.practiceCompleted,
     snapshot.reviewCorrect,
     snapshot.reviewWrong,
-    snapshot.proposalsAccepted,
     snapshot.meanStashSize,
     snapshot.sessionActiveMs,
     snapshot.learnersInactive7d,
     snapshot.sessionsAbandoned,
-    snapshot.learnersSpendWithoutAccepts,
-    snapshot.studyCommitFailures,
   );
 }
 
@@ -280,13 +216,10 @@ export function listUsageDailySnapshots(dayKeys: readonly string[]): UsageDailyS
       )) AS practice_completed,
       review_correct,
       review_wrong,
-      proposals_accepted,
       mean_stash_size,
       session_active_ms,
       learners_inactive_7d,
-      sessions_abandoned,
-      learners_spend_without_accepts,
-      study_commit_failures
+      sessions_abandoned
     FROM usage_daily_snapshots
     WHERE day_key IN (${placeholders})
     ORDER BY day_key ASC
@@ -296,7 +229,6 @@ export function listUsageDailySnapshots(dayKeys: readonly string[]): UsageDailyS
 
 export function captureUsagePulseDay(input: {
   dayKey: string;
-  dataDir?: string | null;
   capturedAt?: string;
 }): UsageDailySnapshot {
   const snapshot = computeUsagePulseDay(input);
@@ -307,7 +239,6 @@ export function captureUsagePulseDay(input: {
 export function ensureUsagePulseSnapshots(input: {
   todayDayKey?: string;
   windowDays?: number;
-  dataDir?: string | null;
   now?: Date;
 }): { capturedDayKeys: string[] } {
   const todayDayKey = input.todayDayKey ?? utcDayKey(input.now);
@@ -321,7 +252,6 @@ export function ensureUsagePulseSnapshots(input: {
     if (existing.has(dayKey)) continue;
     captureUsagePulseDay({
       dayKey,
-      dataDir: input.dataDir,
       capturedAt,
     });
     capturedDayKeys.push(dayKey);
@@ -330,17 +260,15 @@ export function ensureUsagePulseSnapshots(input: {
 }
 
 export function getUsagePulse(input: {
-  dataDir?: string | null;
   now?: Date;
   windowDays?: number;
-}): UsagePulsePayload {
+} = {}): UsagePulsePayload {
   const now = input.now ?? new Date();
   const todayDayKey = utcDayKey(now);
   const windowDays = input.windowDays ?? USAGE_PULSE_WINDOW_DAYS;
   ensureUsagePulseSnapshots({
     todayDayKey,
     windowDays,
-    dataDir: input.dataDir,
     now,
   });
 
@@ -350,7 +278,6 @@ export function getUsagePulse(input: {
   const today = computeUsagePulseDay({
     dayKey: todayDayKey,
     capturedAt: now.toISOString(),
-    dataDir: input.dataDir,
   });
 
   return {
@@ -381,25 +308,9 @@ function mapSnapshotRow(row: SnapshotRow): UsageDailySnapshot {
     practiceCompleted: row.practice_completed,
     reviewCorrect: row.review_correct,
     reviewWrong: row.review_wrong,
-    proposalsAccepted: row.proposals_accepted,
     meanStashSize: row.mean_stash_size,
     sessionActiveMs: row.session_active_ms,
     learnersInactive7d: row.learners_inactive_7d,
     sessionsAbandoned: row.sessions_abandoned,
-    learnersSpendWithoutAccepts: row.learners_spend_without_accepts,
-    studyCommitFailures: row.study_commit_failures,
   };
-}
-
-function countStudyCommitFailuresForDay(input: {
-  dayKey: string;
-  dataDir?: string | null;
-  diagnostics?: StudyCommitFailureDiagnostic[] | null;
-}): number {
-  const diagnostics = input.diagnostics ?? (
-    input.dataDir
-      ? readStudyCommitDiagnostics({ dataDir: input.dataDir, limit: Number.MAX_SAFE_INTEGER }).diagnostics
-      : []
-  );
-  return diagnostics.filter((diagnostic) => diagnostic.at.slice(0, 10) === input.dayKey).length;
 }

@@ -126,9 +126,7 @@ describe('deck-aware diet admission', { concurrency: false }, () => {
 
   test('deck weights split the diet draw across decks', () => {
     insertCorpusWords();
-    dbModule.setOperatorDietDeck('hsk2-l1');
-    dbModule.nudgeDietProfile('harder');
-    dbModule.nudgeDietProfile('harder'); // { l1: 0.8, l2: 0.2 }
+    dbModule.saveDietProfile({ version: 1, weights: { 'hsk2-l1': 0.8, 'hsk2-l2': 0.2 }, provenance: [], updatedAt: new Date().toISOString() });
     dbModule.setDailyNewWordLimit(5);
     const admitted = admittedUnstudiedIds();
     assert.equal(admitted.length, 5);
@@ -138,10 +136,7 @@ describe('deck-aware diet admission', { concurrency: false }, () => {
 
   test('apportions the actual diet demand after a full stash contribution', () => {
     insertCorpusWords();
-    dbModule.setOperatorDietDeck('hsk2-l1');
-    for (let index = 0; index < 5; index += 1) {
-      dbModule.nudgeDietProfile('harder');
-    }
+    dbModule.saveDietProfile({ version: 1, weights: { 'hsk2-l1': 0.5, 'hsk2-l2': 0.5 }, provenance: [], updatedAt: new Date().toISOString() });
     for (const id of ['tail-high', 'tail-low', 'stash-tail-1', 'stash-tail-2', 'stash-tail-3']) {
       stash(id);
     }
@@ -155,9 +150,7 @@ describe('deck-aware diet admission', { concurrency: false }, () => {
 
   test('apportions an unequal distribution after stash underfill', () => {
     insertCorpusWords();
-    dbModule.setOperatorDietDeck('hsk2-l1');
-    dbModule.nudgeDietProfile('harder');
-    dbModule.nudgeDietProfile('harder'); // { l1: 0.8, l2: 0.2 }
+    dbModule.saveDietProfile({ version: 1, weights: { 'hsk2-l1': 0.8, 'hsk2-l2': 0.2 }, provenance: [], updatedAt: new Date().toISOString() });
     for (const id of ['stash-tail-1', 'stash-tail-2']) {
       stash(id);
     }

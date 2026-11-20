@@ -36,7 +36,7 @@ export function SessionSettingsPanel({
       : String(backendStatus.dailyNewWordLimit)
   ));
   const [introductionOrderDraft, setIntroductionOrderDraft] = useState<StudyIntroductionOrder>(
-    backendStatus?.studyIntroductionOrder ?? (backendStatus?.studyNewWordsFirst ? 'first' : 'random'),
+    backendStatus?.studyIntroductionOrder ?? 'random',
   );
   const [introductionSpacingDraft, setIntroductionSpacingDraft] = useState(
     backendStatus?.studyIntroductionSpacing ?? DEFAULT_INTRODUCTION_SPACING,
@@ -58,7 +58,7 @@ export function SessionSettingsPanel({
   const [limitError, setLimitError] = useState<string | null>(null);
 
   const committedLimit = backendStatus?.dailyNewWordLimit ?? null;
-  const committedIntroductionOrder = backendStatus?.studyIntroductionOrder ?? (backendStatus?.studyNewWordsFirst ? 'first' : 'random');
+  const committedIntroductionOrder = backendStatus?.studyIntroductionOrder ?? 'random';
   const committedIntroductionSpacing = backendStatus?.studyIntroductionSpacing ?? DEFAULT_INTRODUCTION_SPACING;
   const introductionOrderDirty = introductionOrderDraft !== committedIntroductionOrder;
   const introductionSpacingDirty = introductionSpacingDraft !== committedIntroductionSpacing;

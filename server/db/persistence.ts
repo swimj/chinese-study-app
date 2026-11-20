@@ -5,14 +5,6 @@ import { validateDebriefInventory, type SessionDebriefInventoryItem } from '../.
 import { validateContentQualitySchema } from './content-quality.ts';
 import fs from 'node:fs';
 import path from 'node:path';
-import {
-  compareMyWords,
-  myWordsRecentLapseSinceDay,
-  normalizeMyWordsStatuses,
-  type MyWordsResponse,
-  type MyWordsStatus,
-  type MyWordsView,
-} from '../../src/domain/my-words.ts';
 import type {
   ContrastCluster,
   ContrastClusterMember,
@@ -51,8 +43,6 @@ import type {
   PriorityWord,
   PriorityWordRow,
   PriorityWordsPayload,
-  ReviewFailureRateDay,
-  ReviewSessionResultRow,
   SeedData,
   StudySkillId,
   UserWordPriorityPatch,
@@ -63,10 +53,9 @@ import type {
   WordRow,
   WordSkillRelevance,
   WordSkillState,
-  WordStatus,
   WordStudyAdmissionState,
 } from './types.ts';
-import { queryManifestDeckWords, invalidateDeckWordIds, queryDeckWordStudyDates } from './deck-words.ts';
+import { invalidateDeckWordIds } from './deck-words.ts';
 import {
   DEFAULT_UNSTUDIED_ADMISSION_SOURCE,
   type UnstudiedAdmissionSource,
@@ -80,8 +69,6 @@ import {
   DEFAULT_CHARACTER_PRESENTATION,
   type CharacterPresentation,
 } from '../../src/domain/card-characters.ts';
-import { loadDeckManifest } from '../decks/manifest.ts';
-import { getStoredDietProfile, resolveEffectiveDietWeights } from './diet-profile.ts';
 import {
   assertLearnerExists,
   bootstrapLearner,
@@ -149,136 +136,6 @@ export function getWords(): Word[] {
     .all() as WordRow[];
 
   return rows.map(mapWordRow);
-}
-
-export function getMyWords({
-  view = 'recent', query = '', statuses, recentLapses = false, limit = 50, offset = 0,
-}: {
-  view?: MyWordsView;
-  query?: string;
-  statuses?: readonly MyWordsStatus[];
-  recentLapses?: boolean;
-  limit?: number;
-  offset?: number;
-} = {}): MyWordsResponse {
-  if (view !== 'recent' && view !== 'personal' && view !== 'deck') throw new Error('Expected recent, personal or deck view');
-  if (!Number.isSafeInteger(limit) || limit < 1 || limit > 100) throw new Error('Expected limit from 1 to 100');
-  if (!Number.isSafeInteger(offset) || offset < 0) throw new Error('Expected non-negative integer offset');
-  const stageFilter = normalizeMyWordsStatuses(view, statuses);
-  const lapseSinceDay = recentLapses ? myWordsRecentLapseSinceDay(getTodayKey()) : null;
-  const manifest = config.studyProfile === 'mandarin' ? loadDeckManifest() : null;
-  const profile = manifest ? getStoredDietProfile() : null;
-  const weights = manifest && profile ? resolveEffectiveDietWeights(profile, manifest) : {};
-  const decks = manifest?.decks.filter((deck) => (weights[deck.id] ?? 0) > 0) ?? [];
-  const currentDeck = decks.length && decks.every((deck) => deck.hsk !== null) ? {
-    label: decks.map((deck) => deck.hsk
-      ? `HSK ${deck.hsk.level}${deck.stratum === null ? '' : ` · part ${deck.stratum}`}`
-      : 'Beyond HSK').join(' + '),
-  } : null;
-  if (view === 'deck' && !currentDeck) return { words: [], hasMore: false, total: 0, currentDeck: null };
-  if (view === 'deck') {
-    if (!manifest) throw new Error('Current deck requires a manifest');
-    const rows = queryManifestDeckWords(manifest, decks.map((deck) => deck.id), 'browse');
-    const normalizedQuery = query.trim().toLowerCase();
-    const allowed = new Set(stageFilter);
-    const lapseIds = lapseSinceDay ? queryRecentLapseWordIds(lapseSinceDay) : null;
-    const matched = rows.map((row) => ({ row, word: mapWordRow(row) }))
-      .filter(({ word }) => allowed.has(word.status)
-        && (!lapseIds || lapseIds.has(word.id))
-        && [word.hanzi, word.traditional ?? '', word.pinyin, word.meaning, ...word.meanings]
-          .some((text) => text.toLowerCase().includes(normalizedQuery)));
-    const studyDates = queryDeckWordStudyDates(matched.map(({ word }) => word.id));
-    return {
-      words: matched.map(({ row, word }) => ({
-        word,
-        personalUpdatedAt: row.personal_updated_at,
-        lastStudiedAt: studyDates.get(word.id) ?? null,
-      })).sort(compareMyWords),
-      hasMore: false,
-      total: matched.length,
-      currentDeck,
-    };
-  }
-  const search = `%${query.trim().replace(/[\\%_]/g, '\\$&')}%`;
-  const statusPlaceholders = stageFilter.map(() => '?').join(', ');
-  const lapseJoin = lapseSinceDay
-    ? `INNER JOIN (${RECENT_LAPSE_IDS_SQL}) recent_lapses ON recent_lapses.word_id = words.id`
-    : '';
-  const membership = view === 'recent' ? "words.status IN ('learning', 'review')" : 'personal.priority_tier >= 0';
-  const searchPredicate = `(words.hanzi LIKE ? ESCAPE '\\' OR words.traditional LIKE ? ESCAPE '\\'
-        OR words.pinyin LIKE ? ESCAPE '\\' OR words.meaning LIKE ? ESCAPE '\\'
-        OR EXISTS (SELECT 1 FROM json_each(words.meanings_json) WHERE value LIKE ? ESCAPE '\\'))`;
-  const filterBinds = [...(lapseSinceDay ? [lapseSinceDay] : []), ...stageFilter, search, search, search, search, search];
-  // Count skips the last-study CTE so pagination does not have to load the full matching set.
-  const { total } = getDb().prepare(`
-    SELECT COUNT(*) AS total
-    FROM words
-    LEFT JOIN user_word_priority personal ON personal.word_id = words.id
-    ${lapseJoin}
-    WHERE ${membership}
-      AND words.status IN (${statusPlaceholders})
-      AND ${searchPredicate}
-  `).get(...filterBinds) as { total: number };
-  // Learning completion only records a UTC day. Keep the whole read model at
-  // that precision; accepted review commits project both correct and failed attempts.
-  // Non-sunk overlays survive study, including required-only rows cleared on completion.
-  const rows = getDb().prepare(`
-    WITH study_dates AS (
-      SELECT target_word_id AS word_id, substr(occurred_at, 1, 10) AS studied_on
-      FROM study_attempt_events WHERE projected_at IS NOT NULL
-      UNION ALL
-      SELECT word_id, substr(last_studied_at, 1, 10) FROM word_skill_state
-      UNION ALL
-      SELECT id, last_learning_covered_on FROM words WHERE last_learning_covered_on IS NOT NULL
-    ), latest_study AS (
-      SELECT word_id, MAX(studied_on) AS last_studied_on FROM study_dates GROUP BY word_id
-    )
-    SELECT words.*, latest_study.last_studied_on,
-      CASE WHEN personal.priority_tier >= 0 THEN personal.updated_at ELSE NULL END AS personal_updated_at
-    FROM words
-    LEFT JOIN user_word_priority personal ON personal.word_id = words.id
-    LEFT JOIN latest_study ON latest_study.word_id = words.id
-    ${lapseJoin}
-    WHERE ${membership}
-      AND words.status IN (${statusPlaceholders})
-      AND ${searchPredicate}
-    ORDER BY CASE words.status WHEN 'learning' THEN 0 WHEN 'unstudied' THEN 1 WHEN 'review' THEN 2 ELSE 3 END,
-      CASE WHEN words.status = 'unstudied' THEN lower(words.pinyin) END ASC,
-      CASE WHEN words.status <> 'unstudied' THEN latest_study.last_studied_on IS NULL END ASC,
-      CASE WHEN words.status <> 'unstudied' THEN latest_study.last_studied_on END DESC,
-      words.id ASC
-    LIMIT ? OFFSET ?
-  `).all(...filterBinds, limit + 1, offset) as Array<WordRow & {
-    last_studied_on: string | null; personal_updated_at: string | null;
-  }>;
-  return {
-    words: rows.slice(0, limit).map((row) => ({
-      word: mapWordRow(row),
-      lastStudiedAt: row.last_studied_on,
-      personalUpdatedAt: row.personal_updated_at,
-    })),
-    hasMore: rows.length > limit,
-    total,
-    currentDeck,
-  };
-}
-
-const RECENT_LAPSE_IDS_SQL = `
-  SELECT target_word_id AS word_id
-  FROM study_attempt_events
-  WHERE projected_at IS NOT NULL
-    AND (outcome = 'incorrect' OR rating = 'forgot')
-    AND substr(occurred_at, 1, 10) >= ?
-  UNION
-  SELECT id AS word_id
-  FROM words
-  WHERE last_learning_success_on IS NOT NULL
-    AND last_learning_covered_on > last_learning_success_on
-`;
-
-function queryRecentLapseWordIds(sinceDay: string): Set<string> {
-  const rows = getDb().prepare(RECENT_LAPSE_IDS_SQL).all(sinceDay) as Array<{ word_id: string }>;
-  return new Set(rows.map((row) => row.word_id));
 }
 
 export function searchWords(query: string, limit = 20): Word[] {
@@ -760,46 +617,16 @@ function resolveUnstudiedPriorityWordIdsByTarget(targetText: string): Array<{ id
   });
 }
 
-export function getWordStatusCounts(): Record<WordStatus, number> {
-  const rows = getDb()
-    .prepare(`
-      SELECT status, COUNT(*) as count
-      FROM words
-      GROUP BY status
-    `)
-    .all() as Array<{ status: WordStatus; count: number }>;
-
-  const counts: Record<WordStatus, number> = {
-    unstudied: 0,
-    learning: 0,
-    review: 0,
-  };
-
-  for (const row of rows) {
-    counts[row.status] = row.count;
-  }
-
-  return counts;
-}
-
-export function getLearningPolicy(studyDayKey: string) {
-  assertStudyDayKey(studyDayKey);
-  return {
-    ...getLearningPolicySettings(),
-    learningCoverageDate: studyDayKey,
-  };
-}
-
 export function setDailyNewWordLimit(dailyNewWordLimit: number) {
   assertDailyNewWordLimit(dailyNewWordLimit);
   upsertLearnerSetting('daily_new_word_limit', dailyNewWordLimit);
-  return getLearningPolicySettings();
+  return getLearningPolicy();
 }
 
 export function setUnstudiedAdmissionSource(unstudiedAdmissionSource: UnstudiedAdmissionSource) {
   assertUnstudiedAdmissionSource(unstudiedAdmissionSource);
   upsertLearnerSetting('unstudied_admission_source', unstudiedAdmissionSource);
-  return getLearningPolicySettings();
+  return getLearningPolicy();
 }
 
 export function getCharacterPresentation(): CharacterPresentation {
@@ -812,7 +639,7 @@ export function setCharacterPresentation(characterPresentation: CharacterPresent
   return { characterPresentation: readCharacterPresentation() };
 }
 
-export function getStudyNewWordsFirst(): boolean {
+function getStudyNewWordsFirst(): boolean {
   const row = getDb().prepare(`
     SELECT value_json FROM learner_settings
     WHERE learner_id = ? AND setting_key = 'study_new_words_first'
@@ -821,12 +648,6 @@ export function getStudyNewWordsFirst(): boolean {
   const value: unknown = JSON.parse(row.value_json);
   if (typeof value !== 'boolean') throw new Error('Expected studyNewWordsFirst to be a boolean');
   return value;
-}
-
-export function setStudyNewWordsFirst(studyNewWordsFirst: boolean) {
-  if (typeof studyNewWordsFirst !== 'boolean') throw new Error('Expected studyNewWordsFirst to be a boolean');
-  setStudyIntroductionOrder(studyNewWordsFirst ? 'first' : 'random', getStudyIntroductionSpacing());
-  return { studyNewWordsFirst: getStudyNewWordsFirst() };
 }
 
 export function getStudyIntroductionOrder(): StudyIntroductionOrder {
@@ -858,7 +679,6 @@ export function setStudyIntroductionOrder(studyIntroductionOrder: StudyIntroduct
   try {
     upsertLearnerSetting('study_introduction_order', studyIntroductionOrder);
     upsertLearnerSetting('study_introduction_spacing', studyIntroductionSpacing);
-    upsertLearnerSetting('study_new_words_first', studyIntroductionOrder === 'first');
     getDb().exec('RELEASE SAVEPOINT set_study_introduction_order');
   } catch (error) {
     getDb().exec('ROLLBACK TO SAVEPOINT set_study_introduction_order');
@@ -888,92 +708,6 @@ export function setSentenceCharacterPresentation(sentenceCharacterPresentation: 
   assertSentenceCharacterPresentation(sentenceCharacterPresentation);
   upsertLearnerSetting('sentence_character_presentation', sentenceCharacterPresentation);
   return { sentenceCharacterPresentation: getSentenceCharacterPresentation() };
-}
-
-export function getReviewFailureRateDays(limit = 14): ReviewFailureRateDay[] {
-  if (!Number.isInteger(limit) || limit < 1) {
-    throw new Error('Expected positive integer limit');
-  }
-
-  // New summaries include pure cues. Historical summaries stay as recorded;
-  // compensation is a forward-only daily counter, not a scan of restoration history.
-  const rows = getDb()
-    .prepare(`
-      WITH daily_counts AS (
-        SELECT day_key, completed_count, failed_count, 0 AS compensated_count
-        FROM review_session_summaries
-        UNION ALL
-        SELECT day_key, 0, 0, compensated_count
-        FROM learner_exercise_compensation_days
-        WHERE learner_id = ?
-      )
-      SELECT day_key, SUM(completed_count) AS completed_count,
-        SUM(failed_count) AS failed_count, SUM(compensated_count) AS compensated_count
-      FROM daily_counts
-      GROUP BY day_key
-      ORDER BY day_key DESC
-      LIMIT ?
-    `)
-    .all(requireLearnerId(), limit) as
-      Array<ReviewSessionResultRow & { compensated_count: number }>;
-
-  const ascendingRows = [...rows].reverse();
-  const countsByDay = new Map(
-    ascendingRows.map((row) => [
-      row.day_key,
-      {
-        completedCount: row.completed_count,
-        failedCount: row.failed_count,
-      },
-    ]),
-  );
-
-  return ascendingRows.map((row) => {
-    const rolling3 = getRollingReviewFailureCounts(countsByDay, row.day_key, 3);
-    const rolling7 = getRollingReviewFailureCounts(countsByDay, row.day_key, 7);
-
-    return {
-      dayKey: row.day_key,
-      completedReviewActionSessions: row.completed_count,
-      failedReviewActionSessions: row.failed_count,
-      compensatedReviewActionSessions: row.compensated_count,
-      failureRate: calculateFailureRate(row.failed_count, row.completed_count),
-      rolling3DayFailureRate: calculateFailureRate(rolling3.failedCount, rolling3.completedCount),
-      rolling7DayFailureRate: calculateFailureRate(rolling7.failedCount, rolling7.completedCount),
-    };
-  });
-}
-
-export function getSessionActiveTimeMetrics(studyDayKey: string) {
-  assertStudyDayKey(studyDayKey);
-  const rolling3StartDayKey = addDaysToDateKey(studyDayKey, -2);
-  const rolling7StartDayKey = addDaysToDateKey(studyDayKey, -6);
-  const rows = getDb()
-    .prepare(`
-      SELECT day_key, active_duration_ms
-      FROM review_session_summaries
-      WHERE day_key >= ? AND day_key <= ?
-    `)
-    .all(rolling7StartDayKey, studyDayKey) as Array<{ day_key: string; active_duration_ms: number }>;
-
-  let todayActiveDurationMs = 0;
-  let rolling3DayActiveDurationMs = 0;
-  let rolling7DayActiveDurationMs = 0;
-  for (const row of rows) {
-    rolling7DayActiveDurationMs += row.active_duration_ms;
-    if (row.day_key >= rolling3StartDayKey) {
-      rolling3DayActiveDurationMs += row.active_duration_ms;
-    }
-    if (row.day_key === studyDayKey) {
-      todayActiveDurationMs += row.active_duration_ms;
-    }
-  }
-
-  return {
-    todayActiveDurationMs,
-    rolling3DayAverageActiveDurationMs: rolling3DayActiveDurationMs / 3,
-    rolling7DayAverageActiveDurationMs: rolling7DayActiveDurationMs / 7,
-  };
 }
 
 export function recordReviewSessionSummary({
@@ -2609,35 +2343,6 @@ function mapPriorityWordRow(row: PriorityWordRow): PriorityWord {
   };
 }
 
-function getRollingReviewFailureCounts(
-  countsByDay: Map<string, { completedCount: number; failedCount: number }>,
-  dayKey: string,
-  windowDays: number,
-) {
-  let completedCount = 0;
-  let failedCount = 0;
-
-  for (let offset = 0; offset < windowDays; offset += 1) {
-    const counts = countsByDay.get(addDaysToDateKey(dayKey, -offset));
-    if (!counts) {
-      continue;
-    }
-
-    completedCount += counts.completedCount;
-    failedCount += counts.failedCount;
-  }
-
-  return { completedCount, failedCount };
-}
-
-function calculateFailureRate(failedCount: number, completedCount: number) {
-  if (completedCount === 0) {
-    return null;
-  }
-
-  return failedCount / completedCount;
-}
-
 function addHours(isoTimestamp: string, hours: number): string {
   const date = new Date(isoTimestamp);
   date.setUTCHours(date.getUTCHours() + hours);
@@ -2716,7 +2421,7 @@ function addDaysToDateKey(dateKey: string, days: number): string {
   return date.toISOString().slice(0, 10);
 }
 
-function getLearningPolicySettings() {
+export function getLearningPolicy() {
   return {
     dailyNewWordLimit: getDailyNewWordLimit(),
     unstudiedAdmissionSource: getUnstudiedAdmissionSource(),
@@ -2810,10 +2515,4 @@ function isStudySkillId(value: unknown): value is StudySkillId {
 
 function isWordSkillRelevanceState(value: unknown): value is WordSkillRelevanceState {
   return value === 'normal' || value === 'suppressed';
-}
-
-function assertStudyDayKey(studyDayKey: string) {
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(studyDayKey)) {
-    throw new Error('Invalid study day key');
-  }
 }

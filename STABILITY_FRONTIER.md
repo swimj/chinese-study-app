@@ -71,8 +71,8 @@ the architectural boundary for implementation.
   current beta baseline. Hosted dogfood history is valued data; the preserved
   local source is a recovery artifact, not another writer. The
   [service contract](docs/private-beta-service-boundary.md) and
-  [operator runbook](docs/ops/hosted-beta-deployment.md) own the details. French
-  remains retired experimentation, not a compatibility promise.
+  [operator runbook](docs/ops/hosted-beta-deployment.md) own the details. The [French profile plans](SPECS/archive/french-compatibility-profile-plan.md)
+  document a retired local experiment.
 - **Bounded beta operations:** concierge onboarding, operator-assisted support,
   and planned downtime remain acceptable. Public signup, billing, a general
   admin product, mobile-specific work, and multi-instance infrastructure are
@@ -92,6 +92,10 @@ the architectural boundary for implementation.
   immutable full history preserves attributed before/after material and every
   original served exercise. Identity-bound relationships do not silently transfer. See the service and feature specs
   for publication, preparation, and repair rules.
+- Historical Mandarin study and reflection records remain in the database and
+  backups under their original ownership rules. The current Feedback badge
+  reads vocabulary feedback. Current evidence, operator approvals and stale
+  revisions follow the [vocabulary contract](SPECS/vocabulary-architecture.md#compatibility-and-operation).
 - Reflection/provider failure cannot invalidate a completed study session.
   Model output is untrusted. Reflection-proposed durable effects require strict
   validation, explicit operator authorization for content application, and truthful
@@ -126,12 +130,6 @@ the architectural boundary for implementation.
   Concrete design and content-quality tasks may proceed within existing
   semantics. A change to learning policy, authorization, or what evidence means
   needs an explicit decision and corresponding spec changes.
-- **Reflection compatibility:** churn across persisted evidence, generated
-  artifacts, proposals, and application adapters is an upcoming architectural
-  concern. Current supported compatibility and stale-result behavior remain
-  binding. A general redesign, migration policy, or retirement of historical
-  compatibility needs a scoped decision; mentioning the concern does not
-  authorize a parallel rebuild.
 - **Release and recovery maturity:** upgrade, inspection, diagnostics, migration,
   and restore mechanisms exist. Their existence does not establish completion
   of the older schema-release/restore proof over valued history, or readiness

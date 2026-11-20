@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import { ServiceAccessBoundary } from '../../src/auth/ServiceAccessBoundary';
-import { fetchMyWords, setClientIncidentStorageScope } from '../../src/services/api';
+import { fetchVocabularyWordCollection, setClientIncidentStorageScope } from '../../src/services/api';
 import '../../src/styles.css';
 
 const params = new URLSearchParams(location.search);
@@ -19,11 +19,11 @@ window.fetch = async (input) => {
   requests += 1;
   const allowed = !restricted || account === 'operator';
   if (String(input).endsWith('/api/service-access')) return Response.json({ allowed });
-  return allowed ? Response.json({ words: [] }) : Response.json({ code: 'OPERATOR_ONLY', error: 'The service is temporarily unavailable.' }, { status: 503 });
+  return allowed ? Response.json({ words: [], currentDeck: null, hasMore: false, total: 0 }) : Response.json({ code: 'OPERATOR_ONLY', error: 'The service is temporarily unavailable.' }, { status: 503 });
 };
 function StudyApp() {
   useEffect(() => { appMounts += 1; return () => { appUnmounts += 1; }; }, []);
-  return <section className="panel"><h1>Study app mounted</h1><button onClick={() => void fetchMyWords('deck', '').catch(() => {})}>Make learner request</button></section>;
+  return <section className="panel"><h1>Study app mounted</h1><button onClick={() => void fetchVocabularyWordCollection('deck', '').catch(() => {})}>Make learner request</button></section>;
 }
 function Fixture() {
   const [scope, setScope] = useState(account);
