@@ -1,6 +1,5 @@
 import assert from 'node:assert/strict';
 import { describe, test } from 'node:test';
-import { resolveAcceptedProductionResponse } from '../src/domain/production-response.ts';
 import type { ProductionExerciseSnapshot } from '../src/domain/study-actions.ts';
 import {
   adaptLegacyProductionSnapshot,
@@ -132,16 +131,7 @@ describe('review content compatibility', () => {
     assert.equal(served.cueType, 'minimal_context');
     assert.notEqual(served.text, content.examples[0]?.text);
     assert.ok(!served.text.includes('报备'));
-    assert.deepEqual(resolveAcceptedProductionResponse({
-      submittedText: '報備',
-      anchorWordId: target.wordId,
-      acceptedAnswers: served.acceptedAnswers,
-    }), { submittedText: '報備', result: 'accepted_anchor' });
-    assert.deepEqual(resolveAcceptedProductionResponse({
-      submittedText: '报告',
-      anchorWordId: target.wordId,
-      acceptedAnswers: served.acceptedAnswers,
-    }), { submittedText: '报告', result: 'rejected' });
+    assert.deepEqual(served.acceptedAnswers.map((answer) => answer.wordId), [target.wordId]);
   });
 
   test('materializes a source-linked supplement while retaining exact cue metadata and source identity', () => {

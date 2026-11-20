@@ -7,4 +7,3 @@ installLearnerContextSqlFunction();
 initializeDatabase();
 
 export * from './db/index.ts';
-export type { ReviewAttemptCommitIntent } from './db/types.ts';

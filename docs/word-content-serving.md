@@ -170,10 +170,7 @@ explains its stored-content cleanup.
 ## Evidence and limits
 
 - [Reserve tests](../tests/word-preparation-reserve.test.ts) exercise stable
-  candidate membership, bounded demand, reconciliation, and quota behavior.
-- [Session composition tests](../tests/word-introduction-session-composition.test.ts)
-  exercise completed private pins, stable rehearsal selection, and withdrawal
-  fallback without changing progress.
+  candidate membership, explicit-top precedence, and saved intake-limit caps.
 - [Teaching integration tests](../tests/teaching-session-integration.test.ts)
   exercise first-encounter recall, Practice coverage, frozen selection, and Undo
   without turning rehearsals into review evidence.

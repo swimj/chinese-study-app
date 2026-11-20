@@ -5,20 +5,12 @@ import path from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { after, before, beforeEach, describe, test } from 'node:test';
 import { pathToFileURL } from 'node:url';
-import type {
-  ReflectionOperation,
-  SessionReflectionBundleV6,
-  SessionReflectionResultV10,
-} from '../src/domain/reflection.ts';
-
-type DbModule = typeof import('../server/db.ts');
 type IndexModule = typeof import('../server/index.ts');
 type ExpressApp = ReturnType<IndexModule['createApp']>;
 
 const generatedAt = '2026-07-29T12:00:00.000Z';
 let dataDir = '';
 let sqlite: DatabaseSync;
-let dbModule: DbModule;
 let indexModule: IndexModule;
 let app: ExpressApp;
 
@@ -33,7 +25,6 @@ describe('reflection attention HTTP API', { concurrency: false }, () => {
       indexModule = await import(
         `${pathToFileURL(path.resolve('server/index.ts')).href}?test=${Date.now()}`
       );
-      dbModule = await import('../server/db.ts');
     } finally {
       restoreEnv('APP_MODE', previousMode);
       restoreEnv('APP_DATA_DIR', previousDataDir);
@@ -78,8 +69,8 @@ describe('reflection attention HTTP API', { concurrency: false }, () => {
   });
 
   test('attention badges count unseen help cards and mark one proposal seen', async () => {
-    const withProposals = materialize('attention-api-pending', suppressOperation('target')).artifact;
-    materializeInformational('attention-api-explanation');
+    const withProposals = seedProposalArtifact('attention-api-pending');
+    seedExplanationArtifact('attention-api-explanation');
     const listed = await request('/api/attention-badges');
     assert.equal(listed.status, 200);
     assert.deepEqual(listed.json, {
@@ -93,7 +84,7 @@ describe('reflection attention HTTP API', { concurrency: false }, () => {
 
     const marked = await request('/api/reflection-inbox-seen', {
       method: 'POST',
-      body: { kind: 'proposal', proposalId: withProposals.proposals[0]!.review.proposalId },
+      body: { kind: 'proposal', proposalId: withProposals.proposalId },
     });
     assert.equal(marked.status, 200);
     assert.equal((marked.json as { reflectionUnseenCount: number }).reflectionUnseenCount, 1);
@@ -109,37 +100,8 @@ describe('reflection attention HTTP API', { concurrency: false }, () => {
   });
 
   test('acknowledges failed reflection runs durably across a later badges read', async () => {
-    materializationInput('failed-run-api', suppressOperation('target'));
-    dbModule.recordReflectionGenerationRun({
-      runId: 'api-failed-old',
-      sourceSessionId: 'failed-run-api',
-      reflectionFlowVersion: 'initial_post_session_reflection.v1',
-      startedAt: generatedAt,
-      completedAt: '2026-07-29T12:00:01.000Z',
-      provider: 'openai',
-      model: 'gpt-6-luna-high',
-      providerModel: 'gpt-6-luna',
-      promptVersion: 'reflection-v2',
-      responseId: null,
-      finishReason: null,
-      state: 'failed',
-      failureCode: 'upstream_failure',
-      eligibleItemCount: 1,
-      includedItemCount: 1,
-      usage: {
-        inputTokens: null,
-        cachedInputTokens: null,
-        cacheWriteInputTokens: null,
-        outputTokens: null,
-        reasoningTokens: null,
-        totalTokens: null,
-      },
-      pricingSnapshotId: null,
-      pricingAsOf: null,
-      pricingBasis: null,
-      estimatedCostUsd: null,
-      evidenceBundle: bundle('failed-run-api'),
-    });
+    insertSession('failed-run-api');
+    insertFailedRun('failed-run-api', 'api-failed-old', '2026-07-29T12:00:01.000Z');
 
     const listed = await request('/api/attention-badges');
     assert.equal(listed.status, 200);
@@ -264,64 +226,85 @@ function findRoute(
   return null;
 }
 
-function materialize(
-  sessionId: string,
-  operation: ReflectionOperation,
-): ReturnType<DbModule['materializeReflectionArtifact']> {
-  return dbModule.materializeReflectionArtifact(materializationInput(sessionId, operation));
-}
-
-function materializeInformational(
-  sessionId: string,
-): ReturnType<DbModule['materializeReflectionArtifact']> {
+function insertSession(sessionId: string): void {
   sqlite.prepare(`
     INSERT INTO study_sessions (
       id, started_at, ended_at, processing_state, processed_at
     ) VALUES (?, '2026-07-29T11:30:00.000Z', ?, 'processed', ?)
   `).run(sessionId, generatedAt, generatedAt);
-  return dbModule.materializeReflectionArtifact({
-    sourceSessionId: sessionId,
-    reflectionFlowVersion: 'initial_post_session_reflection.v6',
-    generatedAt,
-    provider: 'openai',
-    model: 'gpt-6-luna-high',
-    promptVersion: 'reflection-staged-v4',
-    evidenceBundle: bundle(sessionId),
-    result: {
-      schemaVersion: 'session_reflection_result.v10',
-      itemResults: [{
-        itemId: 'item-1',
-        diagnosisTags: ['ordinary_retrieval_noise'],
-      learnerExplanation: 'Ordinary retrieval noise; no durable change.',
-        proposals: [],
-        questions: [],
-        }],
-    },
+}
+
+function insertArtifact(sessionId: string, resultValue: unknown): string {
+  insertSession(sessionId);
+  const artifactId = `artifact:${sessionId}`;
+  sqlite.prepare(`
+    INSERT INTO reflection_artifacts (
+      artifact_id, source_session_id, source_run_id, reflection_flow_version, generated_at,
+      provider, model, prompt_version, bundle_schema_version, result_schema_version,
+      evidence_bundle_json, result_json
+    ) VALUES (?, ?, NULL, 'initial_post_session_reflection.v6', ?, 'openai', 'gpt-6-luna-high',
+      'reflection-staged-v4', 'session_reflection_bundle.v6', 'session_reflection_result.v10', ?, ?)
+  `).run(artifactId, sessionId, generatedAt, JSON.stringify(bundle(sessionId)), JSON.stringify(resultValue));
+  return artifactId;
+}
+
+/** Seeds the rows a materialized artifact with one pending proposal leaves. */
+function seedProposalArtifact(sessionId: string): { artifactId: string; proposalId: string } {
+  const artifactId = insertArtifact(sessionId, {
+    schemaVersion: 'session_reflection_result.v10',
+    itemResults: [{
+      itemId: 'item-1',
+      diagnosisTags: ['persistent_confusion'],
+      learnerExplanation: 'The production goal is not useful.',
+      proposals: [{
+        proposalGroupKey: null,
+        rationale: 'Apply the bounded operation.',
+        operation: { kind: 'suppress_definition_production', version: 1, wordId: 'target' },
+      }],
+      questions: [],
+    }],
   });
-}
-
-function materializationInput(
-  sessionId: string,
-  operation: ReflectionOperation,
-): Parameters<DbModule['materializeReflectionArtifact']>[0] {
+  const proposalId = `proposal:${sessionId}`;
   sqlite.prepare(`
-    INSERT INTO study_sessions (
-      id, started_at, ended_at, processing_state, processed_at
-    ) VALUES (?, '2026-07-29T11:30:00.000Z', ?, 'processed', ?)
-  `).run(sessionId, generatedAt, generatedAt);
-  return {
-    sourceSessionId: sessionId,
-    reflectionFlowVersion: 'initial_post_session_reflection.v6',
-    generatedAt,
-    provider: 'openai',
-    model: 'gpt-6-luna-high',
-    promptVersion: 'reflection-staged-v4',
-    evidenceBundle: bundle(sessionId),
-    result: result(operation),
-  };
+    INSERT INTO reflection_proposal_reviews (
+      proposal_id, artifact_id, item_id, proposal_index, disposition, updated_at
+    ) VALUES (?, ?, 'item-1', 0, 'pending', ?)
+  `).run(proposalId, artifactId, generatedAt);
+  return { artifactId, proposalId };
 }
 
-function bundle(sessionId: string): SessionReflectionBundleV6 {
+/** Seeds the rows a materialized explanation-only artifact leaves. */
+function seedExplanationArtifact(sessionId: string): { artifactId: string } {
+  const artifactId = insertArtifact(sessionId, {
+    schemaVersion: 'session_reflection_result.v10',
+    itemResults: [{
+      itemId: 'item-1',
+      diagnosisTags: ['ordinary_retrieval_noise'],
+      learnerExplanation: 'Ordinary retrieval noise; no durable change.',
+      proposals: [],
+      questions: [],
+    }],
+  });
+  sqlite.prepare(`
+    INSERT INTO reflection_help_inbox (inbox_id, artifact_id, item_id, opened_at)
+    VALUES (?, ?, 'item-1', ?)
+  `).run(`inbox:${sessionId}`, artifactId, generatedAt);
+  return { artifactId };
+}
+
+function insertFailedRun(sessionId: string, runId: string, completedAt: string): void {
+  sqlite.prepare(`
+    INSERT INTO reflection_generation_runs (
+      run_id, source_session_id, reflection_flow_version, started_at, completed_at,
+      provider, model, provider_model, prompt_version, bundle_schema_version, result_schema_version,
+      state, failure_code, eligible_item_count, included_item_count, evidence_bundle_json
+    ) VALUES (?, ?, 'initial_post_session_reflection.v1', ?, ?, 'openai', 'gpt-6-luna-high',
+      'gpt-6-luna', 'reflection-v2', 'session_reflection_bundle.v6', 'session_reflection_result.v4',
+      'failed', 'upstream_failure', 1, 1, ?)
+  `).run(runId, sessionId, generatedAt, completedAt, JSON.stringify(bundle(sessionId)));
+}
+
+function bundle(sessionId: string) {
   return {
     schemaVersion: 'session_reflection_bundle.v6',
     generatedAt,
@@ -337,12 +320,7 @@ function bundle(sessionId: string): SessionReflectionBundleV6 {
       sourceActionKind: 'production',
       sessionActionId: 'action-1',
       occurredAt: '2026-07-29T11:59:00.000Z',
-      targetWord: {
-        wordId: 'target',
-        hanzi: '目标',
-        pinyin: 'mùbiāo',
-        meanings: ['target'],
-      },
+      targetWord: { wordId: 'target', hanzi: '目标', pinyin: 'mùbiāo', meanings: ['target'] },
       sessionNote: null,
       existingContent: { contrastClusters: [], knownAcceptedAlternates: [] },
       sourceAttemptId: 'attempt-1',
@@ -355,39 +333,9 @@ function bundle(sessionId: string): SessionReflectionBundleV6 {
         supplement: null,
       },
       rawResponse: '替代',
-      submittedWord: {
-        wordId: 'alternate',
-        hanzi: '替代',
-        pinyin: 'tìdài',
-        meanings: ['alternate'],
-      },
+      submittedWord: { wordId: 'alternate', hanzi: '替代', pinyin: 'tìdài', meanings: ['alternate'] },
       responseKind: 'matched_known_word',
     }],
-  };
-}
-
-function result(operation: ReflectionOperation): SessionReflectionResultV10 {
-  return {
-    schemaVersion: 'session_reflection_result.v10',
-    itemResults: [{
-      itemId: 'item-1',
-      diagnosisTags: ['persistent_confusion'],
-      learnerExplanation: 'The production goal is not useful.',
-      proposals: [{
-        proposalGroupKey: null,
-        rationale: 'Apply the bounded operation.',
-        operation,
-      }],
-      questions: [],
-    }],
-  };
-}
-
-function suppressOperation(wordId: string): ReflectionOperation {
-  return {
-    kind: 'suppress_definition_production',
-    version: 1,
-    wordId,
   };
 }
 

@@ -9,8 +9,6 @@ import { after,afterEach,before,beforeEach,test } from 'node:test';
 import { createBaselineFixture } from './helpers/baseline-database.ts';
 import { migrateDatabase } from '../server/db/migrations.ts';
 import { setDb } from '../server/db/connection.ts';
-import { runWithLearnerId } from '../server/db/learner-context.ts';
-import { saveWordContentDocument } from '../server/db/word-introductions.ts';
 import { createVocabularySense,establishVocabularySenseCatalog,getVocabularySenseCatalog,getVocabularySenses } from '../server/db/vocabulary-content.ts';
 import { installModelInvocationLedger } from '../server/llm/invocation-ledger.ts';
 import { createOpenAiCompatibleAdapter } from '../server/llm/openai-compatible.ts';
@@ -44,7 +42,14 @@ beforeEach(() => {
 });
 afterEach(() => db.close());
 function bootstrap(): void {
-  runWithLearnerId('a',() => saveWordContentDocument(fixture,'legacy-model'));
+  // Rows match what the retired legacy save path published: a shared-trial word content document.
+  const now = new Date().toISOString();
+  db.prepare(`INSERT INTO shared_content_publications(publication_id,content_kind,content_id,learning_purpose_key,publication_status,published_at,status_updated_at)
+    VALUES ('bootstrap-publication','word_content',?,?,'shared_trial',?,?)`).run(fixture.id,fixture.word.wordId,now,now);
+  db.prepare(`INSERT INTO shared_content_publication_events(event_id,publication_id,from_status,to_status,actor_kind,actor_id,reason,occurred_at)
+    VALUES ('bootstrap-publication-event','bootstrap-publication',NULL,'shared_trial','source_authorization',NULL,'fixture word introduction publication',?)`).run(now);
+  db.prepare(`INSERT INTO word_content_documents(content_id,word_id,content_json,model,created_at,publication_id)
+    VALUES (?,?,?,'legacy-model',?,'bootstrap-publication')`).run(fixture.id,fixture.word.wordId,JSON.stringify(fixture),now);
   db.prepare("INSERT INTO word_introduction_preparation(word_id,content_id) VALUES ('w1','bootstrap')").run();
 }
 

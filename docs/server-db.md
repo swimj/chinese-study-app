@@ -27,14 +27,14 @@ encounters and ratings and requires the offline schema-upgrade procedure.
 | [`connection.ts`](../server/db/connection.ts) | Config resolution per `initDbConnection()`, SQLite singleton (`getDb` / `setDb`) |
 | [`statement-timing.ts`](../server/db/statement-timing.ts) | `setDb` wraps the live connection so every statement and transaction is timed for [request timing](ops/hosted-observability.md#diagnose-a-slow-request) |
 | [`types.ts`](../server/db/types.ts) | Row/DTO types, scheduling constants, public type re-exports |
-| [`persistence.ts`](../server/db/persistence.ts) | Existing query/domain functions (words, priority, sessions, contrast, scheduler, analytics, durable learning-policy metadata) and `initializeDatabase` |
+| [`persistence.ts`](../server/db/persistence.ts) | `initializeDatabase`, the frozen baseline schema and dev seeding, word/meaning/priority reads and edits, learner settings and learning policy, status analytics, and the legacy word-state writes the vocabulary fixture builder still uses |
 | [`unstudied-admission.ts`](../server/db/unstudied-admission.ts) | Experimental diet/stash unstudied admission selector |
 | [`deck-words.ts`](../server/db/deck-words.ts) | Shared resolved deck-ID cache for session composition and whole-deck browsing; fresh details by ID and batched learner study dates |
-| [`reflections.ts`](../server/db/reflections.ts) | Reflection schema validation, immutable artifact materialization, queue/detail read models, proposal review, immutable invocation authorization, application/recovery, and supported adapters |
+| [`reflections.ts`](../server/db/reflections.ts) | Schema creation and validation for the retained legacy reflection tables |
 | [`content-sharing.ts`](../server/db/content-sharing.ts) | Read-only weekly exact-content second-learner milestones, cross-origin shared cue attempts, current word overlap, and bounded evidence examples |
 | [`content-quality.ts`](../server/db/content-quality.ts) | Exact-content exposure records, standing learner votes, and operator triage |
-| [`reflection-quality.ts`](../server/db/reflection-quality.ts) | Dogfood item quality-tag overlay, upsert-by-item, and model-arm stats joins |
-| [`reflection-help-inbox.ts`](../server/db/reflection-help-inbox.ts) | Open explanation-only Help inbox rows, keyed by `(artifact_id, item_id)`; Done deletes the row |
+| [`reflection-quality.ts`](../server/db/reflection-quality.ts) | Schema for the retained dogfood item quality-tag overlay |
+| [`reflection-help-inbox.ts`](../server/db/reflection-help-inbox.ts) | Schema for retained explanation-only Help inbox rows, keyed by `(artifact_id, item_id)`; attention reads count them |
 | [`whats-new.ts`](../server/db/whats-new.ts) | Shared blog posts, publication ordering, revision conflicts, and immutable attributable save history; see [What’s New](whats-new.md) |
 | [`whats-new-attention.ts`](../server/db/whats-new-attention.ts) | Learner-private per-post first badge exposure and read timestamps, twelve-hour expiry, and legacy cursor compatibility |
 | [`attention.ts`](../server/db/attention.ts) | Help `inbox_seen_at` stamps, unseen Help-queue count, durable queued/running reflection dispatch state, unseen failed generation-run ids, failed-run seen-through cursor, and the What’s New seen-through cursor |
@@ -48,7 +48,6 @@ encounters and ratings and requires the offline schema-upgrade procedure.
 | [`shared-content-bootstrap.ts`](../server/db/shared-content-bootstrap.ts) | Strict checksummed shared-only hosted Mandarin import and provenance validation |
 | [`hosted-operations.ts`](../server/db/hosted-operations.ts) | Persisted service controls, current service banner, attributable learner disablement, diagnostics, sentinels, and restore validation |
 | [`word-introductions.ts`](../server/db/word-introductions.ts) | Immutable shared bootstrap/teaching, publication leases, explicit shared reads, and private exact-package opening/completion |
-| [`session-completion.ts`](../server/db/session-completion.ts) | Fixed-deadline completion revisions, provisional final-action preview, atomic acceptance/summary/report/dispatch closure, cancellation and current-pending recovery |
 | [`session-word-outcomes.ts`](../server/db/session-word-outcomes.ts) | Immutable session-attributed introduction/Practice outcomes and deterministic distinct new/graduated word reports |
 | [`session-debrief.ts`](../server/db/session-debrief.ts) | Learner-private exact inventories and interests snapshots, debrief queue/results, attempt cost and latency records, fenced completion and explicit retry |
 | [`content-reactions.ts`](../server/db/content-reactions.ts) | Learner Save / Not for me reactions to connection notes and feedback lessons, append-only reaction history, the Saved collection read and the operator summary |
@@ -67,17 +66,21 @@ Domain-oriented re-export shims (navigation only; implementation stays in `persi
 
 | Shim | Key exports |
 | --- | --- |
-| [`words.ts`](../server/db/words.ts) | `getWords`, `getMyWords` learner collection projection, `searchWords`, meanings, lifecycle completions |
+| [`words.ts`](../server/db/words.ts) | `getWords`, `getMyWords` learner collection projection, `searchWords`, meanings |
 | [`priority.ts`](../server/db/priority.ts) | Unstudied priority queues, `listUnstudiedPriorityMatchesByTarget`, `addUnstudiedUserPriorityByHanzi` |
-| [`session-composition.ts`](../server/db/session-composition.ts) | `getSessionPayload`, projection guard, dual-pool unstudied admission re-exports |
-| [`contrast.ts`](../server/db/contrast.ts) | Scoped clusters and prompts |
-| [`study-sessions.ts`](../server/db/study-sessions.ts) | Session records, attempt batches |
-| [`study-management.ts`](../server/db/study-management.ts) | Suppress / bad-prompt / management actions |
-| [`scheduler.ts`](../server/db/scheduler.ts) | Skill/admission state, invariants |
-| [`recovery-highlights.ts`](../server/db/recovery-highlights.ts) | Learner-scoped deterministic recovery milestones from accepted attempts and applied corrections |
+| [`session-composition.ts`](../server/db/session-composition.ts) | Dual-pool unstudied admission re-exports |
 | [`analytics.ts`](../server/db/analytics.ts) | Failure rates from saved exercise summaries and forward-only daily compensation counters, active-session-time metrics |
 
+The legacy session composition, study-event, study-management, scheduler,
+contrast-authoring, completion, recovery-highlight, and reflection lifecycle
+code was removed with the retired Mandarin study model; its tables remain in the
+baseline schema for retained records.
+
 ## Reflection persistence
+
+The legacy reflection, cue-repair, and pure-cue reflection application code has
+been removed. Its tables remain; the descriptions of earlier-runtime behavior
+below explain what retained rows mean, not current write paths.
 
 Migration `0069_sense_content_reconciliation` adds operator-owned current resolution
 records and immutable per-version history. A resolution stores the linguistic draft,

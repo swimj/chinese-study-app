@@ -262,7 +262,6 @@ All HTTP is intercepted, so these fixtures do not modify learner data.
 | `content-reactions.test.ts` | Reaction input validation, one current reaction per subject, append-only history, ownership, Saved collection window and operator summary, HTTP routes | DB module + API against a disposable database |
 | `content-reactions-ui.test.ts` | Exclusive Save / Not for me toggles, reasons and notes, S/X guards, Home reaction rendering, Saved grouping, filtering and visit-stable membership | Reaction state, controls and Saved list helpers |
 | `session-debrief-ui.test.ts` | Exact stepped text, empty/loading/failure, safe keyboard navigation, blank optional interests and French exclusion | Debrief card and settings server render + keyboard model |
-| `llm-provider-runner.test.ts` | Spike compatibility shims, provider adapters, fixtures, current V3 validation/viewer behavior | `spikes/llm-provider/` |
 | `user-priority.test.ts` | User priority patches | Dynamic `server/db.ts` |
 | `my-words.test.ts` | Learner collection membership, study dates, stage/lapses filters, search/pagination, isolation, HTTP validation | Dynamic `server/db.ts`, `server/index.ts` |
 | `my-words-page.test.ts` | Word detail, stage chips, and collection empty/error presentation | `MyWordsPage.tsx` server render |

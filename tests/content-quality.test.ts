@@ -6,6 +6,7 @@ import { DatabaseSync } from 'node:sqlite';
 import { after, before, test } from 'node:test';
 import { pathToFileURL } from 'node:url';
 import type { TeachingPackage, WordContentDocument } from '../src/domain/word-content/types.ts';
+import { insertPublishedWordContent } from './helpers/prepared-word-fixtures.ts';
 let db: typeof import('../server/db.ts');
 let sql: DatabaseSync;
 let dir: string;
@@ -77,10 +78,7 @@ before(async () => {
   sql.prepare(`INSERT INTO lexical_words (id,hanzi,traditional,pinyin,meaning,meanings_json,examples_json,priority,created_at) VALUES ('quality-word','你好',NULL,'nǐ hǎo','hello','["hello"]','[]',10,?)`).run(new Date().toISOString());
   sql.prepare(`INSERT INTO lexical_words (id,hanzi,traditional,pinyin,meaning,meanings_json,examples_json,priority,created_at) VALUES ('quality-word-2','您好',NULL,'nín hǎo','hello','["hello"]','[]',10,?)`).run(new Date().toISOString());
   sql.prepare(`INSERT INTO lexical_word_meanings (id,word_id,position,text,created_at,updated_at) VALUES ('qm','quality-word',0,'hello',?,?)`).run(new Date().toISOString(), new Date().toISOString());
-  db.runWithLearnerId('qa', () => {
-    db.saveWordContentDocument(content, 'test-model');
-    db.saveWordTeachingPackage(teaching, 'test-model');
-  });
+  insertPublishedWordContent(sql, { content, teaching, model: 'test-model' });
 });
 after(() => {
   sql?.close();
@@ -148,12 +146,8 @@ test('rehearsals resolve exact authored material and filters preserve global tot
 });
 test('pure snapshots isolate revisions, reject other learner snapshots and exclude encounter metadata', () => {
   const now = new Date().toISOString();
-  db.runWithLearnerId('qa', () => db.createPureCueWithoutTransaction({
-    id: 'quality-pure',
-    stimulus: 'Hello',
-    acceptedWordIds: ['quality-word', 'quality-word-2'],
-    createdAt: now
-  }));
+  sql.prepare(`INSERT INTO pure_cues (id, stimulus, axis_note, teaching_note, created_at) VALUES ('quality-pure', 'Hello', '', '', ?)`).run(now);
+  sql.prepare(`INSERT INTO pure_cue_accepted_words (pure_cue_id, word_id, position) VALUES ('quality-pure', 'quality-word', 0), ('quality-pure', 'quality-word-2', 1)`).run();
   const insert = sql.prepare(`INSERT INTO pure_cue_served_snapshots (learner_id,snapshot_id,pure_cue_id,served_at,stimulus,axis_note,teaching_note,accepted_answers_json) VALUES ('qa',?,'quality-pure',?,?, '', '', '[]')`);
   insert.run('p1', now, 'Hello');
   insert.run('p2', now, 'Hello');
@@ -202,17 +196,17 @@ test('contrast content changed after serving is rejected instead of misattributi
 });
 
 test('prepared canonical review retains model attribution despite the manual compatibility origin', () => {
+  // The prepared canonical review record for the manual-origin cue, as review preparation stores it.
+  sql.prepare(`INSERT INTO scoped_review_content_records (
+      record_id, kind, content_id, exercise_id, revision, word_id, source_word_content_id, document_json, created_at, model
+    ) VALUES ('quality-cue-record', 'production_cue', 'quality-cue', 'quality-cue', 1, 'quality-word', NULL, ?, ?, 'review-model')`)
+    .run(JSON.stringify({ schemaVersion: 1, exercise: {
+      id: 'quality-cue', responseMode: 'hanzi_entry',
+      contract: { kind: 'targeted_review', wordId: 'quality-word' },
+      instruction: '', stimulus: { kind: 'direct_text', text: 'A greeting' },
+      acceptedAnswers: [{ wordId: 'quality-word', hanzi: '你好', traditional: null }],
+    }, contents: [] }), new Date().toISOString());
   db.runWithLearnerId('qa', () => {
-    db.appendCanonicalReviewExercise({
-      kind: 'production_cue', contentId: 'quality-cue', model: 'review-model',
-      exercise: {
-        id: 'quality-cue', responseMode: 'hanzi_entry',
-        contract: { kind: 'targeted_review', wordId: 'quality-word' },
-        instruction: '', stimulus: { kind: 'direct_text', text: 'A greeting' },
-        acceptedAnswers: [{ wordId: 'quality-word', hanzi: '你好', traditional: null }],
-      },
-      contents: [],
-    });
     const state = db.recordContentQualityEncounter({ kind: 'production_cue', id: 'quality-cue' }, 'canonical');
     const item = db.getContentQualityAnalytics({ kind: 'production_cue' }).items.find(row => row.contentKey === state.contentKey)!;
     assert.deepEqual(item.provenance, { source: 'prepared review', model: 'review-model' });

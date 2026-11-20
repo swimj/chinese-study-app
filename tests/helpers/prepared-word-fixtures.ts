@@ -1,24 +1,75 @@
 import type { DatabaseSync } from 'node:sqlite';
 
-type ContentStore = Pick<typeof import('../../server/db.ts'), 'saveWordContentDocument' | 'saveWordTeachingPackage'>;
-
-/** Admission-policy fixtures explicitly have teaching ready; readiness itself is tested separately. */
-export function prepareWordFixture(sqlite: DatabaseSync, store: ContentStore, wordId: string): void {
+/**
+ * Admission-policy fixtures explicitly have teaching ready; readiness itself is tested separately.
+ * Rows match what the retired save path published: a shared-trial word content document and a
+ * teaching package pinned to it. The second argument is retained for existing callers and unused.
+ */
+export function prepareWordFixture(sqlite: DatabaseSync, _store: unknown, wordId: string): void {
   const word = sqlite.prepare('SELECT hanzi, traditional, pinyin, meaning FROM lexical_words WHERE id = ?')
     .get(wordId) as { hanzi: string; traditional: string | null; pinyin: string; meaning: string } | undefined;
   if (!word) throw new Error(`Missing fixture word ${wordId}`);
+  const now = new Date().toISOString();
   const contentId = `fixture-content:${wordId}`;
-  store.saveWordContentDocument({ schemaVersion: 1, id: contentId,
+  const packageId = `fixture-package:${wordId}`;
+  const content = { schemaVersion: 1, id: contentId,
     word: { wordId, hanzi: word.hanzi, traditional: word.traditional, pinyin: word.pinyin },
     uses: [{ id: 'use', label: 'Fixture use', notes: ['A prepared admission fixture.'], exampleIds: ['example'] }],
     examples: [{ id: 'example', text: `${word.hanzi}。`, translation: word.meaning || 'Fixture example.', pronunciation: word.pinyin }],
-  }, 'fixture');
-  store.saveWordTeachingPackage({ schemaVersion: 1, id: `fixture-package:${wordId}`, wordContentId: contentId,
+  };
+  const teaching = { schemaVersion: 1, id: packageId, wordContentId: contentId,
     beats: [{ id: 'beat', parts: [{ kind: 'example', exampleId: 'example', field: 'sentence' }] }],
     rehearsals: [{ id: 'rehearsal', responseMode: 'hanzi_entry', contract: { kind: 'target_rehearsal', wordId },
       instruction: 'Recall the expression.', stimulus: { kind: 'direct_text', text: word.meaning || 'Recall the expression.' },
       acceptedAnswers: [{ wordId, hanzi: word.hanzi, traditional: word.traditional }] }],
-  }, 'fixture');
+  };
+  insertPublishedWordContent(sqlite, { content, teaching, model: 'fixture', createdAt: now });
+}
+
+/**
+ * Inserts the rows the retired word-introduction save path published: a shared-trial word content
+ * document and, optionally, a shared-trial teaching package pinned to it. Payloads are stored as given.
+ */
+export function insertPublishedWordContent(sqlite: DatabaseSync, input: {
+  content: { id: string; word: { wordId: string } };
+  teaching?: { id: string };
+  model: string;
+  createdAt?: string;
+}): void {
+  const now = input.createdAt ?? new Date().toISOString();
+  const wordId = input.content.word.wordId;
+  const contentId = input.content.id;
+  const contentPublicationId = publishFixture(sqlite, 'word_content', contentId, wordId, now);
+  sqlite.prepare(`INSERT INTO word_content_documents (
+      content_id, word_id, content_json, model, created_at, publication_id
+    ) VALUES (?, ?, ?, ?, ?, ?)`)
+    .run(contentId, wordId, JSON.stringify(input.content), input.model, now, contentPublicationId);
+  if (!input.teaching) return;
+  const packageId = input.teaching.id;
+  const packagePublicationId = publishFixture(sqlite, 'teaching_package', packageId, wordId, now);
+  sqlite.prepare(`INSERT INTO word_teaching_packages (
+      package_id, word_id, content_id, package_json, model, created_at, publication_id
+    ) VALUES (?, ?, ?, ?, ?, ?, ?)`)
+    .run(packageId, wordId, contentId, JSON.stringify(input.teaching), input.model, now, packagePublicationId);
+}
+
+function publishFixture(
+  sqlite: DatabaseSync,
+  kind: 'word_content' | 'teaching_package',
+  contentId: string,
+  wordId: string,
+  now: string,
+): string {
+  const publicationId = `fixture-publication:${kind}:${contentId}`;
+  sqlite.prepare(`INSERT INTO shared_content_publications (
+      publication_id, content_kind, content_id, learning_purpose_key,
+      publication_status, published_at, status_updated_at
+    ) VALUES (?, ?, ?, ?, 'shared_trial', ?, ?)`).run(publicationId, kind, contentId, wordId, now, now);
+  sqlite.prepare(`INSERT INTO shared_content_publication_events (
+      event_id, publication_id, from_status, to_status, actor_kind, actor_id, reason, occurred_at
+    ) VALUES (?, ?, NULL, 'shared_trial', 'source_authorization', NULL, 'fixture word introduction publication', ?)`)
+    .run(`fixture-publication-event:${kind}:${contentId}`, publicationId, now);
+  return publicationId;
 }
 
 /** Test-only teardown removes dependent operational rows before existing lexical fixture cleanup. */

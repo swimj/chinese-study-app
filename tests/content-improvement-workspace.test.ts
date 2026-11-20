@@ -86,7 +86,10 @@ test('flagged correction retains evidence, requires approval, replaces future se
   const result = await applied.json() as ImprovementCase;
   assert.equal(result.status,'applied');assert(result.outcome?.replacementSourceId);
   assert.equal(db.prepare('SELECT prompt_text FROM scoped_contrast_prompts WHERE id=?').get('flagged')!.prompt_text,'老师要____学生。');
-  const selected = appDb.getContrastPromptsForCluster('cluster');
+  // Future selection excludes contrast prompts that have a recorded successor.
+  const selected = db.prepare(`SELECT id FROM contrast_prompts WHERE cluster_id=? AND NOT EXISTS (
+    SELECT 1 FROM content_improvement_replacements r WHERE r.kind='contrast_prompt' AND r.source_id=contrast_prompts.id)
+    ORDER BY id`).all('cluster') as Array<{id:string}>;
   assert(!selected.some(p => p.id === 'flagged'));assert(selected.some(p => p.id === result.outcome!.replacementSourceId));
   assert.equal(db.prepare('SELECT rating FROM learner_content_quality_ratings WHERE content_key=?').get(rating.contentKey)!.rating,'down');
   const history = await (await request(`/${item.id}/history`)).json() as ImprovementCase[];

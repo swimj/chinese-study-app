@@ -14,6 +14,9 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
  */
 
 type DbModule = typeof import('../server/db.ts');
+type CompositionModule = typeof import('../server/vocabulary/composition.ts');
+type AdmissionModule = typeof import('../server/db/unstudied-admission.ts');
+type VocabularyLearnersModule = typeof import('../server/db/vocabulary-learners.ts');
 
 const FIXTURE_MANIFEST_PATH = fileURLToPath(new URL('./fixtures/mandarin-decks-v1.fixture.json', import.meta.url));
 const MISSING_MANIFEST_PATH = path.join(os.tmpdir(), 'no-such-deck-manifest-for-legacy-mode.json');
@@ -26,6 +29,9 @@ const studyDayKey = new Date().toISOString().slice(0, 10);
 let dataDir = '';
 let sqlite: DatabaseSync;
 let dbModule: DbModule;
+let composition: CompositionModule;
+let admission: AdmissionModule;
+let vocabularyLearners: VocabularyLearnersModule;
 
 describe('deck-aware diet admission', { concurrency: false }, () => {
   before(async () => {
@@ -41,6 +47,9 @@ describe('deck-aware diet admission', { concurrency: false }, () => {
 
     const moduleUrl = `${pathToFileURL(path.resolve('server/db.ts')).href}?test=${Date.now()}`;
     dbModule = await import(moduleUrl);
+    composition = await import('../server/vocabulary/composition.ts');
+    admission = await import('../server/db/unstudied-admission.ts');
+    vocabularyLearners = await import('../server/db/vocabulary-learners.ts');
 
     restoreEnv('APP_MODE', previousMode);
     restoreEnv('APP_DATA_DIR', previousDataDir);
@@ -59,6 +68,8 @@ describe('deck-aware diet admission', { concurrency: false }, () => {
   beforeEach(() => {
     clearWordPreparationFixtures(sqlite);
     sqlite.exec(`
+      DELETE FROM learner_word_schedules;
+      DELETE FROM learner_words;
       DELETE FROM study_events;
       DELETE FROM study_attempt_events;
       DELETE FROM study_sessions;
@@ -80,7 +91,7 @@ describe('deck-aware diet admission', { concurrency: false }, () => {
     insertCorpusWords();
     dbModule.setDailyNewWordLimit(4);
     dbModule.setOperatorDietDeck('hsk2-l2');
-    dbModule.updateWordUserPriority('tail-high', { bumpDelta: 1 });
+    stash('tail-high');
     dbModule.setUnstudiedAdmissionSource('stash_only');
     assert.deepEqual(admittedUnstudiedIds(), ['tail-high']);
     assert.deepEqual(dbModule.getStoredDietProfile()?.weights, { 'hsk2-l2': 1 });
@@ -132,7 +143,7 @@ describe('deck-aware diet admission', { concurrency: false }, () => {
       dbModule.nudgeDietProfile('harder');
     }
     for (const id of ['tail-high', 'tail-low', 'stash-tail-1', 'stash-tail-2', 'stash-tail-3']) {
-      dbModule.updateWordUserPriority(id, { bumpDelta: 1 });
+      stash(id);
     }
     dbModule.setDailyNewWordLimit(10);
 
@@ -148,7 +159,7 @@ describe('deck-aware diet admission', { concurrency: false }, () => {
     dbModule.nudgeDietProfile('harder');
     dbModule.nudgeDietProfile('harder'); // { l1: 0.8, l2: 0.2 }
     for (const id of ['stash-tail-1', 'stash-tail-2']) {
-      dbModule.updateWordUserPriority(id, { bumpDelta: 1 });
+      stash(id);
     }
     sqlite.prepare(`
       INSERT INTO learner_settings (learner_id, setting_key, value_json, updated_at)
@@ -196,7 +207,7 @@ describe('deck-aware diet admission', { concurrency: false }, () => {
     insertCorpusWords();
     const stashIds = ['tail-low', 'tail-high', 'mao', 'gou'];
     for (const id of stashIds) {
-      dbModule.updateWordUserPriority(id, { bumpDelta: 1 });
+      stash(id);
     }
     dbModule.setDailyNewWordLimit(4);
 
@@ -219,8 +230,18 @@ describe('deck-aware diet admission', { concurrency: false }, () => {
     assert.equal(skewed.filter((id) => L1.includes(id)).length, 1);
   });
 
+  /** The learner's stash is vocabulary-model stash membership. */
+  function stash(wordId: string): void {
+    vocabularyLearners.addVocabularyWord(wordId);
+  }
+
   function admittedUnstudiedIds(): string[] {
-    return dbModule.getSessionPayload(studyDayKey).buckets.unstudied.map((word) => word.id);
+    const limit = composition.vocabularyDailyNewWordLimit();
+    return composition.planVocabularyNewWords({
+      limit,
+      seed: admission.buildUnstudiedAdmissionSeedSource(studyDayKey, limit),
+      now: new Date().toISOString(),
+    }).newWordIds;
   }
 
   function insertCorpusWords(): void {

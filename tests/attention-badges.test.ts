@@ -5,11 +5,6 @@ import path from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { after, before, beforeEach, describe, test } from 'node:test';
 import { pathToFileURL } from 'node:url';
-import type {
-  ReflectionOperation,
-  SessionReflectionBundleV6,
-  SessionReflectionResultV10,
-} from '../src/domain/reflection.js';
 
 type DbModule = typeof import('../server/db.ts');
 
@@ -67,13 +62,13 @@ describe('attention badges', { concurrency: false }, () => {
   });
 
   test('counts unseen pending proposals and explanation inbox rows separately', () => {
-    const withProposals = materialize('attention-pending', suppressOperation('target')).artifact;
-    const informational = materializeInformational('attention-explanation').artifact;
+    const withProposals = seedProposalArtifact('attention-pending');
+    const informational = seedExplanationArtifact('attention-explanation');
     assert.equal(dbModule.countUnseenReflectionHelpItems(), 2);
 
     dbModule.markReflectionInboxSeen({
       kind: 'proposal',
-      proposalId: withProposals.proposals[0]!.review.proposalId,
+      proposalId: withProposals.proposalId,
     }, seenAt);
     assert.equal(dbModule.countUnseenReflectionHelpItems(), 1);
 
@@ -86,31 +81,21 @@ describe('attention badges', { concurrency: false }, () => {
   });
 
   test('obsolete unread proposals do not leave an unresolvable Help badge', () => {
-    const sessionId = 'obsolete-attention';
-    insertSession(sessionId);
-    const legacy = dbModule.materializeReflectionArtifact({
-      sourceSessionId: sessionId,
-      reflectionFlowVersion: 'initial_post_session_reflection.v3',
-      generatedAt,
-      provider: 'openai',
-      model: 'gpt-5.6-luna-high',
-      promptVersion: 'reflection-staged-v4',
-      evidenceBundle: bundle(sessionId),
-      result: result(suppressOperation('target')),
-    }).artifact;
-    assert.equal(legacy.proposals[0]!.review.disposition.kind, 'pending');
+    seedProposalArtifact('obsolete-attention', 'initial_post_session_reflection.v3');
     assert.equal(dbModule.countUnseenReflectionHelpItems(), 0);
-    materialize('current-attention', suppressOperation('target'));
+    seedProposalArtifact('current-attention');
     assert.equal(dbModule.countUnseenReflectionHelpItems(), 1);
   });
 
   test('keeps seen-but-pending out of the badge without changing disposition', () => {
-    const artifact = materialize('attention-seen-pending', suppressOperation('target')).artifact;
-    const proposalId = artifact.proposals[0]!.review.proposalId;
+    const { proposalId } = seedProposalArtifact('attention-seen-pending');
     dbModule.markReflectionInboxSeen({ kind: 'proposal', proposalId }, seenAt);
 
-    const detail = dbModule.getReflectionArtifactDetail(artifact.artifactId);
-    assert.equal(detail.proposals[0]!.review.disposition.kind, 'pending');
+    assert.equal(
+      sqlite.prepare('SELECT disposition FROM reflection_proposal_reviews WHERE proposal_id = ?')
+        .get(proposalId)?.disposition,
+      'pending',
+    );
     assert.equal(dbModule.countUnseenReflectionHelpItems(), 0);
     const second = dbModule.markReflectionInboxSeen({ kind: 'proposal', proposalId }, '2026-08-18T09:00:00.000Z');
     assert.equal(second.marked, false);
@@ -121,31 +106,29 @@ describe('attention badges', { concurrency: false }, () => {
     );
   });
 
-  test('leaving pending from By session clears the badge and undo does not restore it', () => {
-    const artifact = materialize('attention-dismiss', suppressOperation('target')).artifact;
-    const proposalId = artifact.proposals[0]!.review.proposalId;
+  test('a proposal that left pending no longer counts toward the badge', () => {
+    const { proposalId } = seedProposalArtifact('attention-dismiss');
     assert.equal(dbModule.countUnseenReflectionHelpItems(), 1);
 
-    dbModule.dismissReflectionProposal(proposalId, null, seenAt);
-    assert.equal(dbModule.countUnseenReflectionHelpItems(), 0);
-
-    dbModule.reopenReflectionProposal(proposalId, '2026-08-18T09:00:00.000Z');
-    assert.equal(dbModule.getReflectionArtifactDetail(artifact.artifactId).proposals[0]!.review.disposition.kind, 'pending');
+    sqlite.prepare(`
+      UPDATE reflection_proposal_reviews SET disposition = 'dismissed', updated_at = ?
+      WHERE proposal_id = ?
+    `).run(seenAt, proposalId);
     assert.equal(dbModule.countUnseenReflectionHelpItems(), 0);
   });
 
-  test('Done on an unseen explanation row drops the count', () => {
-    const informational = materializeInformational('attention-done').artifact;
+  test('an unseen explanation row that is no longer open drops the count', () => {
+    const informational = seedExplanationArtifact('attention-deferred');
     assert.equal(dbModule.countUnseenReflectionHelpItems(), 1);
-    dbModule.markReflectionHelpInboxDone({
-      artifactId: informational.artifactId,
-      itemId: 'item',
-    });
+    sqlite.prepare(`
+      UPDATE reflection_help_inbox SET disposition = 'deferred', disposition_at = ?
+      WHERE artifact_id = ? AND item_id = 'item'
+    `).run(seenAt, informational.artifactId);
     assert.equal(dbModule.countUnseenReflectionHelpItems(), 0);
   });
 
   test('rejects rewriting help inbox membership fields while allowing inbox_seen_at', () => {
-    const informational = materializeInformational('attention-immutable').artifact;
+    const informational = seedExplanationArtifact('attention-immutable');
     assert.throws(
       () => sqlite.exec(`
         UPDATE reflection_help_inbox
@@ -239,46 +222,76 @@ describe('attention badges', { concurrency: false }, () => {
   });
 });
 
-function materialize(
+function insertArtifact(
   sessionId: string,
-  operation: ReflectionOperation,
-): ReturnType<DbModule['materializeReflectionArtifact']> {
+  resultValue: unknown,
+  reflectionFlowVersion = 'initial_post_session_reflection.v6',
+): string {
   insertSession(sessionId);
-  return dbModule.materializeReflectionArtifact({
-    sourceSessionId: sessionId,
-    reflectionFlowVersion: 'initial_post_session_reflection.v6',
+  const artifactId = `artifact:${sessionId}`;
+  sqlite.prepare(`
+    INSERT INTO reflection_artifacts (
+      artifact_id, source_session_id, source_run_id, reflection_flow_version, generated_at,
+      provider, model, prompt_version, bundle_schema_version, result_schema_version,
+      evidence_bundle_json, result_json
+    ) VALUES (?, ?, NULL, ?, ?, 'openai', 'gpt-5.6-luna-high', 'reflection-staged-v4',
+      'session_reflection_bundle.v6', 'session_reflection_result.v10', ?, ?)
+  `).run(
+    artifactId,
+    sessionId,
+    reflectionFlowVersion,
     generatedAt,
-    provider: 'openai',
-    model: 'gpt-5.6-luna-high',
-    promptVersion: 'reflection-staged-v4',
-    evidenceBundle: bundle(sessionId),
-    result: result(operation),
-  });
+    JSON.stringify(bundle(sessionId)),
+    JSON.stringify(resultValue),
+  );
+  return artifactId;
 }
 
-function materializeInformational(
+/** Seeds the rows a materialized artifact with one pending proposal leaves. */
+function seedProposalArtifact(
   sessionId: string,
-): ReturnType<DbModule['materializeReflectionArtifact']> {
-  insertSession(sessionId);
-  return dbModule.materializeReflectionArtifact({
-    sourceSessionId: sessionId,
-    reflectionFlowVersion: 'initial_post_session_reflection.v6',
-    generatedAt,
-    provider: 'openai',
-    model: 'gpt-5.6-luna-high',
-    promptVersion: 'reflection-staged-v4',
-    evidenceBundle: bundle(sessionId),
-    result: {
-      schemaVersion: 'session_reflection_result.v10',
-      itemResults: [{
-        itemId: 'item',
-        diagnosisTags: ['ordinary_retrieval_noise'],
-        learnerExplanation: 'Ordinary retrieval noise; no durable change.',
-        proposals: [],
-        questions: [],
+  reflectionFlowVersion?: string,
+): { artifactId: string; proposalId: string } {
+  const artifactId = insertArtifact(sessionId, {
+    schemaVersion: 'session_reflection_result.v10',
+    itemResults: [{
+      itemId: 'item',
+      diagnosisTags: ['persistent_confusion'],
+      learnerExplanation: 'The learner supplied a visible alternate.',
+      proposals: [{
+        proposalGroupKey: null,
+        rationale: 'This operation may make the study state more faithful.',
+        operation: { kind: 'suppress_definition_production', version: 1, wordId: 'target' },
       }],
-    },
+      questions: [],
+    }],
+  }, reflectionFlowVersion);
+  const proposalId = `proposal:${sessionId}`;
+  sqlite.prepare(`
+    INSERT INTO reflection_proposal_reviews (
+      proposal_id, artifact_id, item_id, proposal_index, disposition, updated_at
+    ) VALUES (?, ?, 'item', 0, 'pending', ?)
+  `).run(proposalId, artifactId, generatedAt);
+  return { artifactId, proposalId };
+}
+
+/** Seeds the rows a materialized explanation-only artifact leaves. */
+function seedExplanationArtifact(sessionId: string): { artifactId: string } {
+  const artifactId = insertArtifact(sessionId, {
+    schemaVersion: 'session_reflection_result.v10',
+    itemResults: [{
+      itemId: 'item',
+      diagnosisTags: ['ordinary_retrieval_noise'],
+      learnerExplanation: 'Ordinary retrieval noise; no durable change.',
+      proposals: [],
+      questions: [],
+    }],
   });
+  sqlite.prepare(`
+    INSERT INTO reflection_help_inbox (inbox_id, artifact_id, item_id, opened_at)
+    VALUES (?, ?, 'item', ?)
+  `).run(`inbox:${sessionId}`, artifactId, generatedAt);
+  return { artifactId };
 }
 
 function insertSession(sessionId: string): void {
@@ -290,72 +303,47 @@ function insertSession(sessionId: string): void {
 }
 
 function recordFailedRun(sessionId: string, runId: string, completedAt: string): void {
-  dbModule.recordReflectionGenerationRun({
-    runId,
-    sourceSessionId: sessionId,
-    reflectionFlowVersion: 'initial_post_session_reflection.v6',
-    startedAt: generatedAt,
-    completedAt,
-    provider: 'openai',
-    model: 'gpt-5.6-luna-high',
-    providerModel: 'gpt-5.6-luna',
-    promptVersion: 'reflection-staged-v4',
-    responseId: null,
-    finishReason: null,
-    state: 'failed',
-    failureCode: 'upstream_failure',
-    eligibleItemCount: 1,
-    includedItemCount: 1,
-    usage: {
-      inputTokens: null,
-      cachedInputTokens: null,
-      cacheWriteInputTokens: null,
-      outputTokens: null,
-      reasoningTokens: null,
-      totalTokens: null,
-    },
-    pricingSnapshotId: null,
-    pricingAsOf: null,
-    pricingBasis: null,
-    estimatedCostUsd: null,
-    evidenceBundle: bundle(sessionId),
-  });
+  insertRun(sessionId, runId, completedAt, 'failed');
 }
 
 function recordSucceededRun(sessionId: string, runId: string, completedAt: string): void {
-  dbModule.recordReflectionGenerationRun({
-    runId,
-    sourceSessionId: sessionId,
-    reflectionFlowVersion: 'initial_post_session_reflection.v6',
-    startedAt: generatedAt,
-    completedAt,
-    provider: 'openai',
-    model: 'gpt-5.6-luna-high',
-    providerModel: 'gpt-5.6-luna',
-    promptVersion: 'reflection-staged-v4',
-    responseId: 'response-1',
-    finishReason: 'stop',
-    state: 'succeeded',
-    failureCode: null,
-    eligibleItemCount: 1,
-    includedItemCount: 1,
-    usage: {
-      inputTokens: 10,
-      cachedInputTokens: null,
-      cacheWriteInputTokens: null,
-      outputTokens: 4,
-      reasoningTokens: null,
-      totalTokens: 14,
-    },
-    pricingSnapshotId: null,
-    pricingAsOf: null,
-    pricingBasis: null,
-    estimatedCostUsd: null,
-    evidenceBundle: bundle(sessionId),
-  });
+  insertRun(sessionId, runId, completedAt, 'succeeded');
 }
 
-function bundle(sessionId: string): SessionReflectionBundleV6 {
+function insertRun(
+  sessionId: string,
+  runId: string,
+  completedAt: string,
+  state: 'failed' | 'succeeded',
+): void {
+  const failed = state === 'failed';
+  sqlite.prepare(`
+    INSERT INTO reflection_generation_runs (
+      run_id, source_session_id, reflection_flow_version, started_at, completed_at,
+      provider, model, provider_model, prompt_version, response_id, finish_reason,
+      bundle_schema_version, result_schema_version, state, failure_code,
+      eligible_item_count, included_item_count, input_tokens, output_tokens, total_tokens,
+      evidence_bundle_json
+    ) VALUES (?, ?, 'initial_post_session_reflection.v6', ?, ?, 'openai', 'gpt-5.6-luna-high',
+      'gpt-5.6-luna', 'reflection-staged-v4', ?, ?, 'session_reflection_bundle.v6',
+      'session_reflection_result.v4', ?, ?, 1, 1, ?, ?, ?, ?)
+  `).run(
+    runId,
+    sessionId,
+    generatedAt,
+    completedAt,
+    failed ? null : 'response-1',
+    failed ? null : 'stop',
+    state,
+    failed ? 'upstream_failure' : null,
+    failed ? null : 10,
+    failed ? null : 4,
+    failed ? null : 14,
+    JSON.stringify(bundle(sessionId)),
+  );
+}
+
+function bundle(sessionId: string) {
   return {
     schemaVersion: 'session_reflection_bundle.v6',
     generatedAt,
@@ -392,31 +380,6 @@ function bundle(sessionId: string): SessionReflectionBundleV6 {
       responseKind: 'unmatched_text',
       submittedWord: null,
     }],
-  };
-}
-
-function result(operation: ReflectionOperation): SessionReflectionResultV10 {
-  return {
-    schemaVersion: 'session_reflection_result.v10',
-    itemResults: [{
-      itemId: 'item',
-      diagnosisTags: ['persistent_confusion'],
-      learnerExplanation: 'The learner supplied a visible alternate.',
-      proposals: [{
-        proposalGroupKey: null,
-        rationale: 'This operation may make the study state more faithful.',
-        operation,
-      }],
-      questions: [],
-    }],
-  };
-}
-
-function suppressOperation(wordId: string): ReflectionOperation {
-  return {
-    kind: 'suppress_definition_production',
-    version: 1,
-    wordId,
   };
 }
 

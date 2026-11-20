@@ -1,14 +1,7 @@
-import type { StudyProfileId } from '../study-profile';
-import {
-  matchServedCueAnswer,
-  type AcceptedCueAnswer,
-  type PureCueContent,
-} from './cues';
+
+import { type AcceptedCueAnswer, type PureCueContent } from './cues';
 
 export type { PureCueContent } from './cues';
-
-export const PURE_CUE_INITIAL_INTERVAL_HOURS = 24;
-export const PURE_CUE_INITIAL_EASE_FACTOR = 2.5;
 export const PURE_CUE_MINIMUM_EASE_FACTOR = 1.8;
 export const PURE_CUE_LAPSE_INTERVAL_HOURS = 6;
 /** Same length as a lapse reset: new adoptions and compensated production due dates. */
@@ -18,7 +11,6 @@ export const PURE_CUE_STRONG_RECENCY_HOURS = 7 * 24;
 const PURE_CUE_STRONG_DAILY_CHANCE = 1 / 90;
 
 export type PureCueRating = 'forgot' | 'hard' | 'good' | 'easy';
-export type PureCueAttemptOutcome = 'accepted' | 'rejected';
 
 export type PureCueStudyState = {
   /** Fragile SRS values, retained dormant while strongSince is set. */
@@ -46,15 +38,6 @@ export type PureCueServedSnapshot = {
   axisNote: string;
   teachingNote: string;
   acceptedAnswers: PureCueAcceptedAnswer[];
-};
-
-export type PureCueAssessmentEvent = {
-  eventId: string;
-  occurredAt: string;
-  response: string | null;
-  outcome: PureCueAttemptOutcome;
-  submittedWordId: string | null;
-  rating: PureCueRating;
 };
 
 export type PureCueAssessmentSummary = {
@@ -197,78 +180,6 @@ export function selectPureCuesForSession<T extends PureCueSelectionCandidate>({
   return { fragile, strong, selected: [...fragile, ...strong] };
 }
 
-export function resolvePureCueResponse(
-  snapshot: Pick<PureCueServedSnapshot, 'acceptedAnswers'>,
-  response: string | null,
-  profileId: StudyProfileId = 'mandarin',
-): Pick<PureCueAssessmentEvent, 'outcome' | 'submittedWordId'> {
-  const match = matchServedCueAnswer(snapshot, response, profileId);
-  return match
-    ? { outcome: 'accepted', submittedWordId: match.wordId }
-    : { outcome: 'rejected', submittedWordId: null };
-}
-
-export function derivePureCueAssessment(
-  snapshot: PureCueServedSnapshot,
-  events: readonly PureCueAssessmentEvent[],
-  profileId: StudyProfileId = 'mandarin',
-  { reinforcementSkipped = false }: { reinforcementSkipped?: boolean } = {},
-): PureCueAssessmentSummary {
-  if (typeof reinforcementSkipped !== 'boolean') throw new Error('Expected boolean reinforcementSkipped');
-  if (events.length === 0) throw new Error('Pure cue assessment requires at least one event.');
-
-  let failureCount = 0;
-  let reinforcementStreak = 0;
-  let covered: PureCueAssessmentSummary | null = null;
-  const eventIds = new Set<string>();
-
-  for (const event of events) {
-    if (covered !== null) throw new Error('Pure cue assessment includes events after coverage.');
-    if (typeof event.eventId !== 'string' || event.eventId.trim().length === 0) {
-      throw new Error('Pure cue event id must be non-empty.');
-    }
-    if (eventIds.has(event.eventId)) throw new Error(`Duplicate pure cue event id ${event.eventId}.`);
-    eventIds.add(event.eventId);
-    assertCanonicalIsoTimestamp(event.occurredAt, 'Pure cue event occurredAt');
-    if (!isPureCueRating(event.rating)) {
-      throw new Error(`Invalid pure cue rating "${String(event.rating)}".`);
-    }
-
-    const resolved = resolvePureCueResponse(snapshot, event.response, profileId);
-    if (resolved.outcome !== event.outcome || resolved.submittedWordId !== event.submittedWordId) {
-      throw new Error('Pure cue event outcome does not match the frozen accepted-answer forms.');
-    }
-    if (event.outcome === 'rejected' && event.rating !== 'forgot') {
-      throw new Error('Rejected pure cue response must be rated forgot.');
-    }
-
-    if (failureCount === 0 && event.outcome === 'accepted' && event.rating !== 'forgot') {
-      covered = { failureCount: 0, terminalRating: event.rating };
-      continue;
-    }
-
-    if (event.outcome === 'rejected' || event.rating === 'forgot') {
-      failureCount += 1;
-      reinforcementStreak = 0;
-    } else {
-      reinforcementStreak += 1;
-    }
-    if (reinforcementStreak >= 3) {
-      covered = { failureCount, terminalRating: null };
-    }
-  }
-
-  if (reinforcementSkipped) {
-    if (covered !== null || failureCount === 0) {
-      throw new Error('Expected unfinished lapsed assessment when reinforcementSkipped is true');
-    }
-    covered = { failureCount, terminalRating: null };
-  }
-
-  if (covered === null) throw new Error('Pure cue events do not represent a covered assessment.');
-  return covered;
-}
-
 function sampleStrongCuesWithoutReplacement<T extends PureCueSelectionCandidate>(
   candidates: readonly T[],
   count: number,
@@ -336,8 +247,4 @@ function assertCanonicalIsoTimestamp(value: string, label: string): void {
 
 function assertNonNegativeInteger(value: number, label: string): void {
   if (!Number.isInteger(value) || value < 0) throw new Error(`${label} must be a non-negative integer.`);
-}
-
-function isPureCueRating(value: unknown): value is PureCueRating {
-  return value === 'forgot' || value === 'hard' || value === 'good' || value === 'easy';
 }

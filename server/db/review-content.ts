@@ -4,7 +4,6 @@ import { randomUUID } from 'node:crypto';
 import type { ContentExercise, WordContentDocument } from '../../src/domain/word-content/types.ts';
 import type { ReviewSupplementSource } from '../../src/domain/word-content/review-compat.ts';
 import { adaptTargetedReviewExercise, toProductionExerciseSnapshot } from '../../src/domain/word-content/review-compat.ts';
-import { materializeExercise, resolveWordExample } from '../../src/domain/word-content/materialize.ts';
 import { freezeContent, parseContentExercise, parseWordContent } from '../../src/domain/word-content/validation.ts';
 import { getDb } from './connection.ts';
 import { requireLearnerId } from './learner-context.ts';
@@ -27,7 +26,6 @@ type Row = {
   word_id: string | null; source_word_content_id: string | null; document_json: string; created_at: string;
   model: string | null;
 };
-type Scope = { content_scope: 'learner' | 'shared'; owner_learner_id: string | null };
 
 function canonicalTime(value: string): string {
   if (!Number.isFinite(Date.parse(value)) || new Date(value).toISOString() !== value) {
@@ -43,180 +41,6 @@ function documents(input: readonly WordContentDocument[]): WordContentDocument[]
     throw new Error('Duplicate review source content identity');
   }
   return parsed;
-}
-
-function checkSource(wordId: string | null, sourceId: string | null, contents: WordContentDocument[]): void {
-  if (sourceId === null) return;
-  if (wordId === null) throw new Error('Pure cue cannot pin word content');
-  const source = contents.find((item) => item.id === sourceId);
-  if (!source || source.word.wordId !== wordId) throw new Error('Pinned review source is missing or wrong word');
-  const row = getDb().prepare(`
-    SELECT content_json FROM word_content_documents WHERE content_id = ? AND word_id = ?
-  `).get(sourceId, wordId) as { content_json: string } | undefined;
-  if (!row || row.content_json !== JSON.stringify(source)) {
-    throw new Error('Pinned review source differs from immutable word content');
-  }
-}
-
-function legacyScope(kind: CanonicalReviewKind, id: string): Scope | null {
-  if (kind === 'pure_cue') {
-    return getDb().prepare('SELECT 1 FROM pure_cues WHERE id = ?').get(id)
-      ? { content_scope: 'shared', owner_learner_id: null } : null;
-  }
-  const table = kind === 'production_cue' ? 'scoped_production_cues' : 'scoped_production_cue_supplements';
-  return getDb().prepare(`SELECT content_scope, owner_learner_id FROM ${table} WHERE ${kind === 'production_cue' ? 'cue_id' : 'supplement_id'} = ?`)
-    .get(id) as Scope | undefined ?? null;
-}
-
-function append(kind: CanonicalReviewKind, contentId: string, wordId: string | null,
-  sourceWordContentId: string | null, document: object, createdAt: string, model: string | null,
-  exerciseId: string | null): Row {
-  const learnerId = requireLearnerId();
-  const scope = legacyScope(kind, contentId);
-  if (!scope || (scope.content_scope === 'learner' && scope.owner_learner_id !== learnerId)) {
-    throw new Error('Review content projection is unavailable to this learner');
-  }
-  const latest = getDb().prepare(`
-    SELECT MAX(revision) AS revision FROM scoped_review_content_records
-    WHERE kind = ? AND content_id = ?
-  `).get(kind, contentId) as { revision: number | null };
-  if (kind !== 'pure_cue' && latest.revision !== null) {
-    throw new Error('Cue and supplement canonical identities cannot be revised');
-  }
-  const revision = (latest.revision ?? 0) + 1;
-  const recordId = randomUUID();
-  const documentJson = JSON.stringify(document);
-  getDb().prepare(`
-    INSERT INTO scoped_review_content_records (
-      record_id, kind, content_id, exercise_id, revision, word_id, source_word_content_id,
-      document_json, created_at, model
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-  `).run(recordId, kind, contentId, exerciseId, revision, wordId, sourceWordContentId,
-    documentJson, createdAt, model);
-  return { record_id: recordId, kind, content_id: contentId, exercise_id: exerciseId, revision, word_id: wordId,
-    source_word_content_id: sourceWordContentId, document_json: documentJson, created_at: createdAt, model };
-}
-
-function lexicalAnswers(ids: readonly string[]): Array<{ wordId: string; hanzi: string; traditional: string | null }> {
-  return ids.map((id) => {
-    const word = getDb().prepare(`SELECT id, hanzi, traditional FROM lexical_words WHERE id = ?`)
-      .get(id) as { id: string; hanzi: string; traditional: string | null } | undefined;
-    if (!word) throw new Error(`Unknown accepted review word ${id}`);
-    return { wordId: word.id, hanzi: word.hanzi, traditional: word.traditional };
-  });
-}
-
-export function appendCanonicalReviewExercise(input: {
-  kind: 'production_cue' | 'pure_cue'; contentId: string; exercise: ContentExercise;
-  contents: readonly WordContentDocument[]; sourceWordContentId?: string | null; createdAt?: string;
-  model?: string | null;
-}): CanonicalReviewExerciseRecord {
-  requireLearnerId();
-  const exercise = parseContentExercise(input.exercise);
-  const sourceContents = documents(input.contents);
-  const sourceId = input.sourceWordContentId ?? null;
-  const createdAt = canonicalTime(input.createdAt ?? new Date().toISOString());
-  if (input.kind === 'production_cue') {
-    const cue = getDb().prepare(`
-      SELECT cue.cue_id, cue.task_id, cue.cue_type, cue.cue_text, task.word_id
-      FROM production_cues AS cue JOIN production_tasks AS task ON task.task_id = cue.task_id
-      WHERE cue.cue_id = ?
-    `).get(input.contentId) as {
-      cue_id: string; task_id: string; cue_type: 'definition_gloss' | 'minimal_context' | 'circumstance';
-      cue_text: string; word_id: string;
-    } | undefined;
-    if (!cue) throw new Error('Projected production cue is unavailable');
-    checkSource(cue.word_id, sourceId, sourceContents);
-    const compatible = adaptTargetedReviewExercise(exercise, sourceContents, {
-      taskId: cue.task_id, cueId: cue.cue_id, cueType: cue.cue_type, supplement: null,
-    });
-    const snapshot = toProductionExerciseSnapshot(compatible);
-    const acceptedIds = (getDb().prepare(`
-      SELECT word_id FROM production_cue_accepted_words WHERE cue_id = ? ORDER BY position
-    `).all(cue.cue_id) as Array<{ word_id: string }>).map((row) => row.word_id);
-    if (snapshot.text !== cue.cue_text
-      || JSON.stringify(snapshot.acceptedAnswers) !== JSON.stringify(lexicalAnswers(acceptedIds))) {
-      throw new Error('Canonical exercise differs from projected production cue');
-    }
-    const row = append(input.kind, input.contentId, cue.word_id, sourceId,
-      { schemaVersion: 1, exercise, contents: sourceContents }, createdAt, input.model ?? null, exercise.id);
-    return freezeContent({ kind: input.kind, contentId: row.content_id, recordId: row.record_id,
-      revision: row.revision, wordId: row.word_id, sourceWordContentId: row.source_word_content_id,
-      createdAt: row.created_at, model: row.model, exercise, contents: sourceContents });
-  }
-  if (sourceId !== null) throw new Error('Pure cue cannot pin word content');
-  const pure = getDb().prepare('SELECT id, stimulus, axis_note FROM pure_cues WHERE id = ?')
-    .get(input.contentId) as { id: string; stimulus: string; axis_note: string } | undefined;
-  if (!pure || exercise.contract.kind !== 'pure_review' || exercise.contract.axisNote !== pure.axis_note
-    || exercise.instruction !== '') {
-    throw new Error('Canonical pure exercise does not match durable pure cue');
-  }
-  const acceptedIds = (getDb().prepare(`
-    SELECT word_id FROM pure_cue_accepted_words WHERE pure_cue_id = ? ORDER BY position
-  `).all(pure.id) as Array<{ word_id: string }>).map((row) => row.word_id);
-  if (materializeExercise(exercise, sourceContents).stimulus.text !== pure.stimulus
-    || JSON.stringify(exercise.acceptedAnswers) !== JSON.stringify(lexicalAnswers(acceptedIds))) {
-    throw new Error('Canonical pure exercise differs from durable pure cue');
-  }
-  const row = append(input.kind, input.contentId, null, null,
-    { schemaVersion: 1, exercise, contents: sourceContents }, createdAt, input.model ?? null, exercise.id);
-  return freezeContent({ kind: input.kind, contentId: row.content_id, recordId: row.record_id,
-    revision: row.revision, wordId: null, sourceWordContentId: null,
-    createdAt: row.created_at, model: row.model, exercise, contents: sourceContents });
-}
-
-function supplementSnapshot(source: ReviewSupplementSource, contents: WordContentDocument[], wordId: string) {
-  if (source.kind === 'snapshot') return { ...source.value };
-  if (!source.supplementId.trim() || !source.englishFrame.trim()) {
-    throw new Error('Review supplement needs an identity and English frame');
-  }
-  const content = contents.find((item) => item.id === source.example.contentId);
-  if (!content || content.word.wordId !== wordId) throw new Error('Supplement example belongs to another word');
-  const example = resolveWordExample(source.example, contents);
-  if (!example.text.includes(content.word.hanzi)
-    && (content.word.traditional === null || !example.text.includes(content.word.traditional))) {
-    throw new Error('Supplement example must show reviewed word');
-  }
-  return { supplementId: source.supplementId, englishFrame: source.englishFrame,
-    exampleSentence: example.text, exampleTranslation: example.translation };
-}
-
-export function appendCanonicalReviewSupplement(input: {
-  supplementId: string; source: ReviewSupplementSource; contents: readonly WordContentDocument[];
-  sourceWordContentId?: string | null; createdAt?: string; model?: string | null;
-}): CanonicalReviewSupplementRecord {
-  requireLearnerId();
-  const row = getDb().prepare(`
-    SELECT supplement.supplement_id, supplement.task_id, supplement.cue_id,
-      supplement.english_frame, supplement.example_sentence, supplement.example_translation,
-      task.word_id
-    FROM production_cue_supplements AS supplement
-    JOIN production_tasks AS task ON task.task_id = supplement.task_id
-    WHERE supplement.supplement_id = ?
-  `).get(input.supplementId) as {
-    supplement_id: string; task_id: string; cue_id: string | null;
-    english_frame: string; example_sentence: string; example_translation: string; word_id: string;
-  } | undefined;
-  if (!row) throw new Error('Projected supplement is unavailable');
-  const sourceContents = documents(input.contents);
-  const sourceId = input.sourceWordContentId ?? null;
-  checkSource(row.word_id, sourceId, sourceContents);
-  const rendered = supplementSnapshot(input.source, sourceContents, row.word_id);
-  if (rendered.supplementId !== row.supplement_id || rendered.englishFrame !== row.english_frame
-    || rendered.exampleSentence !== row.example_sentence
-    || rendered.exampleTranslation !== row.example_translation) {
-    throw new Error('Canonical supplement differs from projected supplement');
-  }
-  const createdAt = canonicalTime(input.createdAt ?? new Date().toISOString());
-  const copiedSource: ReviewSupplementSource = input.source.kind === 'snapshot'
-    ? { kind: 'snapshot', value: { ...input.source.value } }
-    : { ...input.source, example: { ...input.source.example } };
-  const record = append('production_cue_supplement', input.supplementId, row.word_id, sourceId,
-    { schemaVersion: 1, source: copiedSource, contents: sourceContents }, createdAt, input.model ?? null, null);
-  return freezeContent({ kind: 'production_cue_supplement', contentId: record.content_id,
-    recordId: record.record_id, revision: record.revision, wordId: record.word_id,
-    sourceWordContentId: record.source_word_content_id, createdAt: record.created_at, model: record.model,
-    source: copiedSource, contents: sourceContents });
 }
 
 export function getCanonicalReviewContent(kind: CanonicalReviewKind, contentId: string): CanonicalReviewContentRecord | null {
@@ -243,19 +67,6 @@ export function getCanonicalReviewContent(kind: CanonicalReviewKind, contentId: 
   if (!envelope.exercise) throw new Error('Canonical review exercise missing');
   return freezeContent({ ...header, kind: row.kind,
     exercise: parseContentExercise(envelope.exercise), contents: sourceContents });
-}
-
-/** Historical read remains possible; live selection must call this eligibility gate. */
-export function isCanonicalReviewSourceEligible(kind: CanonicalReviewKind, contentId: string): boolean {
-  const record = getCanonicalReviewContent(kind, contentId);
-  if (!record || record.sourceWordContentId === null) return true;
-  const row = getDb().prepare(`
-    SELECT publication.publication_status AS status
-    FROM word_content_documents AS content
-    JOIN shared_content_publications AS publication ON publication.publication_id = content.publication_id
-    WHERE content.content_id = ?
-  `).get(record.sourceWordContentId) as { status: string } | undefined;
-  return row?.status === 'shared_trial' || row?.status === 'available';
 }
 
 function transaction<T>(operation: () => T): T {
@@ -447,19 +258,9 @@ export function finishSharedWordReviewPreparation(
   });
 }
 
-export function getWordReviewPreparation(wordId: string) {
-  requireLearnerId();
-  return getSharedWordReviewPreparation(wordId);
-}
-
 export function claimWordReviewPreparation(wordId: string, sourceContentId: string, token: string, now: string, expiresAt: string) {
   requireLearnerId();
   return claimSharedWordReviewPreparation(wordId, sourceContentId, token, now, expiresAt);
-}
-
-export function releaseWordReviewPreparation(wordId: string, token: string) {
-  requireLearnerId();
-  return releaseSharedWordReviewPreparation(wordId, token);
 }
 
 export function finishWordReviewPreparation(wordId: string, token: string, exercises: readonly AuthoredReviewExercise[], model: string) {

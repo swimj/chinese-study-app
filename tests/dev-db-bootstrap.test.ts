@@ -5,13 +5,11 @@ import path from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { describe, test } from 'node:test';
 import { pathToFileURL } from 'node:url';
-import { isPureCueSessionReviewItem, type SessionStudyItem } from '../src/domain/study-actions.ts';
 
 const mandarinDevContrastWordCount = 11;
 const mandarinDevContrastClusterCount = 4;
 const mandarinDevContrastPromptCount = 11;
 const mandarinDevContextualSelectionCount = 11;
-const mandarinDevBinaryContrastChoiceSetCount = 2;
 
 function registerPersistedLearnerContext(sqlite: DatabaseSync): void {
   const learner = sqlite.prepare(`
@@ -22,6 +20,17 @@ function registerPersistedLearnerContext(sqlite: DatabaseSync): void {
   `).get() as { learner_id: string } | undefined;
   assert.ok(learner, 'expected the bootstrapped database to contain a learner');
   sqlite.function('current_learner_id', () => learner.learner_id);
+}
+
+/** Counts the persisted learner's rows in a learner-scoped table through a separate connection. */
+function countLearnerRows(dbPath: string, table: string): number {
+  const sqlite = new DatabaseSync(dbPath);
+  try {
+    registerPersistedLearnerContext(sqlite);
+    return (sqlite.prepare(`SELECT COUNT(*) AS count FROM ${table}`).get() as { count: number }).count;
+  } finally {
+    sqlite.close();
+  }
 }
 
 describe('dev database bootstrap', { concurrency: false }, () => {
@@ -51,25 +60,12 @@ describe('dev database bootstrap', { concurrency: false }, () => {
       assert.equal(reviewWordCount, 10);
       assert.equal(seedData.words.length - reviewWordCount, 6);
       assert.equal(dbModule.getWords().length, seedData.words.length + mandarinDevContrastWordCount);
-      assert.equal(dbModule.getWordStudyAdmissionStates().length, reviewWordCount + mandarinDevContrastWordCount);
+      assert.equal(countLearnerRows(dbPath, 'word_study_admission_state'), reviewWordCount + mandarinDevContrastWordCount);
       assert.equal(
-        dbModule.getWordSkillStates().length,
+        countLearnerRows(dbPath, 'word_skill_state'),
         (reviewWordCount + mandarinDevContrastWordCount) * 2 + mandarinDevContextualSelectionCount,
       );
-      assert.equal(dbModule.getContrastClusters().length, mandarinDevContrastClusterCount);
-
-      const studyDayKey = new Date().toISOString().slice(0, 10);
-      const contrastSelectionItems = dbModule
-        .getSessionPayload(studyDayKey)
-        .buckets.review.filter((item): item is SessionStudyItem => !isPureCueSessionReviewItem(item) && item.actionKind === 'contrast_selection');
-      assert.equal(contrastSelectionItems.length, mandarinDevBinaryContrastChoiceSetCount);
-      assert.deepEqual(
-        contrastSelectionItems.map((item) => item.targetWordId).sort(),
-        [
-          'dev-contrast-kaojin',
-          'dev-contrast-qiadang',
-        ],
-      );
+      assert.equal(countLearnerRows(dbPath, 'contrast_clusters'), mandarinDevContrastClusterCount);
 
       const sqlite = new DatabaseSync(dbPath);
       registerPersistedLearnerContext(sqlite);
@@ -152,12 +148,12 @@ describe('dev database bootstrap', { concurrency: false }, () => {
       const dbModule: typeof import('../server/db.ts') = await import(moduleUrl);
 
       assert.equal(dbModule.getWords().length, seedData.words.length + mandarinDevContrastWordCount);
-      assert.equal(dbModule.getWordStudyAdmissionStates().length, reviewWordCount + mandarinDevContrastWordCount);
+      assert.equal(countLearnerRows(dbPath, 'word_study_admission_state'), reviewWordCount + mandarinDevContrastWordCount);
       assert.equal(
-        dbModule.getWordSkillStates().length,
+        countLearnerRows(dbPath, 'word_skill_state'),
         (reviewWordCount + mandarinDevContrastWordCount) * 2 + mandarinDevContextualSelectionCount,
       );
-      assert.equal(dbModule.getContrastClusters().length, mandarinDevContrastClusterCount);
+      assert.equal(countLearnerRows(dbPath, 'contrast_clusters'), mandarinDevContrastClusterCount);
     } finally {
       if (previousMode === undefined) {
         delete process.env.APP_MODE;

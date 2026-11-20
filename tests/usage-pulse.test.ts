@@ -257,19 +257,13 @@ describe('usage pulse snapshots', { concurrency: false }, () => {
     getDb().prepare('UPDATE usage_daily_snapshots SET mean_stash_size = 42 WHERE day_key = ?').run(admissionDay);
     dbModule.runWithLearnerId('learner-a', () => {
       for (const id of ['evening-a', 'evening-b', 'evening-c']) {
-        insertLexicalWord(id);
-        dbModule.completeUnstudiedWordSession(id, admissionDay, 'evening');
-        // A retry returns the existing transition and contributes no new intake.
-        dbModule.completeUnstudiedWordSession(id, admissionDay, 'evening');
+        insertSessionWordOutcome('learner-a', 'evening', id, '2026-10-22T01:07:31.534Z');
       }
+      insertNewWordIntake(admissionDay, 3);
       assert.equal(usagePulse.computeUsagePulseDay({ dayKey: reportingDay }).newWords, 0);
       completeUsageSession('evening', '2026-10-22T02:12:41.686Z', 11);
       completeUsageSession('evening', '2026-10-22T02:12:41.686Z', 11);
       assert.equal(getDb().prepare("SELECT new_word_count FROM review_session_summaries WHERE session_id = 'evening'").get()?.new_word_count, 3);
-      assert.equal(getDb().prepare(`SELECT new_study_count FROM daily_new_word_intake WHERE day_key = ?`)
-        .get(admissionDay)?.new_study_count, 3);
-      assert.equal(getDb().prepare(`SELECT new_study_count FROM daily_new_word_intake WHERE day_key = ?`)
-        .get(reportingDay), undefined);
     });
     const today = usagePulse.computeUsagePulseDay({ dayKey: reportingDay });
     assert.equal(today.newWords, 3);
@@ -281,7 +275,9 @@ describe('usage pulse snapshots', { concurrency: false }, () => {
     // The three new words remain three after later Practice.
     t.mock.timers.setTime(new Date('2026-10-23T16:00:00.000Z').getTime());
     dbModule.runWithLearnerId('learner-a', () => {
-      dbModule.completeLearningWordSession('evening-a', true, 'later-practice', '2026-10-23');
+      insertSessionWordOutcome('learner-a', 'later-practice', 'evening-a', '2026-10-23T16:00:00.000Z', {
+        kind: 'learning', beforeStatus: 'learning', afterStatus: 'learning',
+      });
       completeUsageSession('later-practice', '2026-10-23T16:00:00.000Z', 1);
     });
     assert.equal(usagePulse.computeUsagePulseDay({ dayKey: reportingDay }).newWords, 3);
@@ -301,25 +297,21 @@ describe('usage pulse snapshots', { concurrency: false }, () => {
   test('counts a whole session on its UTC completion day, with retries and cohort aggregation', (t) => {
     t.mock.timers.enable({ apis: ['Date'], now: new Date('2026-11-01T17:00:00.000Z') });
     dbModule.runWithLearnerId('learner-a', () => {
-      insertLexicalWord('normal-day');
-      dbModule.completeUnstudiedWordSession('normal-day', '2026-11-01', 'normal-session');
+      insertSessionWordOutcome('learner-a', 'normal-session', 'normal-day', '2026-11-01T17:00:00.000Z');
       completeUsageSession('normal-session', '2026-11-01T17:00:00.000Z');
       // A sessionless legacy commit has intake evidence but no outcome timestamp.
-      insertLexicalWord('legacy-day');
-      dbModule.completeUnstudiedWordSession('legacy-day', '2026-11-01');
+      insertNewWordIntake('2026-11-01', 4);
       t.mock.timers.setTime(new Date('2026-11-01T23:59:59.999Z').getTime());
-      insertLexicalWord('before-midnight');
-      dbModule.completeUnstudiedWordSession('before-midnight', '2026-11-01', 'midnight-session');
+      insertSessionWordOutcome('learner-a', 'midnight-session', 'before-midnight', '2026-11-01T23:59:59.999Z');
       t.mock.timers.setTime(new Date('2026-11-02T00:00:00.000Z').getTime());
-      insertLexicalWord('at-midnight');
-      dbModule.completeUnstudiedWordSession('at-midnight', '2026-11-01', 'midnight-session');
+      insertSessionWordOutcome('learner-a', 'midnight-session', 'at-midnight', '2026-11-02T00:00:00.000Z');
       assert.equal(usagePulse.computeUsagePulseDay({ dayKey: '2026-11-02' }).newWords, 0);
       completeUsageSession('midnight-session', '2026-11-02T00:10:00.000Z');
       completeUsageSession('midnight-session', '2026-11-02T00:10:00.000Z');
     });
     dbModule.runWithLearnerId('learner-b', () => {
       // Same lexical identity for another learner is a separate new-word event.
-      dbModule.completeUnstudiedWordSession('at-midnight', '2026-11-01', 'midnight-session');
+      insertSessionWordOutcome('learner-b', 'midnight-session', 'at-midnight', '2026-11-02T00:00:00.000Z');
       insertNewWordIntake('2026-11-01', 3); // admission evidence does not supply Usage totals
       completeUsageSession('midnight-session', '2026-11-02T00:12:00.000Z');
     });
@@ -333,62 +325,23 @@ describe('usage pulse snapshots', { concurrency: false }, () => {
       .map((day) => day.newWords), [1, 3]);
   });
 
-  test('counts the final word only after acceptance on the summary day, even when closure crosses UTC midnight', async (t) => {
-    const { stageSessionCompletion, undoSessionCompletion, closeSessionCompletion } =
-      await import('../server/db/session-completion.ts');
-    const stagedAt = '2026-12-01T23:59:55.000Z';
-    const closedAt = '2026-12-02T00:00:10.000Z';
-    t.mock.timers.enable({ apis: ['Date'], now: new Date(stagedAt) });
-    dbModule.runWithLearnerId('learner-a', () => {
-      const stage = (id: string) => {
-        insertLexicalWord(id);
-        return stageSessionCompletion(id, {
-          revisionId: 'r1', startedAt: '2026-12-01T23:50:00.000Z', studyDayKey: '2026-12-01',
-          summary: { completedAt: stagedAt, completedReviewActionCount: 0,
-            failedReviewActionCount: 0, activeDurationMs: 1000 },
-          pendingCommit: { type: 'commit-unstudied-word-session', wordId: id }, reflectionEvidence: null,
-        }, stagedAt);
-      };
-      assert.equal(stage('usage-undo').report.newWords.length, 1);
-      assert.equal(usagePulse.computeUsagePulseDay({ dayKey: '2026-12-01' }).newWords, 0);
-      undoSessionCompletion('usage-undo', 'r1', stagedAt);
-      assert.equal(stage('usage-final').report.newWords.length, 1);
-      usagePulse.captureUsagePulseDay({ dayKey: '2026-12-01' });
-      t.mock.timers.setTime(new Date(closedAt).getTime());
-      closeSessionCompletion('usage-final', 'r1', closedAt);
-      closeSessionCompletion('usage-final', 'r1', closedAt);
-    });
-    assert.equal(usagePulse.computeUsagePulseDay({ dayKey: '2026-12-01' }).newWords, 1);
-    assert.equal(usagePulse.computeUsagePulseDay({ dayKey: '2026-12-02' }).newWords, 0);
-    assert.equal(usagePulse.listUsageDailySnapshots(['2026-12-01'])[0]?.newWords, 1);
-  });
-
-  test('a Usage snapshot write failure rolls back final acceptance and can be retried exactly once', async (t) => {
-    const { stageSessionCompletion, closeSessionCompletion } = await import('../server/db/session-completion.ts');
+  test('a Usage snapshot write failure rolls back the summary write and can be retried exactly once', (t) => {
     const at = '2026-12-05T12:00:00.000Z';
     t.mock.timers.enable({ apis: ['Date'], now: new Date(at) });
     usagePulse.captureUsagePulseDay({ dayKey: '2026-12-05' });
     dbModule.runWithLearnerId('learner-a', () => {
-      insertLexicalWord('usage-write-failure');
-      stageSessionCompletion('usage-write-failure', {
-        revisionId: 'r1', startedAt: at, studyDayKey: '2026-12-05',
-        summary: { completedAt: at, completedReviewActionCount: 0, failedReviewActionCount: 0, activeDurationMs: 0 },
-        pendingCommit: { type: 'commit-unstudied-word-session', wordId: 'usage-write-failure' }, reflectionEvidence: null,
-      }, at);
+      insertSessionWordOutcome('learner-a', 'usage-write-failure', 'usage-write-failure', at);
       getDb().exec(`CREATE TEMP TRIGGER fail_usage_snapshot BEFORE UPDATE ON usage_daily_snapshots
         WHEN NEW.day_key = '2026-12-05' BEGIN SELECT RAISE(ABORT, 'test snapshot failure'); END`);
       try {
-        assert.throws(() => closeSessionCompletion('usage-write-failure', 'r1', at), /test snapshot failure/);
-        assert.equal(getDb().prepare("SELECT status FROM words WHERE id = 'usage-write-failure'").get()?.status, 'unstudied');
-        assert.equal(getDb().prepare("SELECT new_study_count FROM daily_new_word_intake WHERE day_key = '2026-12-05'").get(), undefined);
+        assert.throws(() => completeUsageSession('usage-write-failure', at), /test snapshot failure/);
         assert.equal(getDb().prepare("SELECT new_word_count FROM review_session_summaries WHERE session_id = 'usage-write-failure'").get(), undefined);
         assert.equal(usagePulse.listUsageDailySnapshots(['2026-12-05'])[0]?.newWords, 0);
       } finally {
         getDb().exec('DROP TRIGGER fail_usage_snapshot');
       }
-      closeSessionCompletion('usage-write-failure', 'r1', at);
-      closeSessionCompletion('usage-write-failure', 'r1', at);
-      assert.equal(getDb().prepare("SELECT new_study_count FROM daily_new_word_intake WHERE day_key = '2026-12-05'").get()?.new_study_count, 1);
+      completeUsageSession('usage-write-failure', at);
+      completeUsageSession('usage-write-failure', at);
       assert.equal(getDb().prepare("SELECT new_word_count FROM review_session_summaries WHERE session_id = 'usage-write-failure'").get()?.new_word_count, 1);
     });
     assert.equal(usagePulse.listUsageDailySnapshots(['2026-12-05'])[0]?.newWords, 1);
@@ -521,6 +474,32 @@ describe('usage pulse snapshots', { concurrency: false }, () => {
       ) VALUES (?, ?, NULL, 'ma', 'test', '[]', '[]', 1, ?)
       ON CONFLICT(id) DO NOTHING
     `).run(wordId, wordId, '2026-01-01T00:00:00.000Z');
+  }
+
+  function insertSessionWordOutcome(
+    learnerId: string,
+    sessionId: string,
+    wordId: string,
+    committedAt: string,
+    transition: { kind: 'introduction' | 'learning'; beforeStatus: string; afterStatus: string } = {
+      kind: 'introduction', beforeStatus: 'unstudied', afterStatus: 'learning',
+    },
+  ): void {
+    insertLexicalWord(wordId);
+    getDb().prepare(`
+      INSERT INTO learner_session_word_outcomes (
+        learner_id, session_id, word_id, kind, before_status, after_status, word_json, committed_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(
+      learnerId,
+      sessionId,
+      wordId,
+      transition.kind,
+      transition.beforeStatus,
+      transition.afterStatus,
+      JSON.stringify({ id: wordId, hanzi: wordId, traditional: null, pinyin: 'ma', meaning: 'test' }),
+      committedAt,
+    );
   }
 
   function insertPriorityOverlay(wordId: string, priorityTier: number, bumpCount: number): void {

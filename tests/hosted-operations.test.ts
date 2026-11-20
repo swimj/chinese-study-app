@@ -5,7 +5,7 @@ import path from 'node:path';
 import { after, before, describe, test } from 'node:test';
 import { pathToFileURL } from 'node:url';
 import { parseHostedBackupStatus } from '../server/hosted-backup-status.ts';
-import { isPureCueSessionReviewItem } from '../src/domain/study-actions.ts';
+import { getDb } from '../server/db/connection.ts';
 
 type DbModule = typeof import('../server/db.ts');
 
@@ -185,7 +185,22 @@ describe('hosted operational controls', { concurrency: false }, () => {
     dbModule.runWithLearnerId('learner-review-test', () => {
       const word = dbModule.getWords().find((candidate) => candidate.id === action.wordId);
       assert.equal(word?.status, 'review');
-      assert.deepEqual(dbModule.getWordSkillStates().filter((state) => state.wordId === action.wordId), [
+      const skillStates = (getDb().prepare(`
+        SELECT word_id, skill_id, enabled, interval_hours, last_studied_at, next_due_at, ease_factor
+        FROM word_skill_state WHERE word_id = ? ORDER BY skill_id
+      `).all(action.wordId) as Array<{
+        word_id: string; skill_id: string; enabled: number; interval_hours: number;
+        last_studied_at: string; next_due_at: string | null; ease_factor: number;
+      }>).map((row) => ({
+        wordId: row.word_id,
+        skillId: row.skill_id,
+        enabled: row.enabled === 1,
+        intervalHours: row.interval_hours,
+        lastStudiedAt: row.last_studied_at,
+        nextDueAt: row.next_due_at,
+        easeFactor: row.ease_factor,
+      }));
+      assert.deepEqual(skillStates, [
         {
           wordId: action.wordId,
           skillId: 'production',
@@ -205,11 +220,6 @@ describe('hosted operational controls', { concurrency: false }, () => {
           easeFactor: 2.5,
         },
       ]);
-      const session = dbModule.getSessionPayload('2026-08-31', { random: () => 0 });
-      assert.equal(session.buckets.review.length, 1);
-      const [reviewItem] = session.buckets.review;
-      assert.ok(reviewItem && !isPureCueSessionReviewItem(reviewItem));
-      assert.equal(reviewItem.actionKind, 'production');
     });
     assert.throws(() => dbModule.provisionHostedBetaReviewTest({
       learnerId: 'learner-review-test',

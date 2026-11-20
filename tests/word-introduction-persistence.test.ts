@@ -73,27 +73,23 @@ after(() => {
 test('requires context, pins lexical forms, and publishes canonical immutable content and package', () => {
   assert.throws(() => db.getWordIntroductionLibrary('word-1'), /Learner context is required/);
   assert.equal(db.runWithLearnerId('learner-a', () => db.getWordIntroductionLibrary('missing')), null);
-  assert.deepEqual(db.runWithLearnerId('learner-a', () => db.getIntroductionLexicalWord('word-1')),
+  assert.deepEqual(db.getSharedIntroductionLexicalWord('word-1'),
     { wordId: 'word-1', hanzi: '你好', traditional: null, pinyin: 'nǐ hǎo', meanings: ['hello'] });
-  assert.throws(() => db.runWithLearnerId('learner-a', () => db.saveWordContentDocument({
+  const now = new Date().toISOString();
+  const future = new Date(Date.now() + 300_000).toISOString();
+  assert.equal(db.claimSharedWordIntroductionStage('word-1', 'bootstrap', 'bootstrap-1', now, future), 'claimed');
+  assert.throws(() => db.finishSharedWordIntroductionBootstrap('word-1', 'bootstrap-1', {
     ...content, word: { ...content.word, pinyin: 'wrong' },
-  }, 'fake-model')), /lexical source/);
-  const savedContent = db.runWithLearnerId('learner-a', () => db.saveWordContentDocument(content, 'fake-model'));
-  const savedTeaching = db.runWithLearnerId('learner-a', () => db.saveWordTeachingPackage(teaching, 'fake-model'));
+  }, 'fake-model'), /lexical source/);
+  const savedContent = db.finishSharedWordIntroductionBootstrap('word-1', 'bootstrap-1', content, 'fake-model');
+  assert.equal(db.claimSharedWordIntroductionStage('word-1', 'teaching', 'teaching-1', now, future), 'claimed');
+  const savedTeaching = db.finishSharedWordIntroductionTeaching('word-1', 'teaching-1', teaching, 'fake-model');
   assert.deepEqual(savedContent.content, content);
   assert.deepEqual(savedTeaching.teaching, teaching);
   assert.deepEqual(db.runWithLearnerId('learner-b', () => db.getWordIntroductionLibrary('word-1'))?.packages,
     [savedTeaching]);
   assert.equal(db.runWithLearnerId('learner-b', () => db.getWordIntroductionLibrary('word-1'))?.selectedPackageId,
     teaching.id);
-  assert.equal(db.runWithLearnerId('learner-a', () => db.saveWordContentDocument(content, 'fake-model')).createdAt,
-    savedContent.createdAt);
-  assert.throws(() => db.runWithLearnerId('learner-a', () => db.saveWordContentDocument({
-    ...content, examples: [{ ...content.examples[0], translation: 'Hi!' }],
-  }, 'fake-model')), /different payload/);
-  assert.throws(() => db.runWithLearnerId('learner-a', () => db.saveWordTeachingPackage({
-    ...teaching, beats: [{ id: 'beat-1', parts: [{ kind: 'text', text: 'Changed' }] }],
-  }, 'fake-model')), /different payload/);
   assert.throws(() => sqlite.exec("UPDATE word_content_documents SET model = 'changed'"), /immutable/);
   assert.throws(() => sqlite.exec('DELETE FROM word_teaching_packages'), /cannot be deleted/);
   assert.equal((sqlite.prepare(`SELECT publication_status AS status FROM shared_content_publications
@@ -124,9 +120,7 @@ test('private open and completion markers are idempotent and never alter study s
 });
 
 test('withdrawal of source content hides package even from a completed learner', () => {
-  const publication = db.getSharedContentPublicationForContent('word_content', content.id);
-  assert.ok(publication);
-  db.quarantineSharedContentPublication({ publicationId: publication.publicationId, operatorId: 'operator-a', reason: 'incorrect' });
+  quarantinePublication('word_content', content.id);
   const library = db.runWithLearnerId('learner-a', () => db.getWordIntroductionLibrary('word-1'));
   assert.deepEqual(library?.contents, []);
   assert.deepEqual(library?.packages, []);
@@ -149,25 +143,24 @@ test('per-word stage lease prevents duplicate generation and recovers an expired
   const call = <T>(fn: () => T): T => db.runWithLearnerId('learner-a', fn);
   const now = new Date().toISOString();
   const future = new Date(Date.now() + 300_000).toISOString();
-  assert.equal(call(() => db.claimWordIntroductionStage('word-2', 'bootstrap', 'worker-a', now, future)), 'claimed');
-  assert.equal(db.runWithLearnerId('learner-b', () => (
-    db.claimWordIntroductionStage('word-2', 'bootstrap', 'worker-b', now, future))), 'busy');
-  call(() => db.releaseWordIntroductionStage('word-2', 'worker-b'));
+  assert.equal(db.claimSharedWordIntroductionStage('word-2', 'bootstrap', 'worker-a', now, future), 'claimed');
+  assert.equal(db.claimSharedWordIntroductionStage('word-2', 'bootstrap', 'worker-b', now, future), 'busy');
+  db.releaseSharedWordIntroductionStage('word-2', 'worker-b');
   assert.equal(call(() => db.getWordIntroductionPreparation('word-2'))?.activeStage, 'bootstrap');
-  call(() => db.releaseWordIntroductionStage('word-2', 'worker-a'));
-  assert.equal(call(() => db.claimWordIntroductionStage('word-2', 'bootstrap', 'old-worker',
-    '2026-01-01T00:00:00.000Z', '2026-01-01T00:01:00.000Z')), 'claimed');
-  assert.equal(call(() => db.claimWordIntroductionStage('word-2', 'bootstrap', 'worker-new', now, future)), 'claimed');
-  assert.throws(() => call(() => db.finishWordIntroductionBootstrap('word-2', 'old-worker', content2, 'fake')),
+  db.releaseSharedWordIntroductionStage('word-2', 'worker-a');
+  assert.equal(db.claimSharedWordIntroductionStage('word-2', 'bootstrap', 'old-worker',
+    '2026-01-01T00:00:00.000Z', '2026-01-01T00:01:00.000Z'), 'claimed');
+  assert.equal(db.claimSharedWordIntroductionStage('word-2', 'bootstrap', 'worker-new', now, future), 'claimed');
+  assert.throws(() => db.finishSharedWordIntroductionBootstrap('word-2', 'old-worker', content2, 'fake'),
     /lease is not active/);
-  call(() => db.finishWordIntroductionBootstrap('word-2', 'worker-new', content2, 'fake'));
-  assert.equal(call(() => db.claimWordIntroductionStage('word-2', 'bootstrap', 'worker-c', now, future)), 'ready');
+  db.finishSharedWordIntroductionBootstrap('word-2', 'worker-new', content2, 'fake');
+  assert.equal(db.claimSharedWordIntroductionStage('word-2', 'bootstrap', 'worker-c', now, future), 'ready');
   assert.equal(call(() => db.getWordIntroductionPreparation('word-2'))?.contentId, 'content-2');
-  assert.equal(call(() => db.claimWordIntroductionStage('word-2', 'teaching', 'teacher-a', now, future)), 'claimed');
-  assert.throws(() => call(() => db.finishWordIntroductionTeaching('word-2', 'teacher-a',
-    { ...teaching2, wordContentId: 'content-1' }, 'fake')), /prepared word content/);
-  call(() => db.finishWordIntroductionTeaching('word-2', 'teacher-a', teaching2, 'fake'));
-  assert.equal(call(() => db.claimWordIntroductionStage('word-2', 'teaching', 'teacher-b', now, future)), 'ready');
+  assert.equal(db.claimSharedWordIntroductionStage('word-2', 'teaching', 'teacher-a', now, future), 'claimed');
+  assert.throws(() => db.finishSharedWordIntroductionTeaching('word-2', 'teacher-a',
+    { ...teaching2, wordContentId: 'content-1' }, 'fake'), /prepared word content/);
+  db.finishSharedWordIntroductionTeaching('word-2', 'teacher-a', teaching2, 'fake');
+  assert.equal(db.claimSharedWordIntroductionStage('word-2', 'teaching', 'teacher-b', now, future), 'ready');
   assert.equal(call(() => db.getWordIntroductionPreparation('word-2'))?.packageId, 'package-2');
   assert.equal((sqlite.prepare(`SELECT COUNT(*) AS count FROM word_teaching_packages WHERE word_id = 'word-2'`)
     .get() as { count: number }).count, 1);
@@ -180,15 +173,9 @@ test('a withdrawn learner pin does not silently switch to another eligible packa
       contract: { kind: 'target_rehearsal', wordId: 'word-2' },
       acceptedAnswers: [{ wordId: 'word-2', hanzi: '你好', traditional: null }] }],
   };
-  db.runWithLearnerId('learner-a', () => {
-    db.saveWordTeachingPackage(alternative, 'fake');
-    db.pinWordTeachingPackage('word-2', 'package-2');
-  });
-  const old = db.getSharedContentPublicationForContent('teaching_package', 'package-2');
-  assert.ok(old);
-  db.quarantineSharedContentPublication({
-    publicationId: old.publicationId, operatorId: 'operator-a', reason: 'incorrect',
-  });
+  insertPublishedPackage(alternative, 'word-2', new Date().toISOString());
+  db.runWithLearnerId('learner-a', () => db.pinWordTeachingPackage('word-2', 'package-2'));
+  quarantinePublication('teaching_package', 'package-2');
   const pinned = db.runWithLearnerId('learner-a', () => db.getWordIntroductionLibrary('word-2'));
   assert.deepEqual(pinned?.packages.map((item) => item.teaching.id), ['package-3']);
   assert.equal(pinned?.selectedPackageId, null);
@@ -207,17 +194,18 @@ test('library orders documents and packages by creation time then id, independen
   `).run(wordId, new Date().toISOString());
   const call = <T>(fn: () => T) => db.runWithLearnerId('learner-a', fn);
   assert.deepEqual(call(() => db.getWordIntroductionLibrary(wordId))?.contents, []);
-  const save = (suffix: string) => call(() => {
+  const save = (suffix: string) => {
     const document = { ...content, id: `ordering-content-${suffix}`, word: { ...content.word, wordId } };
-    db.saveWordContentDocument(document, 'fixture');
-    db.saveWordTeachingPackage({
+    const createdAt = new Date().toISOString();
+    insertPublishedContent(document, createdAt);
+    insertPublishedPackage({
       ...teaching, id: `ordering-package-${suffix}`, wordContentId: document.id,
       rehearsals: [{ ...teaching.rehearsals[0],
         contract: { kind: 'target_rehearsal', wordId },
         acceptedAnswers: [{ wordId, hanzi: '你好', traditional: null }],
       }],
-    }, 'fixture');
-  });
+    }, wordId, createdAt);
+  };
   save('z-old');
   call(() => db.pinWordTeachingPackage(wordId, 'ordering-package-z-old'));
   t.mock.timers.setTime(new Date('2026-01-02T00:00:00.000Z').getTime());
@@ -329,3 +317,48 @@ test('component migration preserves previous-version rows and matches fresh sche
     fs.rmSync(previousDir, { recursive: true, force: true });
   }
 });
+
+// Rows match what the retired learner-scoped save path published: shared-trial publications
+// with an attributable creation event, and immutable content or package rows.
+function insertPublication(kind: 'word_content' | 'teaching_package', contentId: string, wordId: string, now: string): string {
+  const publicationId = `publication:${kind}:${contentId}`;
+  sqlite.prepare(`INSERT INTO shared_content_publications (
+      publication_id, content_kind, content_id, learning_purpose_key,
+      publication_status, published_at, status_updated_at
+    ) VALUES (?, ?, ?, ?, 'shared_trial', ?, ?)`).run(publicationId, kind, contentId, wordId, now, now);
+  sqlite.prepare(`INSERT INTO shared_content_publication_events (
+      event_id, publication_id, from_status, to_status, actor_kind, actor_id, reason, occurred_at
+    ) VALUES (?, ?, NULL, 'shared_trial', 'source_authorization', NULL, 'fixture word introduction publication', ?)`)
+    .run(`event:${publicationId}`, publicationId, now);
+  return publicationId;
+}
+
+function insertPublishedContent(document: WordContentDocument, createdAt: string): void {
+  const publicationId = insertPublication('word_content', document.id, document.word.wordId, createdAt);
+  sqlite.prepare(`INSERT INTO word_content_documents (
+      content_id, word_id, content_json, model, created_at, publication_id
+    ) VALUES (?, ?, ?, 'fixture', ?, ?)`)
+    .run(document.id, document.word.wordId, JSON.stringify(document), createdAt, publicationId);
+}
+
+function insertPublishedPackage(teachingPackage: TeachingPackage, wordId: string, createdAt: string): void {
+  const publicationId = insertPublication('teaching_package', teachingPackage.id, wordId, createdAt);
+  sqlite.prepare(`INSERT INTO word_teaching_packages (
+      package_id, word_id, content_id, package_json, model, created_at, publication_id
+    ) VALUES (?, ?, ?, ?, 'fixture', ?, ?)`)
+    .run(teachingPackage.id, wordId, teachingPackage.wordContentId, JSON.stringify(teachingPackage), createdAt, publicationId);
+}
+
+function quarantinePublication(kind: 'word_content' | 'teaching_package', contentId: string): void {
+  const publication = sqlite.prepare(`SELECT publication_id, publication_status FROM shared_content_publications
+    WHERE content_kind = ? AND content_id = ?`).get(kind, contentId) as
+    { publication_id: string; publication_status: string } | undefined;
+  assert.ok(publication);
+  const occurredAt = new Date().toISOString();
+  sqlite.prepare(`INSERT INTO shared_content_publication_events (
+      event_id, publication_id, from_status, to_status, actor_kind, actor_id, reason, occurred_at
+    ) VALUES (?, ?, ?, 'quarantined', 'operator', 'operator-a', 'incorrect', ?)`)
+    .run(`quarantine:${publication.publication_id}`, publication.publication_id, publication.publication_status, occurredAt);
+  sqlite.prepare(`UPDATE shared_content_publications SET publication_status = 'quarantined', status_updated_at = ?
+    WHERE publication_id = ?`).run(occurredAt, publication.publication_id);
+}
