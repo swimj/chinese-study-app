@@ -1,4 +1,3 @@
-
 import { getSessionWordReport } from './session-word-outcomes.ts';
 import { DEFAULT_INTRODUCTION_SPACING, isStudyIntroductionOrder, isStudyIntroductionSpacing, type StudyIntroductionOrder } from '../../src/domain/introduction-order.ts';
 import { enqueueSessionDebrief } from './session-debrief.ts';
@@ -14,7 +13,12 @@ import {
   type MyWordsStatus,
   type MyWordsView,
 } from '../../src/domain/my-words.ts';
-import type { ContrastCluster, ContrastClusterMember, ContrastPrompt, WordSkillRelevanceState } from '../../src/domain/study-actions.ts';
+import type {
+  ContrastCluster,
+  ContrastClusterMember,
+  ContrastPrompt,
+  WordSkillRelevanceState,
+} from '../../src/domain/study-actions.ts';
 import { config, getDb, dbPath, seedDataPath, dbExistedOnStartup } from './connection.ts';
 import { seedWordIntroductionFixtures } from '../seeds/word-introductions.ts';
 import { fillMissingNormalizedHanzi, normalizeMandarinHanziLookup } from './hanzi-lookup.ts';
@@ -31,11 +35,43 @@ import {
   validateIntakeTriageSchema,
 } from './intake-triage.ts';
 import { enableContextualSelectionWithoutTransaction } from './domain-commands.ts';
-import { createProductionCueIndexes, createProductionCueSchema, validateProductionCueSchema } from './production-cues.ts';
-import { DEFAULT_DAILY_NEW_WORD_LIMIT, INITIAL_REVIEW_EASE_FACTOR, INITIAL_CONTEXTUAL_SELECTION_INTERVAL_HOURS, PRIORITY_TIER_TOP, PRIORITY_TIER_REGULAR } from './types.ts';
-import type { PriorityWord, PriorityWordRow, PriorityWordsPayload, ReviewFailureRateDay, ReviewSessionResultRow, SeedData, StudySkillId, UserWordPriorityPatch, UserWordPriorityRow, Word, WordMeaning, WordMeaningRow, WordRow, WordSkillRelevance, WordSkillState, WordStatus, WordStudyAdmissionState } from './types.ts';
+import {
+  createProductionCueIndexes,
+  createProductionCueSchema,
+  validateProductionCueSchema,
+} from './production-cues.ts';
+import {
+  DEFAULT_DAILY_NEW_WORD_LIMIT,
+  INITIAL_REVIEW_EASE_FACTOR,
+  INITIAL_CONTEXTUAL_SELECTION_INTERVAL_HOURS,
+  PRIORITY_TIER_TOP,
+  PRIORITY_TIER_REGULAR,
+} from './types.ts';
+import type {
+  PriorityWord,
+  PriorityWordRow,
+  PriorityWordsPayload,
+  ReviewFailureRateDay,
+  ReviewSessionResultRow,
+  SeedData,
+  StudySkillId,
+  UserWordPriorityPatch,
+  UserWordPriorityRow,
+  Word,
+  WordMeaning,
+  WordMeaningRow,
+  WordRow,
+  WordSkillRelevance,
+  WordSkillState,
+  WordStatus,
+  WordStudyAdmissionState,
+} from './types.ts';
 import { queryManifestDeckWords, invalidateDeckWordIds, queryDeckWordStudyDates } from './deck-words.ts';
-import { DEFAULT_UNSTUDIED_ADMISSION_SOURCE, type UnstudiedAdmissionSource, assertUnstudiedAdmissionSource } from './unstudied-admission.ts';
+import {
+  DEFAULT_UNSTUDIED_ADMISSION_SOURCE,
+  type UnstudiedAdmissionSource,
+  assertUnstudiedAdmissionSource,
+} from './unstudied-admission.ts';
 import {
   assertCharacterPresentation,
   assertSentenceCharacterPresentation,

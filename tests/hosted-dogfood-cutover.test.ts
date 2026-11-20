@@ -35,7 +35,7 @@ describe('hosted dogfood cutover', { concurrency: false }, () => {
       process.env.APP_AUTH_MODE = 'trusted_local';
       process.env.APP_DATA_DIR = sourceDataDir;
       process.env.APP_LEARNER_ID = learnerId;
-      const db = await import(
+      const db: typeof import('../server/db.ts') = await import(
         `${pathToFileURL(path.resolve('server/db.ts')).href}?hosted-dogfood-cutover-source=${Date.now()}`
       );
       getDb().prepare(`
@@ -66,13 +66,12 @@ describe('hosted dogfood cutover', { concurrency: false }, () => {
         updatedAt: '2026-09-01T07:01:00.000Z',
         sourceEventId: null,
       }));
-      db.upsertStudySessionRecord({
-        id: 'dogfood-session',
-        startedAt: '2026-08-31T08:00:00.000Z',
-        endedAt: '2026-08-31T08:05:00.000Z',
-        processingState: 'processed',
-        processedAt: '2026-08-31T08:05:00.000Z',
-      });
+      getDb().prepare(`
+        INSERT INTO learner_owned_study_sessions (
+          learner_id, id, started_at, ended_at, processing_state, processed_at
+        ) VALUES (?, 'dogfood-session', '2026-08-31T08:00:00.000Z',
+          '2026-08-31T08:05:00.000Z', 'processed', '2026-08-31T08:05:00.000Z')
+      `).run(learnerId);
     } finally {
       closeDbConnection();
       restoreEnv('APP_MODE', previousMode);
@@ -165,6 +164,13 @@ describe('hosted dogfood cutover', { concurrency: false }, () => {
       assert.equal(readCount(source, 'learner_auth_mappings'), 1);
       assert.equal(readCount(prepared, 'shared_content_publications'), 1);
       assert.equal(readCount(prepared, 'learner_auth_mappings'), 2);
+      assert.equal(
+        prepared.prepare(`
+          SELECT processed_at FROM learner_owned_study_sessions
+          WHERE learner_id = ? AND id = 'dogfood-session' AND processing_state = 'processed'
+        `).get(learnerId)?.processed_at,
+        '2026-08-31T08:05:00.000Z',
+      );
       assert.equal(
         (prepared.prepare(`
           SELECT learner_id FROM learner_auth_mappings

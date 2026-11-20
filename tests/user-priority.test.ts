@@ -276,5 +276,5 @@ function insertWord(id: string, priority: number, status: WordStatus, createdAt:
     SET normalized_hanzi = ?
     WHERE id = ?
   `).run(normalizeMandarinHanziLookup(hanzi), id);
-  if (status === 'unstudied') prepareWordFixture(sqlite, dbModule, id);
+  if (status === 'unstudied') prepareWordFixture(sqlite, id);
 }

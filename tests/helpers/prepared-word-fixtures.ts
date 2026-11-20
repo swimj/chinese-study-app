@@ -1,38 +1,31 @@
 import type { DatabaseSync } from 'node:sqlite';
+import type { TeachingPackage, WordContentDocument } from '../../src/domain/word-content/types.ts';
 
-/**
- * Admission-policy fixtures explicitly have teaching ready; readiness itself is tested separately.
- * Rows match what the retired save path published: a shared-trial word content document and a
- * teaching package pinned to it. The second argument is retained for existing callers and unused.
- */
-export function prepareWordFixture(sqlite: DatabaseSync, _store: unknown, wordId: string): void {
+/** Seed ready teaching material for admission-policy tests. */
+export function prepareWordFixture(sqlite: DatabaseSync, wordId: string): void {
   const word = sqlite.prepare('SELECT hanzi, traditional, pinyin, meaning FROM lexical_words WHERE id = ?')
     .get(wordId) as { hanzi: string; traditional: string | null; pinyin: string; meaning: string } | undefined;
   if (!word) throw new Error(`Missing fixture word ${wordId}`);
-  const now = new Date().toISOString();
   const contentId = `fixture-content:${wordId}`;
   const packageId = `fixture-package:${wordId}`;
-  const content = { schemaVersion: 1, id: contentId,
+  const content: WordContentDocument = { schemaVersion: 1, id: contentId,
     word: { wordId, hanzi: word.hanzi, traditional: word.traditional, pinyin: word.pinyin },
     uses: [{ id: 'use', label: 'Fixture use', notes: ['A prepared admission fixture.'], exampleIds: ['example'] }],
     examples: [{ id: 'example', text: `${word.hanzi}。`, translation: word.meaning || 'Fixture example.', pronunciation: word.pinyin }],
   };
-  const teaching = { schemaVersion: 1, id: packageId, wordContentId: contentId,
+  const teaching: TeachingPackage = { schemaVersion: 1, id: packageId, wordContentId: contentId,
     beats: [{ id: 'beat', parts: [{ kind: 'example', exampleId: 'example', field: 'sentence' }] }],
     rehearsals: [{ id: 'rehearsal', responseMode: 'hanzi_entry', contract: { kind: 'target_rehearsal', wordId },
       instruction: 'Recall the expression.', stimulus: { kind: 'direct_text', text: word.meaning || 'Recall the expression.' },
       acceptedAnswers: [{ wordId, hanzi: word.hanzi, traditional: word.traditional }] }],
   };
-  insertPublishedWordContent(sqlite, { content, teaching, model: 'fixture', createdAt: now });
+  insertPublishedWordContent(sqlite, { content, teaching, model: 'fixture' });
 }
 
-/**
- * Inserts the rows the retired word-introduction save path published: a shared-trial word content
- * document and, optionally, a shared-trial teaching package pinned to it. Payloads are stored as given.
- */
+/** Publish a shared-trial bootstrap document and its optional teaching package in a fixture database. */
 export function insertPublishedWordContent(sqlite: DatabaseSync, input: {
-  content: { id: string; word: { wordId: string } };
-  teaching?: { id: string };
+  content: WordContentDocument;
+  teaching?: TeachingPackage;
   model: string;
   createdAt?: string;
 }): void {

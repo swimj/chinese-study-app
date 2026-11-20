@@ -18,7 +18,7 @@ before(async()=>{
   db.bootstrapLearner({learnerId:'pinned'});db.bootstrapLearner({learnerId:'fresh'});
   sql.prepare(`INSERT INTO lexical_words (id,hanzi,pinyin,meaning,meanings_json,examples_json,priority,created_at)
     VALUES ('word','你好','nǐ hǎo','hello','[]','[]',10,'now')`).run();
-  prepareWordFixture(sql,db,'word');
+  prepareWordFixture(sql, 'word');
 });
 after(()=>{for(const k of keys){if(previous[k]===undefined)delete process.env[k];else process.env[k]=previous[k];}fs.rmSync(dir,{recursive:true,force:true});});
 

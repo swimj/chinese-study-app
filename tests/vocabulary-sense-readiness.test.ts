@@ -6,6 +6,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { after,afterEach,before,beforeEach,test } from 'node:test';
+import { insertPublishedWordContent } from './helpers/prepared-word-fixtures.ts';
 import { createBaselineFixture } from './helpers/baseline-database.ts';
 import { migrateDatabase } from '../server/db/migrations.ts';
 import { setDb } from '../server/db/connection.ts';
@@ -42,14 +43,7 @@ beforeEach(() => {
 });
 afterEach(() => db.close());
 function bootstrap(): void {
-  // Rows match what the retired legacy save path published: a shared-trial word content document.
-  const now = new Date().toISOString();
-  db.prepare(`INSERT INTO shared_content_publications(publication_id,content_kind,content_id,learning_purpose_key,publication_status,published_at,status_updated_at)
-    VALUES ('bootstrap-publication','word_content',?,?,'shared_trial',?,?)`).run(fixture.id,fixture.word.wordId,now,now);
-  db.prepare(`INSERT INTO shared_content_publication_events(event_id,publication_id,from_status,to_status,actor_kind,actor_id,reason,occurred_at)
-    VALUES ('bootstrap-publication-event','bootstrap-publication',NULL,'shared_trial','source_authorization',NULL,'fixture word introduction publication',?)`).run(now);
-  db.prepare(`INSERT INTO word_content_documents(content_id,word_id,content_json,model,created_at,publication_id)
-    VALUES (?,?,?,'legacy-model',?,'bootstrap-publication')`).run(fixture.id,fixture.word.wordId,JSON.stringify(fixture),now);
+  insertPublishedWordContent(db, { content: fixture, model: 'legacy-model' });
   db.prepare("INSERT INTO word_introduction_preparation(word_id,content_id) VALUES ('w1','bootstrap')").run();
 }
 

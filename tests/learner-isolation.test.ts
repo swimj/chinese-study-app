@@ -32,7 +32,6 @@ describe('learner isolation', { concurrency: false }, () => {
     dbModule.bootstrapLearner({ learnerId: 'learner-a', displayName: 'Learner A' });
     dbModule.bootstrapLearner({ learnerId: 'learner-b', displayName: 'Learner B' });
 
-
     sqlite = new DatabaseSync(path.join(dataDir, 'app.db'));
     sqlite.function('current_learner_id', () => rawLearnerId);
     sqlite.exec('PRAGMA foreign_keys = ON;');
@@ -182,18 +181,22 @@ describe('learner isolation', { concurrency: false }, () => {
       VALUES (?, 'learner-a-private-source', 'learner-a-cue-replace', ?)
     `).run(publicationId, at);
 
+    const cueProvenance = sqlite.prepare('SELECT source_invocation_id FROM shared_content_publication_provenance WHERE publication_id = ?');
+    assert.equal(cueProvenance.get(publicationId)?.source_invocation_id, 'learner-a-cue-replace');
+
     // Learner B reports the shared cue; the report stays private to B.
     rawLearnerId = 'learner-b';
-    assert.equal(
-      sqlite.prepare('SELECT 1 FROM shared_content_publication_provenance WHERE publication_id = ?').get(publicationId),
-      undefined,
-    );
+    assert.equal(sqlite.prepare('SELECT cue_text FROM production_cues WHERE cue_id = ?').get(cueId)?.cue_text,
+      'something owned or used by more than one person');
+    assert.equal(cueProvenance.get(publicationId), undefined);
     sqlite.prepare(`
       INSERT INTO shared_content_reports (report_id, publication_id, category, note, created_at)
       VALUES ('learner-b-report', ?, 'misleading', 'This cue needs operator review.', '2026-08-21T04:03:00.000Z')
     `).run(publicationId);
+    const ownReport = sqlite.prepare("SELECT note FROM shared_content_reports WHERE report_id = 'learner-b-report'");
+    assert.equal(ownReport.get()?.note, 'This cue needs operator review.');
     rawLearnerId = 'learner-a';
-    assert.equal(sqlite.prepare(`SELECT 1 FROM shared_content_reports WHERE report_id = 'learner-b-report'`).get(), undefined);
+    assert.equal(ownReport.get(), undefined);
 
     rawLearnerId = 'learner-b';
     assert.throws(

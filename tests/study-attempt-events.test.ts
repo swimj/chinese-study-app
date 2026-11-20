@@ -6,12 +6,9 @@ import { DatabaseSync } from 'node:sqlite';
 import { after, before, describe, test } from 'node:test';
 import { pathToFileURL } from 'node:url';
 
-type DbModule = typeof import('../server/db.ts');
-
 let dataDir = '';
 let dbPath = '';
 let sqlite: DatabaseSync;
-let dbModule: DbModule;
 
 describe('study attempt event storage', { concurrency: false }, () => {
   before(async () => {
@@ -25,7 +22,7 @@ describe('study attempt event storage', { concurrency: false }, () => {
     process.env.APP_DATA_DIR = dataDir;
 
     const moduleUrl = `${pathToFileURL(path.resolve('server/db.ts')).href}?test=${Date.now()}`;
-    dbModule = await import(moduleUrl);
+    await import(moduleUrl);
 
     if (previousMode === undefined) {
       delete process.env.APP_MODE;

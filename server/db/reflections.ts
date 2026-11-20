@@ -1,4 +1,3 @@
-
 import { dbPath, getDb } from './connection.ts';
 import { learnerScopedStorageTableName } from './learner-scoped-tables.ts';
 import { createReflectionQualitySchema, validateReflectionQualitySchema } from './reflection-quality.ts';

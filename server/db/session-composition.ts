@@ -8,4 +8,3 @@ export {
 } from './unstudied-admission.ts';
 
 export type { UnstudiedAdmissionSource } from './unstudied-admission.ts';
-

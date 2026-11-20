@@ -1,4 +1,3 @@
-
 import { getDb } from './connection.ts';
 import { physicalLearnerTableName } from './learner-scoped-tables.ts';
 
@@ -241,6 +240,7 @@ export function createProductionCueSchema(): void {
     BEGIN
       SELECT RAISE(ABORT, 'production cue evidence is append-only');
     END;
+
 
     CREATE TRIGGER production_cue_evidence_records_no_delete
     BEFORE DELETE ON ${scopedStorageTable('production_cue_evidence_records')}

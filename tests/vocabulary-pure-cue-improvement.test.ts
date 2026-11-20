@@ -187,9 +187,12 @@ test('fence rejects changes to the cue, accepted member identities and submitted
   assert.throws(prepared.fence, /source changed/);
 });
 
-test('repair preserves banked no-op and surrounding-whitespace rejection cases', () => {
+test('repair rejects empty, unchanged and untrimmed stimuli', () => {
   const normalize = (prompt: string) => prepareVocabularyPureCueImprovement(job(), original).normalize(
     decision({ decision: 'repair', addedWordIds: [], prompt, teachingNote: null }));
+  for (const prompt of ['', '   ']) {
+    assert.throws(() => normalize(prompt), /Pure-cue stimulus repair/);
+  }
   assert.throws(() => normalize('Increase the size or extent.'), /stimulus must change/);
   for (const prompt of [' Make it larger.', 'Make it larger. ', '\nMake it larger.']) {
     assert.throws(() => normalize(prompt), /trim surrounding whitespace/);

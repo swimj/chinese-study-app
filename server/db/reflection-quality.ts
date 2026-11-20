@@ -1,4 +1,3 @@
-
 import { getDb } from './connection.ts';
 import { learnerScopedStorageTableName } from './learner-scoped-tables.ts';
 

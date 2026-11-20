@@ -1,4 +1,9 @@
-import type { ContrastCluster, ContrastClusterMember, ContrastPrompt, WordSkillRelevanceState } from '../../src/domain/study-actions.ts';
+import type {
+  ContrastCluster,
+  ContrastClusterMember,
+  ContrastPrompt,
+  WordSkillRelevanceState,
+} from '../../src/domain/study-actions.ts';
 
 export type WordStatus = 'unstudied' | 'learning' | 'review';
 

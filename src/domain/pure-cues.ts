@@ -1,4 +1,3 @@
-
 import { type AcceptedCueAnswer, type PureCueContent } from './cues';
 
 export type { PureCueContent } from './cues';

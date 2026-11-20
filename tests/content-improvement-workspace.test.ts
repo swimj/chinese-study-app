@@ -10,13 +10,12 @@ import type { ImprovementCase, ImprovementCheck } from '../src/domain/content-im
 let dir: string, server: http.Server, base: string;
 let db: ReturnType<typeof import('../server/db/connection.ts')['getDb']>;
 let api: typeof import('../server/db/content-improvements.ts');
-let appDb: typeof import('../server/db.ts');
 const keys = ['APP_MODE','APP_DATA_DIR','APP_LEARNER_ID','APP_AUTH_MODE','APP_OPERATOR_CLERK_USER_IDS'] as const;
 const previous = Object.fromEntries(keys.map(key => [key,process.env[key]]));
 before(async () => {
   dir = fs.mkdtempSync(path.join(os.tmpdir(),'content-improvement-'));
   Object.assign(process.env,{APP_MODE:'study',APP_DATA_DIR:dir,APP_LEARNER_ID:'editor',APP_AUTH_MODE:'trusted_local',APP_OPERATOR_CLERK_USER_IDS:'editor'});
-  appDb = await import('../server/db.ts');
+  await import('../server/db.ts');
   const {registerContentImprovementRoutes} = await import('../server/content-improvement-routes.ts');
   const {runWithLearnerId} = await import('../server/db/learner-context.ts');
   db = (await import('../server/db/connection.ts')).getDb();

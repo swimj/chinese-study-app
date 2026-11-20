@@ -12,9 +12,8 @@ lives under [`server/db/`](../server/db/); callers and tests use the stable
 [`server/db.ts`](../server/db.ts) barrel.
 
 Migration `0027_correct_cue_repair_recovery` adds the immutable operator-only
-`operator_reflection_cue_recoveries` audit. Selection and atomic recovery remain
-in the reflection application adapter in `reflections.ts`; the operator command
-and runbook for it were retired with the legacy reflection runtime.
+`operator_reflection_cue_recoveries` audit. Its rows preserve the outcome of repairs applied before the
+legacy reflection runtime was retired.
 
 Migration `0035_definition_fallback_quality` extends the content quality kind
 constraint for exact definition fallback snapshots. It preserves existing
@@ -39,16 +38,16 @@ encounters and ratings and requires the offline schema-upgrade procedure.
 | [`whats-new-attention.ts`](../server/db/whats-new-attention.ts) | Learner-private per-post first badge exposure and read timestamps, twelve-hour expiry, and legacy cursor compatibility |
 | [`attention.ts`](../server/db/attention.ts) | Help `inbox_seen_at` stamps, unseen Help-queue count, durable queued/running reflection dispatch state, unseen failed generation-run ids, failed-run seen-through cursor, and the What’s New seen-through cursor |
 | [`intake-triage.ts`](../server/db/intake-triage.ts) | Dormant intake-triage schema creation and validation retained for database compatibility |
-| [`domain-commands.ts`](../server/db/domain-commands.ts) | Shared transaction-aware domain commands used by reflection and manual paths; definition-production suppression and contextual-selection eligibility |
-| [`production-cues.ts`](../server/db/production-cues.ts) | Default production tasks, strict target-only word cues, immutable lifecycle/evidence state, one immutable post-reveal supplement per definition cue or fallback, and cue/supplement application adapters |
-| [`pure-cues.ts`](../server/db/pure-cues.ts) | Shared standalone cue content, authorized stimulus revisions and holistic teaching notes, and indexed membership lookup; automatic adoption into private learner schedules; frozen answer/reveal snapshots, independent assessment projection, restore-once pre-lapse scheduler snapshots, and batched derivation of production compensation eligibility deadlines |
+| [`domain-commands.ts`](../server/db/domain-commands.ts) | Contextual-selection eligibility for trusted-local contrast seeding |
+| [`production-cues.ts`](../server/db/production-cues.ts) | Schema creation and validation for legacy production tasks, cues, evidence and supplements, plus stored supplement decoding |
+| [`pure-cues.ts`](../server/db/pure-cues.ts) | Reads frozen served snapshots for content-quality checks |
 | [`schema.ts`](../server/db/schema.ts) | Re-exports `applyProductionContrastExerciseSeed` and `initializeDatabase` for init ordering |
 | [`ownership-manifest.ts`](../server/db/ownership-manifest.ts) | Auditable ownership, enforcement, history, migration, and lifecycle classification for every durable application table |
 | [`identity.ts`](../server/db/identity.ts) | Stable learner records, auth-provider mappings, learner settings, learner params, and explicit Clerk-free bootstrap |
 | [`shared-content-bootstrap.ts`](../server/db/shared-content-bootstrap.ts) | Strict checksummed shared-only hosted Mandarin import and provenance validation |
 | [`hosted-operations.ts`](../server/db/hosted-operations.ts) | Persisted service controls, current service banner, attributable learner disablement, diagnostics, sentinels, and restore validation |
 | [`word-introductions.ts`](../server/db/word-introductions.ts) | Immutable shared bootstrap/teaching, publication leases, explicit shared reads, and private exact-package opening/completion |
-| [`session-word-outcomes.ts`](../server/db/session-word-outcomes.ts) | Immutable session-attributed introduction/Practice outcomes and deterministic distinct new/graduated word reports |
+| [`session-word-outcomes.ts`](../server/db/session-word-outcomes.ts) | Reads historical word outcomes for review summaries |
 | [`session-debrief.ts`](../server/db/session-debrief.ts) | Learner-private exact inventories and interests snapshots, debrief queue/results, attempt cost and latency records, fenced completion and explicit retry |
 | [`content-reactions.ts`](../server/db/content-reactions.ts) | Learner Save / Not for me reactions to connection notes and feedback lessons, append-only reaction history, the Saved collection read and the operator summary |
 | [`preparation-work.ts`](../server/db/preparation-work.ts) | Shared word/stage demand, three-attempt budget, restart recovery, failure diagnostics and audited operator retry; migration 0018 |
@@ -62,7 +61,7 @@ encounters and ratings and requires the offline schema-upgrade procedure.
 | [`learner-ownership-guards.ts`](../server/db/learner-ownership-guards.ts) | Same-owner private references and accessible-cue enforcement beneath HTTP |
 | [`index.ts`](../server/db/index.ts) | Internal re-export barrel |
 
-Domain-oriented re-export shims (navigation only; implementation stays in `persistence.ts`):
+These modules group exports from the underlying implementations.
 
 | Shim | Key exports |
 | --- | --- |
@@ -78,9 +77,10 @@ baseline schema for retained records.
 
 ## Reflection persistence
 
-The legacy reflection, cue-repair, and pure-cue reflection application code has
-been removed. Its tables remain; the descriptions of earlier-runtime behavior
-below explain what retained rows mean, not current write paths.
+The legacy reflection tables preserve evidence, results, learner decisions and
+applied effects. Startup still validates their schema. The attention routes
+read retained Help items and generation runs and maintain learner seen state.
+Current vocabulary feedback and reconciliation have their own storage.
 
 Migration `0069_sense_content_reconciliation` adds operator-owned current resolution
 records and immutable per-version history. A resolution stores the linguistic draft,
@@ -102,39 +102,7 @@ immutable pre-lapse snapshots and judgment-linked compensation receipts. The
 outcome in the feedback judgment transaction. Compensation uses the existing
 schedule JSON for reset gates and requires no schema migration.
 
-In the earlier runtime, pure-cue response reflection used an independent provider call and stored bundle,
-using the same artifacts, run log, authorization, and inbox. Its
-`reconcile_pure_cue_response` adapter can extend the source cue, revise teaching,
-and change only C's word-owned cues. `pure_cue_assessment_scheduler_snapshots`
-stores immutable pre-lapse pure-cue state and its restore-once marker; historical
-assessments are not backfilled. Migration `0014_pure_cue_reflection` adds this
-table and extends teaching-revision authorization.
-
-Staged generation additionally uses `reflection_generation_continuations` for
-immutable diagnosis input, overlap-omission counts, the saved diagnosis result,
-exact promotion input/final evidence checkpoint, and completed artifact link.
-`reflection_generation_continuation_runs` associates each ordinary run-log row
-with its continuation and diagnosis/promotion stage. Promotion retries reuse
-the saved suspected-entanglement handoff and catalog snapshots. Successful stage
-two results, including word-only cleanup and explanation-only outcomes, are materialized only in
-the final artifact; there is no autonomous retry worker.
-
-`pure_cue_teaching_revisions` records immutable, learner-private before/after
-teaching text and its authorizing cleanup invocation. The shared `pure_cues`
-row holds current teaching, while `pure_cue_served_snapshots` freezes the text
-shown for each assessment. Membership/note preconditions reject stale extension
-plans before any writes; teaching, word-cue changes, and compensation commit in
-one transaction.
-
-`repair_pure_cue_stimulus` is a separate, stimulus-only application path. Its
-append-only revision row records the authorizing learner invocation and exact
-before/after wording. Application checks the expected current stimulus, axis,
-membership, and teaching note before updating `pure_cues.stimulus` in the same
-transaction. Served snapshots and attempts stay frozen; an eligible unfair
-source lapse restores its saved learner-private schedule once under the
-existing compensation marker.
-
-Reflection uses six SQLite tables initialized and validated from
+The retained reflection schema includes the following tables, initialized and validated from
 [`reflections.ts`](../server/db/reflections.ts) (quality overlay from
 [`reflection-quality.ts`](../server/db/reflection-quality.ts); Help inbox from
 [`reflection-help-inbox.ts`](../server/db/reflection-help-inbox.ts)):
@@ -145,8 +113,8 @@ Reflection uses six SQLite tables initialized and validated from
 | `reflection_generation_runs` | Append-only provider-attempt log, including the exact validated bundle used for retry, failed/truncated attempts, normalized usage, and a persisted price snapshot |
 | `reflection_proposal_reviews` | One mutable review status for each immutable `(artifact, item, proposal index)` locator; `inbox_seen_at` is Help-pager display, not a disposition |
 | `reflection_operation_invocations` | Immutable authorized operation plus its mutable application status, effects, and non-effect reason |
-| `reflection_quality_annotations` | Optional item tag-set overlay keyed by `(artifact_id, item_id)`; joins to artifact model arm at read time |
-| `reflection_help_inbox` | Open explanation-only Help membership keyed by `(artifact_id, item_id)`; seeded at artifact materialize; Done deletes the row; `inbox_seen_at` records Help-pager display |
+| `reflection_quality_annotations` | Optional item tag-set overlay keyed by `(artifact_id, item_id)` |
+| `reflection_help_inbox` | Open explanation-only Help membership keyed by `(artifact_id, item_id)`; includes the disposition and Help-pager display timestamp |
 
 Artifacts preserve the exact bounded bundle, validated result, generation time,
 provider/model/prompt metadata, and schema versions. Same-owner guards require
@@ -160,55 +128,9 @@ The public SQL names above are current-learner views. Their physical tables use
 the `learner_owned_` prefix and carry required `learner_id`; persistence guards
 reject private references whose parent belongs to another learner.
 
-Generation runs remain separate from artifacts: an artifact still means a
-validated successful result, while the run log records each concluded provider
-attempt. A run stores the eligible/included evidence counts, nullable normalized
-token categories, response/finish metadata when available, and a complete
-versioned pricing basis plus estimate when that provider/model is known. This
-makes a historic displayed estimate stable if later pricing tables change. New
-runs also retain the exact validated evidence bundle used for the provider call;
-failed runs can therefore be retried after the originating session UI closes.
-Legacy rows without a saved bundle remain readable but are not retryable.
-
-Generation runs also have additive nullable columns for the provider client
-request id, bundle/result schema-version provenance, and a versioned
-`reflection_generation_diagnostic.v1` JSON document. The document records the
-failing phase, bounded structured issues, and capped rejected output. In the
-current local dogfood environment the retained output is verbatim by design;
-productization owns future retention and secret-handling policy.
-Migration adds these columns if absent; nulls are the truthful limited-
-diagnostics state for legacy rows. Diagnostics are observability only and never
-materialize reflection artifacts.
-
-Materialization and proposal-row seeding are one transaction. Acceptance
-atomically records exact/revised review disposition, immutable operation
-authorization, and its application state.
-Application is idempotent by invocation id: after application is terminal,
-later calls return its recorded status without duplicating effects.
-
-The supported adapters are:
-
-- definition-production suppression, through
-  `suppressDefinitionProductionWithoutTransaction`, preserving legacy
-  source-event provenance and reporting preexisting suppression as
-  `already_satisfied`;
-- atomic creation of a contrast cluster, members, annotations, and prompts,
-  plus all-member contextual eligibility, with caused-only effect references
-  and deterministic exact content-and-eligibility postcondition detection; and
-- production-cue repair, through
-  `applyProductionCueRepairWithoutTransaction`, with current-state validation
-  of the task, referenced cues, accepted words, and source-attempt judgments;
-  atomic cue creation, replacement, or deactivation; append-only authorized
-  cue-evidence judgments; and exact caused or already-satisfying effect
-  references; and
-- post-reveal definition reinforcement, through
-  `applyProductionCueSupplementWithoutTransaction`, creating one immutable,
-  invocation-attributed English-frame/example/translation supplement for the
-  exact definition cue or fallback without changing grading or scheduling.
-
-`listPendingReflectionInvocationIds()` and `recoverPendingReflectionInvocations()`
-remain in the persistence module for retained records. The legacy proposal-review
-route and the startup recovery hook that called them have been removed.
+Generation runs retain the provider attempt, recorded pricing basis and
+available diagnostics. Historical invocations identify the authorized operation
+and its recorded effects. These rows can be inspected in the database or a backup.
 
 ## Reflection generation modules
 
@@ -314,35 +236,12 @@ Lexical content lives in shared `lexical_words` and
 `words` and `word_meanings` names remain compatibility views so the domain API
 does not need a simultaneous rewrite.
 
-Contrast artifacts and production cues/supplements use physical `scoped_*`
-tables. Normal app writes create `learner` scope owned by the current learner;
-`shared` rows are readable but immutable through learner paths. A validated,
-learner-authorized `repair_production_cue@2` creation is the narrow publication
-seam: the immutable cue and accepted-answer space are promoted to shared scope,
-while the authorizing invocation stays linked through the learner-private
-`shared_content_publication_provenance` table.
-
-`shared_content_publications` gives each immutable shared content item an
-addressable publication record with its learning purpose and current
-`shared_trial | available | quarantined | retired` disposition.
-`shared_content_publication_events` is the append-only audit log. Only
-`shared_trial` and `available` publications are eligible for serving. A repair
-creates distinct attributable content; replacement does not imply lineage or
-automatically retire the prior publication. Private cue lifecycle, evidence,
-activation, publication provenance, and reports stay in
-`learner_owned_*` tables. Reporting does not itself quarantine content; the
-registered operator queue reads open reports from their physical learner-owned rows, and the
-registered operator command records the separate quarantine disposition and
-resolves the private report. Operators can also dismiss a report without
-changing content; a still-open report whose publication has already retired is
-dismissed when handled because the content is no longer eligible. Neither
-operator surface is a learner HTTP route.
-
-Session composition samples uniformly among eligible cues for a production
-task. Its random source is injectable for tests. The frozen production
-exercise and attempt metadata include the exact cue reference, cue text, and
-accepted-answer ids. Attempts do not carry publication ids; later quarantine
-or retirement therefore cannot rewrite historical evidence.
+Legacy contrast artifacts and production cues use physical `scoped_*` tables.
+Learner views expose shared content and the learner's own private rows.
+`shared_content_publications` and its event ledger retain publication status
+and history. Private authorization, evidence and reports remain in learner-owned
+tables. The [dogfood backfill](../server/db/shared-content.ts) still inspects and
+publishes qualifying historical content during explicit cutover preparation.
 
 ## Init order
 
@@ -482,18 +381,11 @@ Migration `0036_session_completion` adds three learner-private tables:
 | `learner_session_completions` | Frozen completion input, fixed deadline, provisional/confirmed report, and pending/cancelled/closed/failed state keyed by learner/session/revision |
 | `learner_session_reflection_dispatches` | Frozen reflection supplement and queued/running/succeeded/skipped/failed dispatch state, active token, lease and result; references its same-owner completion revision |
 
-The completion module uses explicit learner predicates; its unique partial index
-permits only one pending or failed completion per learner. Staging exercises the
-owning commit contract inside a rolled-back savepoint. Closure accepts the final
-action, writes the summary and debrief job, confirms word outcomes, and queues
-reflection in one transaction. Closed and canceled completion rows are terminal;
-new attributed word outcomes cannot mutate a closed session's report.
-
-The legacy completion routes and the worker that closed overdue revisions and
-dispatched reflection have been removed; the tables and persistence functions
-remain for retained records. No historical completion or outcomes are backfilled. Existing databases
-require the [offline schema upgrade](ops/schema-migrations.md#operator-procedure); see its
-[migration note](ops/migration-notes.md#durable-session-completion-0036).
+These rows preserve earlier session history. The attention badge still checks
+the learner's queued or running dispatches. Current vocabulary completion uses
+its [own session and dispatch records](vocabulary-learning.md).
+See the [migration note](ops/migration-notes.md#durable-session-completion-0036)
+for the original installation.
 
 ## Session debrief persistence
 
