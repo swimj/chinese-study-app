@@ -1,9 +1,9 @@
 import { createHash } from 'node:crypto';
 import type { VocabularySense, VocabularySenseCatalog, VocabularyContent } from '../../src/domain/vocabulary-content.ts';
 import type { VocabularyWordSenseCoverage } from '../../src/domain/vocabulary-sense-coverage.ts';
-import { createVocabularySenseProvider, type VocabularySenseLexicalWord } from './sense-readiness.ts';
-import { bulkUsefulSelectionProvider, type RetainedSelectionContract } from './bulk-selection-replay.ts';
-import { validateVocabularySenseInventory } from './sense-inventory-contract.ts';
+import type { VocabularySenseLexicalWord } from './sense-readiness.ts';
+import { bulkUsefulSelectionProvider } from './bulk-selection-replay.ts';
+import { bulkInventoryProvider, bulkInventoryOutput, bulkGeneratedSenses } from './bulk-inventory-replay.ts';
 import { canonicalExerciseSource } from './canonical-exercise-source.ts';
 import { generalExerciseInvocation, normalizeGeneralExerciseReferences, validateGeneralExerciseOutput, type GeneralExerciseSource } from './general-exercise-authoring.ts';
 import { isOutputTruncationFinishReason, type ProviderAdapter, type ProviderRawResult, type ProviderRunRequest } from '../llm/types.ts';
@@ -15,6 +15,7 @@ export type BulkWordSnapshot = {
   word: VocabularySenseLexicalWord; catalog: VocabularySenseCatalog; senses: VocabularySense[];
   coverage: VocabularyWordSenseCoverage; hasBootstrap: boolean; fallbacks: VocabularyContent[];
 };
+export type RetainedBulkPrerequisite = Pick<ProviderRunRequest, 'decisions' | 'provenance' | 'systemPrompt' | 'outputSchemaName'>;
 export type BulkCall = {
   request: ProviderRunRequest; result: ProviderRawResult; startedAt: string; finishedAt: string; latencyMs: number;
   cost?: ReturnType<typeof costForBulkResult>;
@@ -29,7 +30,8 @@ export const bulkHash = (value: unknown): string => createHash('sha256').update(
 /** Derivation is reproducible from the retained provider responses; it never writes a database. */
 export async function generateBulkWord(snapshot: BulkWordSnapshot, options: {
   model: string; reasoningEffort: string; adapter: ProviderAdapter; apiKey: string; baseUrl: string | null;
-  workflowId: string; retainedSelectionRequest?: RetainedSelectionContract; onCall?: (call: BulkCall) => Promise<void>;
+  workflowId: string; retainedSelectionRequest?: RetainedBulkPrerequisite; retainedInventoryRequest?: RetainedBulkPrerequisite;
+  onCall?: (call: BulkCall) => Promise<void>;
 }): Promise<BulkWordResult> {
   const calls: BulkCall[] = [];
   const adapter: ProviderAdapter = { ...options.adapter, async run(input, config) {
@@ -52,13 +54,16 @@ export async function generateBulkWord(snapshot: BulkWordSnapshot, options: {
   });
   if (snapshot.catalog.establishedAt === null) {
     if (snapshot.senses.length || snapshot.hasBootstrap) throw new Error('Partial inventory requires operator review');
-    const inventory = validateVocabularySenseInventory(await createVocabularySenseProvider({ environment, adapter }).generate(snapshot.word,
-      { workflowId: options.workflowId, attemptNumber: 1, onInvocation() {} }));
-    senses = inventory.senses.map(({ defaultUseful: _defaultUseful, ...description }, index) => ({
-      senseId: `bulk-sense-${index + 1}`, wordId: snapshot.word.wordId, version: 1, status: 'active',
-      description: { ...description, source: { kind: 'sense_inventory' } }, createdAt: '', updatedAt: '',
-    }));
-    if (selected === null) selected = senses.filter((_sense, index) => inventory.senses[index]!.defaultUseful).map(sense => sense.senseId);
+    const provider = bulkInventoryProvider({ environment, adapter }, options.retainedInventoryRequest);
+    await provider.generate(snapshot.word, { workflowId: options.workflowId, attemptNumber: 1, onInvocation() {} });
+    const inventoryCall = calls[0]!;
+    const { inventory, selectedLabels } = bulkInventoryOutput(JSON.parse(inventoryCall.result.rawText),
+      inventoryCall.request.outputSchemaName === 'vocabulary_sense_inventory_v3');
+    const generated = bulkGeneratedSenses(snapshot.word.wordId, inventory);
+    senses = generated;
+    if (selected === null && selectedLabels !== null) {
+      selected = generated.filter(sense => selectedLabels.includes(sense.description.label)).map(sense => sense.senseId);
+    }
   }
   if (!senses.length) return result('empty_inventory');
   if (selected === null) {
@@ -96,6 +101,7 @@ export async function verifyBulkWord(value: BulkWordResult): Promise<BulkWordRes
       return { ...parsed, invocationId: null };
     } };
   const verified = await generateBulkWord(value.snapshot, { model: value.model, reasoningEffort: value.reasoningEffort,
+    retainedInventoryRequest: value.calls.find(call => call.request.provenance?.stepName === 'sense_inventory')?.request,
     retainedSelectionRequest: value.calls.find(call => call.request.provenance?.stepName === 'default_useful_selection')?.request,
     adapter: replay, apiKey: 'replay', baseUrl: null, workflowId: value.calls[0]?.request.provenance?.workflowId ?? '' });
   if (index !== value.calls.length || verified.status !== value.status || bulkHash(verified.source) !== bulkHash(value.source))

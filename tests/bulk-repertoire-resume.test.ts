@@ -16,21 +16,27 @@ const snapshot:BulkWordSnapshot={word:{wordId:'word',hanzi:'你好',traditional:
   catalog:{wordId:'word',version:1,establishedAt:'2026-01-01T00:00:00.000Z'},
   senses:[{wordId:'word',senseId:'sense',version:1,status:'active',description:{label:'greeting',notes:[]},createdAt:'2026-01-01T00:00:00.000Z',updatedAt:'2026-01-01T00:00:00.000Z'}],
   coverage:{wordId:'word',version:1,defaultUsefulSenseIds:['sense'],excludedSenseIds:[]},hasBootstrap:false,fallbacks:[]};
+const freshSnapshot:BulkWordSnapshot={...snapshot,catalog:{wordId:'word',version:0,establishedAt:null},senses:[],
+  coverage:{...snapshot.coverage,version:0,defaultUsefulSenseIds:null}};
 const adapter:ProviderAdapter={id:'openai',defaultBaseUrl:'',apiKeyEnvironmentVariable:'',structuredOutputMode:'json_schema',async run(request){
   if(request.decisions) return parseResponseForRequest('openai','json_schema',request,{
     model:'gpt-6-luna',answers:[{name:'s1',type:'predicate',probability:.8}],
     usage:{input_tokens:50,output_tokens:0,total_tokens:50},
   });
-  const output=request.outputSchemaName==='vocabulary_default_useful_selection_v1'?{senseIds:['s1']}
+  const output=request.outputSchemaName==='vocabulary_sense_inventory_v3'?{senses:[{label:'greeting',notes:[],defaultUseful:true}]}
+    :request.outputSchemaName==='vocabulary_sense_inventory_v4'?{senses:[{label:'greeting',notes:[]}]}
+    :request.outputSchemaName==='vocabulary_default_useful_selection_v1'?{senseIds:['s1']}
     :{exercises:[{id:'one',sourceUseId:'s1',stimulus:{kind:'direct_text',text:'Hello.'},teachingNote:null}]};
   return parseResponse('openai','json_schema',{id:'test-response',model:'gpt-6-sol',choices:[{message:{content:JSON.stringify(output)},finish_reason:'stop'}],usage:{prompt_tokens:100,completion_tokens:30,total_tokens:130}});
 }};
-async function fixture(wordSnapshot=snapshot,legacySelection=false){
+async function fixture(wordSnapshot=snapshot,legacySelection=false,combined=false){
   const root=await fs.mkdtemp(path.join(os.tmpdir(),'bulk-resume-')),directory=path.join(root,'run'),manifest={version:1,words:[{wordId:'word',snapshot:wordSnapshot}]};
   const configuration={version:1,inputHash:bulkHash(manifest),wordIds:['word'],model:'gpt-6-sol',reasoningEffort:'high'};
   const retainedSelectionRequest=legacySelection?{outputSchemaName:'vocabulary_default_useful_selection_v1',provenance:{promptVersion:'6'},
     systemPrompt:await fs.readFile(new URL('../artifacts/invocation-prompts/b3d097da2dd3acb87fcc1480214b4738405078eba92589d970976fd44bd141fa.txt',import.meta.url),'utf8')}:undefined;
-  const result=await generateBulkWord(wordSnapshot,{retainedSelectionRequest,model:'gpt-6-sol',reasoningEffort:'high',adapter,apiKey:'fake',baseUrl:null,workflowId:`bulk:${configuration.inputHash}:gpt-6-sol:high:word`});
+  const retainedInventoryRequest=combined?{outputSchemaName:'vocabulary_sense_inventory_v3',provenance:{promptVersion:'7'},
+    systemPrompt:await fs.readFile(new URL('../artifacts/invocation-prompts/5b89079bfce03bf95fdfaee5dae211457205be3fa4edece98e1f5d80694c1495.txt',import.meta.url),'utf8')}:undefined;
+  const result=await generateBulkWord(wordSnapshot,{retainedInventoryRequest,retainedSelectionRequest,model:'gpt-6-sol',reasoningEffort:'high',adapter,apiKey:'fake',baseUrl:null,workflowId:`bulk:${configuration.inputHash}:gpt-6-sol:high:word`});
   await fs.mkdir(path.join(directory,'0000'),{recursive:true});await fs.mkdir(path.join(directory,'attempts'));
   const save=async(file:string,value:unknown)=>fs.writeFile(path.join(directory,file),JSON.stringify(value));
   await fs.writeFile(path.join(root,'manifest.json'),JSON.stringify(manifest));await save('configuration.json',configuration);
@@ -60,6 +66,22 @@ test('resume recovers the raw Decisions response, retains its cost and never red
     const report=await reportBulkRepertoire(f.directory);
     const observed=report.calls.find(call=>call.stage==='default_useful_selection')!;
     assert.equal(observed.model,'gpt-6-luna');assert.equal(observed.spendUsd,50*.10/1e6);
+  } finally {await fs.rm(f.root,{recursive:true,force:true});}
+});
+
+test('resume recovers a paid combined inventory and its selection without issuing a Decisions call',async()=>{
+  const f=await fixture(freshSnapshot,false,true);
+  try {
+    const [inventory,repertoire]=f.result.calls;
+    await fs.mkdir(path.join(f.directory,'responses'));
+    await f.save('responses/old.json',{attemptId:'combined',request:inventory!.request,attempt:1,startedAt:inventory!.startedAt,
+      receivedAt:inventory!.finishedAt,responseStatus:200,body:inventory!.result.rawResponse});
+    await f.save('attempts/repertoire.json',{...repertoire,attempt:1});
+    const output=await f.run();assert.match(output.stdout,/"completed":1/);
+    const retained=JSON.parse(await fs.readFile(path.join(f.directory,'0000/result.json'),'utf8'));
+    await verifyBulkWord(retained);
+    assert.equal(retained.calls.length,2);
+    assert.deepEqual(retained.calls[0].request,inventory!.request);
   } finally {await fs.rm(f.root,{recursive:true,force:true});}
 });
 

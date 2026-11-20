@@ -1,7 +1,8 @@
 import { createHash } from 'node:crypto';
+import type { RetainedBulkPrerequisite } from './bulk-repertoire.ts';
 import type { JsonSchema } from '../../src/domain/reflection-result-schema.ts';
 import { validateJsonSchema } from '../llm/json-schema-validator.ts';
-import { isOutputTruncationFinishReason, type ProviderAdapter, type ProviderRunRequest } from '../llm/types.ts';
+import { isOutputTruncationFinishReason, type ProviderAdapter } from '../llm/types.ts';
 import { createUsefulSelectionProvider, defaultUsefulSelectorInput, type UsefulSelectionProvider } from './default-useful-selection.ts';
 import { VOCABULARY_SENSE_MODEL, VOCABULARY_SENSE_SERVICE } from './sense-readiness.ts';
 
@@ -11,11 +12,9 @@ const chatPromptHashes: Record<string, string> = {
   '7': '8678212c4a0c7c833247ddfdc11ed8e30175bf7254e6fa6795b56bbc804201e0',
 };
 
-export type RetainedSelectionContract = Pick<ProviderRunRequest, 'decisions' | 'provenance' | 'systemPrompt' | 'outputSchemaName'>;
-
 /** Historical evidence replays its original editorial contract. New calls always use Decisions. */
 export function bulkUsefulSelectionProvider(options: { environment: NodeJS.ProcessEnv; adapter: ProviderAdapter },
-  retainedRequest?: RetainedSelectionContract): UsefulSelectionProvider {
+  retainedRequest?: RetainedBulkPrerequisite): UsefulSelectionProvider {
   if (!retainedRequest || retainedRequest.decisions) return createUsefulSelectionProvider(options);
   const promptVersion = retainedRequest.provenance?.promptVersion ?? '';
   const prompt = retainedRequest.systemPrompt;

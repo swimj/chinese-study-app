@@ -432,8 +432,7 @@ existing canonical identities. Its read-only preparation commands are:
   prepares exact requests for 1–32 words. It sends the same `{word}` lexical input
   as runtime; existing inventories are retained for comparison but withheld from
   generation. `--baseline-revision 17a5a357` freezes the historical v2 prompt and
-  nonempty schema. The candidate uses the current prompt and v3 empty-capable
-  schema. Authorized live runs add `--allow-provider-calls` and an explicit
+  nonempty schema. The candidate uses the current inventory-only prompt and v4 schema, which accepts an empty inventory. Authorized live runs add `--allow-provider-calls` and an explicit
   `--max-provider-calls` budget of at most 32. Run baseline and candidate batches
   sequentially with unique variant names. Requests, outputs and hashes are retained.
 - `check --snapshot CASE_SNAPSHOT --candidate CANDIDATE_JSON --judgment REVIEW_JSON

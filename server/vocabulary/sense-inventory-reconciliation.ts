@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 import type { VocabularyJson } from '../../src/domain/vocabulary-content.ts';
-import { validateVocabularySenseInventory } from './sense-inventory-contract.ts';
+import { validateLegacyVocabularySenseInventory, validateVocabularySenseInventory } from './sense-inventory-contract.ts';
 
 export type InventoryWord = { wordId: string; hanzi: string; traditional: string | null; pinyin: string; meanings: string[] };
 export type InventorySnapshot = {
@@ -45,7 +45,10 @@ export function validateInventorySnapshot(value: unknown): InventorySnapshot {
 /** Check complete identity accounting; the reviewer, not this checker, owns semantic equivalence. */
 export function checkInventoryReconciliation(snapshotValue: unknown, candidateValue: unknown, judgmentValue: unknown) {
   const snapshot = validateInventorySnapshot(snapshotValue);
-  const candidate = validateVocabularySenseInventory(candidateValue);
+  // Existing reviewed plans bind the original candidate bytes, including any legacy selection flags.
+  const legacy = record(candidateValue) && Array.isArray(candidateValue.senses)
+    && candidateValue.senses.some(sense => record(sense) && 'defaultUseful' in sense);
+  const candidate = legacy ? validateLegacyVocabularySenseInventory(candidateValue) : validateVocabularySenseInventory(candidateValue);
   if (!record(judgmentValue) || judgmentValue.snapshotSha256 !== inventoryHash(snapshot)
     || judgmentValue.candidateSha256 !== inventoryHash(candidateValue) || !text(judgmentValue.reviewer)
     || !Array.isArray(judgmentValue.groups)) throw new Error('Judgment is missing or does not match frozen source/candidate hashes');
@@ -78,7 +81,7 @@ export function checkInventoryReconciliation(snapshotValue: unknown, candidateVa
     emptyInventory: groups.every(group => group.decision === 'retire'),
     groups, dependencies: snapshot.dependencies, currentCoverage: snapshot.coverage,
     requiredBeforeApply: [
-      'Review semantic judgments and candidate default-useful choices.',
+      'Review the semantic judgments for the supplied sense inventory.',
       'Re-export under stopped writers and verify the exact snapshot hash.',
       'Resolve content, coverage, imports, learner-sense, and pending-work dependencies; preserve historical evidence and learner progress.',
       ...(groups.some(group => group.decision === 'restructure') ? ['Explicitly resolve split/merge identity and dependent mapping decisions.'] : []),

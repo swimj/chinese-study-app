@@ -247,7 +247,9 @@ A retained teaching session uses its original material and facts. Interrupted
 turns and context matches settle without reapplying enrollment or shared
 changes.
 
-Unknown defaults initialize asynchronously when needed. Every established nonempty
+Fresh inventory bootstrap establishes the canonical senses on lexical evidence alone.
+An inventory-only consumer can use those senses as soon as they are saved.
+Unknown defaults initialize separately through Decisions when a consumer needs them. Every established nonempty
 inventory receives a selector decision over existing sense IDs, including senses
 imported from teaching. Teaching provenance does not establish default usefulness,
 and missing or stale teaching links do not block selection over canonical senses.

@@ -1,5 +1,5 @@
 import { readInvocationPromptEvidence } from '../server/db/invocation-prompt-archive.ts';
-import { getVocabularyWordSenseCoverage,resolveVocabularySenseCoverage } from '../server/db/vocabulary-sense-coverage.ts';
+import { getVocabularyWordSenseCoverage } from '../server/db/vocabulary-sense-coverage.ts';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
@@ -21,7 +21,7 @@ import type { WordContentDocument } from '../src/domain/word-content/types.ts';
 let root: string; let baseline: string; let db: DatabaseSync;
 let oldEnv: Record<string,string|undefined>;
 const actor = { kind: 'operator' as const,id: 'operator' };
-const inventory = { senses: [{ label: 'enlarge',defaultUseful:true,notes: ['Make an image or object larger.'] },{ label: 'amplify',defaultUseful:false,notes: ['Increase a signal or sound.'] }] };
+const inventory = { senses: [{ label: 'enlarge',notes: ['Make an image or object larger.'] },{ label: 'amplify',notes: ['Increase a signal or sound.'] }] };
 const fixture: WordContentDocument = { schemaVersion: 1,id: 'bootstrap',word: { wordId: 'w1',hanzi: '放大',traditional: null,pinyin: 'fàng dà' },
   uses: [{ id: 'u1',label: 'enlarge',notes: ['Make something larger.'],exampleIds: ['e1'] }],
   examples: [{ id: 'e1',text: '放大照片',translation: 'Enlarge the photo.',pronunciation: null }] };
@@ -88,18 +88,15 @@ test('lexical-only generation records exact invocation provenance and sense outp
   const instance = createVocabularySenseProvider({ environment:{ OPENAI_API_KEY:'test-key' },adapter });
   const result = await ensureVocabularySenses('w1',{ workflowId:'workflow',attemptNumber:2,provider:instance });
   assert.equal(result.source,'generated');assert.equal(result.senses.length,2);
-  assert.deepEqual(resolveVocabularySenseCoverage('w1').includedSenseIds,[result.senses.find(sense=>(sense.description as {label:string}).label==='enlarge')!.senseId]);
+  assert.equal(getVocabularyWordSenseCoverage('w1').defaultUsefulSenseIds,null);
   assert.equal(getVocabularySenses('w1').length,2);
   await ensureVocabularySenses('w1',{ workflowId:'next',provider:instance });assert.equal(calls,1);
   const invocation = db.prepare('SELECT * FROM model_invocations WHERE actor_id=?').get(VOCABULARY_SENSE_SERVICE)!;
   assert.equal(invocation.model,'gpt-6-luna');assert.equal(invocation.workflow_id,'workflow');assert.equal(invocation.attempt_number,1);
-  assert.equal(invocation.prompt_name,'vocabulary-sense-inventory');assert.equal(invocation.prompt_version,'8');
-  const selectionHistory=db.prepare("SELECT snapshot_json FROM vocabulary_sense_coverage_history WHERE scope='word' AND subject_id='w1'").get()!;
-  const selectionEvent=db.prepare("SELECT data_json FROM backend_events WHERE name='vocabulary.sense_coverage.updated' AND entity_id='w1'").get()!;
-  const reason={invocationId:invocation.id,workflowId:'workflow',attemptNumber:1,senseIds:resolveVocabularySenseCoverage('w1').includedSenseIds};
-  assert.deepEqual(JSON.parse(String(selectionHistory.snapshot_json)).reason,reason);
-  assert.deepEqual(JSON.parse(String(selectionEvent.data_json)).reason,reason);
-  assert.throws(()=>db.exec("UPDATE vocabulary_sense_coverage_history SET snapshot_json='{}'"),/immutable/);
+  assert.equal(invocation.prompt_name,'vocabulary-sense-inventory');assert.equal(invocation.prompt_version,'9');
+  assert.equal(invocation.invocation_type,'vocabulary_sense_inventory_v4');assert.equal(invocation.schema_version,'4');
+  assert.equal(db.prepare("SELECT count(*) n FROM vocabulary_sense_coverage_history WHERE scope='word' AND subject_id='w1'").get()!.n,0);
+  assert.equal(db.prepare("SELECT count(*) n FROM backend_events WHERE name='vocabulary.default_selection.recommended'").get()!.n,0);
   assert.ok(invocation.prompt_blob_hash);assert.ok(invocation.request_prompt_refs_json);
   assert.equal(JSON.parse(String(invocation.request_snapshot_json)).messages[0].content,'');
   assert.deepEqual(JSON.parse(readInvocationPromptEvidence(db,String(invocation.id)).requestJson!),sent);
@@ -151,7 +148,7 @@ test('interrupted expired sense work is fenced and scheduled after backoff',asyn
 test('invalid, unbounded or duplicate inventories never establish a catalog',async () => {
   for (const output of [{senses:Array.from({length:17},(_,i)=>({label:String(i),notes:[]}))},
     {senses:[{label:'same',notes:[]},{label:' SAME ',notes:[]}]},{senses:[{label:' ',notes:[]}]},
-    {senses:[{label:'x'.repeat(601),notes:[]}]}]) {
+    {senses:[{label:'x'.repeat(601),notes:[]}]},{senses:[{label:'old recommendation',notes:[],defaultUseful:true}]}]) {
     await assert.rejects(ensureVocabularySenses('w1',{workflowId:'bad',provider:provider(()=>output)}),VocabularySenseReadinessPending);
     assert.equal(getVocabularySenseCatalog('w1').establishedAt,null);
     // Distinct fixtures represent separate bad first attempts, not automatic retry behavior.

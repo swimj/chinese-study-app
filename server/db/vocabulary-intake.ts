@@ -79,7 +79,7 @@ function newSenseConflict(wordId: string, draft: SenseDraft): string | null {
 }
 
 function checkNewSense(wordId: string, draft: SenseDraft): void {
-  try { validateVocabularySenseInventory({ senses: [{ ...draft, defaultUseful: false }] }); }
+  try { validateVocabularySenseInventory({ senses: [draft] }); }
   catch { throw new VocabularyStateInputError('The proposed sense is incomplete'); }
   const conflict = newSenseConflict(wordId, draft);
   if (conflict) throw new VocabularyStateInputError(conflict);

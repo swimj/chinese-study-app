@@ -44,8 +44,11 @@ test('selector uses existing IDs without editing inventory and reuses establishe
   assert.equal(db.prepare("SELECT work_id FROM vocabulary_preparation_attempts WHERE preparation_kind='sense'").get()!.work_id,'default-selection:word');
 });
 for(const selected of [[],['letter']])test(`model zero recommendation retains inventory and operator choice resolves attention (${selected.length})`,async()=>{
-  const ready=await ensureVocabularySenses('word',{workflowId:'fresh',provider:{isConfigured:()=>true,generate:async()=>({senses:[{label:'formal correspondence',notes:[],defaultUseful:false},{label:'literary case',notes:[],defaultUseful:false}]})}});
+  const ready=await ensureVocabularySenses('word',{workflowId:'fresh',provider:{isConfigured:()=>true,generate:async()=>({senses:[{label:'formal correspondence',notes:[]},{label:'literary case',notes:[]}]})}});
   assert.equal(ready.senses.length,2);assert.equal(getVocabularyWordSenseCoverage('word').defaultUsefulSenseIds,null);
+  assert.equal(defaultUsefulInitializationPlan('word').kind,'selector');
+  await assert.rejects(ensureVocabularyDefaultUsefulSelection('word',{workflowId:'empty-selection',
+    provider:{isConfigured:()=>true,select:async()=>({senseIds:[]})}}),VocabularySenseSelectionRequired);
   assert.equal(db.prepare("SELECT status FROM vocabulary_default_selection_readiness WHERE word_id='word'").get()!.status,'failed');
   await assert.rejects(ensureVocabularyDefaultUsefulSelection('word',{workflowId:'wait',provider:{isConfigured:()=>true,select:async()=>assert.fail('Must wait for operator')}}),VocabularySenseSelectionRequired);
   const ids=selected.length?[ready.senses[0]!.senseId]:[];writeVocabularyDefaultUsefulSenses('word',0,ids,actor);
@@ -69,12 +72,11 @@ test('publication maintenance defers selector without losing inventory or perman
   assert.equal(getVocabularyWordSenseCoverage('word').defaultUsefulSenseIds,null);assert.equal(getVocabularySenses('word').length,2);
   assert.equal(db.prepare('SELECT status,attempt_count FROM vocabulary_default_selection_readiness').get()!.status,'queued');
 });
-test('an explicit operator none decision is preserved while a fresh inventory recommendation is audited',async()=>{
+test('an explicit operator none decision survives fresh inventory publication without recommendation',async()=>{
   writeVocabularyDefaultUsefulSenses('word',0,[],actor);
-  await ensureVocabularySenses('word',{workflowId:'manual-first',provider:{isConfigured:()=>true,generate:async()=>({senses:[{label:'letter',notes:[],defaultUseful:true}]})}});
+  await ensureVocabularySenses('word',{workflowId:'manual-first',provider:{isConfigured:()=>true,generate:async()=>({senses:[{label:'letter',notes:[]}]})}});
   assert.deepEqual(getVocabularyWordSenseCoverage('word').defaultUsefulSenseIds,[]);
-  const event=db.prepare("SELECT data_json FROM backend_events WHERE name='vocabulary.default_selection.recommended'").get()!;
-  assert.equal(JSON.parse(String(event.data_json)).applied,false);assert.equal(JSON.parse(String(event.data_json)).senseIds.length,1);
+  assert.equal(db.prepare("SELECT count(*) n FROM backend_events WHERE name='vocabulary.default_selection.recommended'").get()!.n,0);
 });
 
 for(const discrepancy of ['stale','missing'])test(`${discrepancy} teaching import links do not block canonical default selection`,async()=>{
@@ -176,6 +178,40 @@ for (const [label, answers] of Object.entries({
   assert.equal(row.spend_usd, 0.0000895);
   assert.equal(db.prepare('SELECT invocation_id FROM vocabulary_preparation_attempts').get()!.invocation_id, row.id);
   assert.equal(db.prepare('SELECT status FROM vocabulary_default_selection_readiness').get()!.status, 'queued');
+});
+
+test('a Decisions retry reuses the newly authored inventory and only repeats selection', async () => {
+  installModelInvocationLedger();
+  let inventoryCalls = 0;
+  let selectionCalls = 0;
+  let clock = Date.now();
+  const now = () => new Date(clock).toISOString();
+  const workflowId = 'new-word';
+  const senseProvider = {
+    isConfigured: () => true,
+    async generate() {
+      inventoryCalls++;
+      return { senses: [{ label: 'formal correspondence', notes: [] }, { label: 'literary case', notes: [] }] };
+    },
+  };
+  const provider = decisionProvider(async () => {
+    selectionCalls++;
+    const answers = [predicate('s1', 0.8)];
+    if (selectionCalls === 2) answers.push(predicate('s2', 0.7));
+    return Response.json({ answers });
+  });
+  const first = await ensureVocabularySenses('word', { workflowId, now, provider: senseProvider });
+  await assert.rejects(ensureVocabularyDefaultUsefulSelection('word', { workflowId, now, provider }), VocabularySenseReadinessPending);
+  assert.equal(getVocabularyWordSenseCoverage('word').defaultUsefulSenseIds, null);
+  clock += 31_000;
+  const retry = await ensureVocabularySenses('word', { workflowId, now, provider: senseProvider });
+  assert.deepEqual(retry.senses, first.senses);
+  const selection = await ensureVocabularyDefaultUsefulSelection('word', { workflowId, now, provider });
+  assert.deepEqual(selection.defaultUsefulSenseIds, [first.senses[0]!.senseId]);
+  assert.equal(inventoryCalls, 1);
+  assert.equal(selectionCalls, 2);
+  const attempts = db.prepare('SELECT attempt_number,status FROM model_invocations ORDER BY attempt_number').all();
+  assert.deepEqual(attempts.map(row => [row.attempt_number,row.status]), [[1,'invalid_response'],[2,'completed']]);
 });
 
 test('all-negative Decisions answers retain the empty recommendation for the operator', async () => {
