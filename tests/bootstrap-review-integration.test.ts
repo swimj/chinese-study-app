@@ -119,12 +119,14 @@ function quarantine(publicationId: string) {
 
 test('published bootstrap review exercise keeps its exact canonical source', () => {
   const source = prepare('serve', true);
-  const canonical = call(() => review.getCanonicalReviewContent('production_cue', source.cueId));
-  assert.equal(canonical?.sourceWordContentId, source.content.id);
+  const canonical = sqlite.prepare(`SELECT kind, source_word_content_id, document_json FROM review_content_records
+    WHERE kind = 'production_cue' AND content_id = ?`).get(source.cueId);
+  assert.equal(canonical?.source_word_content_id, source.content.id);
   assert.equal(canonical?.kind, 'production_cue');
   if (canonical?.kind !== 'production_cue') throw new Error('Missing source');
-  assert.equal(canonical.exercise.contract.kind, 'targeted_review');
-  assert.deepEqual(canonical.contents, [source.content]);
+  const stored = JSON.parse(String(canonical.document_json));
+  assert.equal(stored.exercise.contract.kind, 'targeted_review');
+  assert.deepEqual(stored.contents, [source.content]);
   assert.equal(publicationFor('production_cue', source.cueId)?.publication_status, 'shared_trial');
 });
 
@@ -140,7 +142,7 @@ test('quarantining bootstrap source makes its review cue unavailable but preserv
   const word = words.items.find(item => item.id === source.wordId);
   assert.ok(word?.kind === 'word');
   assert.equal(word.productionTask!.activeCueCount, 0);
-  assert.ok(call(() => review.getCanonicalReviewContent('production_cue', source.cueId)));
+  assert.ok(sqlite.prepare("SELECT 1 FROM review_content_records WHERE kind='production_cue' AND content_id=?").get(source.cueId));
 });
 
 test('0016 to 0017 preserves lexical teaching documents and legacy cue projections without inventing lineage', () => {
@@ -207,7 +209,8 @@ test('canonical review keeps original answer forms after lexical edits', () => {
   }];
   sqlite.prepare('UPDATE lexical_words SET hanzi=?, traditional=? WHERE id=?')
     .run('登记', '登記', source.wordId);
-  const canonical = call(() => review.getCanonicalReviewContent('production_cue', source.cueId));
+  const canonical = sqlite.prepare(`SELECT kind, source_word_content_id, document_json FROM review_content_records
+    WHERE kind = 'production_cue' AND content_id = ?`).get(source.cueId);
   if (canonical?.kind !== 'production_cue') throw new Error('Missing canonical review exercise');
-  assert.deepEqual(canonical.exercise.acceptedAnswers, originalForms);
+  assert.deepEqual(JSON.parse(String(canonical.document_json)).exercise.acceptedAnswers, originalForms);
 });

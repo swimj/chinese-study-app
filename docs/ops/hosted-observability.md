@@ -15,8 +15,8 @@ distributed tracing, CPU profiles, or long-retention analytics.
 
 A separate operator **usage pulse** page (`/operator/usage`, gated by
 `APP_OPERATOR_CLERK_USER_IDS`) provides content-free cohort product-usage
-snapshots (DAU, sessions, new words, practice, review outcomes, acceptance totals,
-mean stash, total active time, and sparse scenario counts). The
+snapshots (DAU, sessions, new words, practice, review outcomes,
+mean stash, total active time, inactive learners, and abandoned sessions). The
 hosted smoke account is omitted from the inactive-learner count so a
 read-only deploy identity is not treated as a lapsed learner. That surface is
 not Grafana and does not replace this performance dashboard.

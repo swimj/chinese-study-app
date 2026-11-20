@@ -13,7 +13,6 @@ import {
   type DeckManifest,
 } from '../server/decks/manifest.ts';
 import {
-  applyDietNudge,
   applyOperatorDietJump,
   createDefaultDietProfile,
   parseDietProfile,
@@ -82,55 +81,6 @@ describe('diet profile transitions', () => {
     const reduced = { ...fixtureManifest() };
     reduced.decks = reduced.decks.filter((deck) => deck.hsk?.level !== 6);
     assert.throws(() => createDefaultDietProfile(reduced, NOW), /no HSK 2.0 Level 6 deck/);
-  });
-
-  test('a harder nudge shifts one quantum from the max-weight deck to its successor', () => {
-    const manifest = fixtureManifest();
-    const initial = applyOperatorDietJump(null, manifest, 'hsk2-l1', null, NOW);
-    const { profile, changed } = applyDietNudge(initial, manifest, 'harder', '2026-09-10T01:00:00.000Z');
-
-    assert.equal(changed, true);
-    assert.deepEqual(profile.weights, { 'hsk2-l1': 0.9, 'hsk2-l2': 0.1 });
-    assert.deepEqual(profile.provenance.slice(1), [{ actor: 'learner-nudge', at: '2026-09-10T01:00:00.000Z', note: 'harder' }]);
-    assert.equal(profile.updatedAt, '2026-09-10T01:00:00.000Z');
-  });
-
-  test('an easier nudge moves weight back toward the predecessor', () => {
-    const manifest = fixtureManifest();
-    const placed: DietProfile = {
-      version: 1,
-      weights: { 'hsk2-l2': 1 },
-      provenance: [],
-      updatedAt: NOW,
-    };
-    const { profile, changed } = applyDietNudge(placed, manifest, 'easier', NOW);
-    assert.equal(changed, true);
-    assert.deepEqual(profile.weights, { 'hsk2-l2': 0.9, 'hsk2-l1': 0.1 });
-  });
-
-  test('nudges are clamped at the ends without provenance', () => {
-    const manifest = fixtureManifest();
-    const first = applyOperatorDietJump(null, manifest, 'hsk2-l1', null, NOW);
-    const easierAtFirst = applyDietNudge(first, manifest, 'easier', NOW);
-    assert.equal(easierAtFirst.changed, false);
-    assert.equal(easierAtFirst.profile, first);
-
-    const last: DietProfile = { version: 1, weights: { 'beyond-hsk': 1 }, provenance: [], updatedAt: NOW };
-    const harderAtLast = applyDietNudge(last, manifest, 'harder', NOW);
-    assert.equal(harderAtLast.changed, false);
-    assert.equal(harderAtLast.profile, last);
-  });
-
-  test('repeated nudges walk the full weight across adjacent decks', () => {
-    const manifest = fixtureManifest();
-    let profile = applyOperatorDietJump(null, manifest, 'hsk2-l1', null, NOW);
-    for (let index = 0; index < 10; index += 1) {
-      profile = applyDietNudge(profile, manifest, 'harder', NOW).profile;
-    }
-    assert.deepEqual(profile.weights, { 'hsk2-l2': 1 });
-    assert.equal(profile.provenance.length, 11);
-    const weightSum = Object.values(profile.weights).reduce((sum, weight) => sum + weight, 0);
-    assert.ok(Math.abs(weightSum - 1) < 1e-9);
   });
 
   test('stale deck ids are dropped from effective weights with a first-deck fallback', () => {
@@ -204,29 +154,14 @@ describe('diet profile persistence', { concurrency: false }, () => {
     assert.equal(storedSetting(), null);
   });
 
-  test('nudge persists the shifted distribution with provenance', () => {
-    dbModule.setOperatorDietDeck('hsk2-l1', null, fixtureManifest());
-    const result = dbModule.nudgeDietProfile('harder', fixtureManifest());
-    assert.equal(result.changed, true);
-    const stored = dbModule.getStoredDietProfile();
-    assert.ok(stored);
-    assert.equal(stored.weights['hsk2-l1'], 0.9);
-    assert.equal(stored.weights['hsk2-l2'], 0.1);
-    assert.equal(stored.provenance.at(-1)?.actor, 'learner-nudge');
-
-    const clamped = dbModule.nudgeDietProfile('easier', fixtureManifest());
-    assert.equal(clamped.changed, true);
-    assert.equal(clamped.profile.weights['hsk2-l1'], 1);
-  });
-
-  test('saved historical survey placement survives reads and subsequent nudges', () => {
+  test('saved historical survey placement survives reads and operator changes', () => {
     const historical = historicalProfile();
     dbModule.saveDietProfile(historical);
     assert.deepEqual(dbModule.getDietProfile(fixtureManifest()), historical);
-    const nudged = dbModule.nudgeDietProfile('harder', fixtureManifest()).profile;
-    assert.deepEqual(nudged.intake, historical.intake);
-    assert.deepEqual(nudged.provenance[0], historical.provenance[0]);
-    assert.deepEqual(storedSetting(), nudged);
+    const updated = dbModule.setOperatorDietDeck('hsk2-l2', null, fixtureManifest());
+    assert.deepEqual(updated.intake, historical.intake);
+    assert.deepEqual(updated.provenance[0], historical.provenance[0]);
+    assert.deepEqual(storedSetting(), updated);
   });
 
   test('operator jump persists 100% on the chosen deck', () => {
@@ -236,7 +171,6 @@ describe('diet profile persistence', { concurrency: false }, () => {
   });
 
   test('operations fail loudly when the manifest is unavailable', () => {
-    assert.throws(() => dbModule.nudgeDietProfile('harder', null), /manifest is not available/);
     assert.throws(() => dbModule.setOperatorDietDeck('hsk2-l1', null, null), /manifest is not available/);
   });
 });

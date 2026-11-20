@@ -1,5 +1,9 @@
 # Diet Deck Distribution And HSK Delta Tiers
 
+Operator deck changes and historical learner-nudge provenance remain supported.
+The learner nudge endpoint was retired with the legacy study routes. References
+to nudges in the original design below describe that earlier mechanism.
+
 Status: **accepted design**, with new-user defaults and intake retirement updated
 2026-10-07 in §2.5 (drafted 2026-09-09; review decisions
 incorporated same day; accepted for implementation 2026-09-10). Part 2 is
@@ -236,8 +240,8 @@ profile at 100% on the **first HSK 2.0 Level 6 deck** (`hsk2-l6-s1`).
 Diet words enter sessions only if the learner turns off stash-only mode.
 An empty stash can therefore leave a session with no new words; existing
 learning and review work remains available. Learners can change the source and
-daily limit in session settings. Learner nudges and operator jumps remain the
-diet adjustment paths.
+daily limit in session settings. Operators can change the diet deck with
+`scripts/set-diet-deck.ts`.
 
 Saved choices remain authoritative. Existing learners without a daily limit or
 diet profile receive those defaults. The source default applies only at learner
@@ -249,7 +253,7 @@ The placement intake survey is retired as of 2026-10-07. New learners enter
 ordinary study without an assessment. The evolving app no longer relies on a
 survey as its bootstrap surface. Historical intake evidence and study history
 remain intact; no migration is required. The [API reference](../docs/api.md#diet-profile)
-records the removed endpoints.
+describes the current adjustment path.
 
 ## 2.6 Feedback surface; no settings page in v1
 

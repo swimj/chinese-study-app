@@ -22,19 +22,3 @@ export type PriorityWord = {
   requiredForNextSession: boolean;
   overlayUpdatedAt: string | null;
 };
-
-export type ReviewFailureRateDay = {
-  dayKey: string;
-  completedReviewActionSessions: number;
-  failedReviewActionSessions: number;
-  compensatedReviewActionSessions: number;
-  failureRate: number | null;
-  rolling3DayFailureRate: number | null;
-  rolling7DayFailureRate: number | null;
-};
-
-export type SessionActiveTimeMetrics = {
-  todayActiveDurationMs: number;
-  rolling3DayAverageActiveDurationMs: number;
-  rolling7DayAverageActiveDurationMs: number;
-};

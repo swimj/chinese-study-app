@@ -1,6 +1,6 @@
 import { WHATS_NEW_BADGE_WINDOW_MS, type WhatsNewAttention } from '../../src/domain/whats-new-attention.ts';
 import { WhatsNewInputError } from '../../src/domain/whats-new.ts';
-import { getWhatsNewSeenThroughSequence } from './attention.ts';
+import { getLearnerParam } from './identity.ts';
 import { getDb } from './connection.ts';
 import { requireLearnerId } from './learner-context.ts';
 
@@ -29,12 +29,33 @@ function parseRequest(value: unknown): AttentionRequest {
   return { kind: request.kind, postIds: request.postIds as string[] };
 }
 
+// Pre-per-post clients acknowledged publications by sequence or migration-era date.
+function legacySeenThroughSequence(): number | null {
+  const sequence = getLearnerParam('whats_new_seen_through_sequence');
+  if (sequence !== null) {
+    if (typeof sequence !== 'number' || !Number.isSafeInteger(sequence) || sequence < 0) {
+      throw new Error('Stored blog seen sequence is invalid.');
+    }
+    return sequence;
+  }
+
+  const date = getLearnerParam('whats_new_seen_through_date');
+  if (date === null) return null;
+  if (typeof date !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(date)
+    || new Date(date).toJSON()?.slice(0, 10) !== date) {
+    throw new Error('Stored whats-new seen-through date is invalid.');
+  }
+  return (getDb().prepare(`SELECT COALESCE(MAX(json_extract(post_json, '$.publicationSequence')), 0) AS sequence
+    FROM whats_new_post_revisions WHERE actor_id = 'migration:0028'
+      AND json_extract(post_json, '$.date') <= ?`).get(date) as { sequence: number }).sequence;
+}
+
 /** A read never starts an exposure clock or initializes away historical posts. */
 export function getWhatsNewAttention(now = new Date().toISOString()): WhatsNewAttention {
   assertTimestamp(now);
   const db = getDb();
   const learnerId = requireLearnerId();
-  const legacySequence = getWhatsNewSeenThroughSequence();
+  const legacySequence = legacySeenThroughSequence();
   const legacy = legacySequence === null ? undefined : db.prepare(`
     SELECT updated_at AS updatedAt FROM learner_params
     WHERE learner_id = ? AND param_key IN ('whats_new_seen_through_sequence', 'whats_new_seen_through_date')

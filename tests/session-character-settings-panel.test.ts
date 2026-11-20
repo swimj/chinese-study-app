@@ -5,11 +5,11 @@ import { test } from 'node:test';
 import { SessionSettingsPanel } from '../src/pages/HomeOverviewPanel.tsx';
 import type { BackendStatus } from '../src/services/api.ts';
 
-function render(characterPresentation: BackendStatus['characterPresentation'], studyProfile: BackendStatus['studyProfile'] = 'mandarin', studyNewWordsFirst = false, introductionSettings: Partial<Pick<BackendStatus, 'studyIntroductionOrder' | 'studyIntroductionSpacing'>> = {}) {
+function render(characterPresentation: BackendStatus['characterPresentation'], studyProfile: BackendStatus['studyProfile'] = 'mandarin', introductionSettings: Partial<Pick<BackendStatus, 'studyIntroductionOrder' | 'studyIntroductionSpacing'>> = {}) {
   // Only the session-setting fields are consumed by this panel.
   const backendStatus = {
     dailyNewWordLimit: 10, unstudiedAdmissionSource: 'mixed', studyProfile,
-    studyNewWordsFirst, characterPresentation, sentenceCharacterPresentation: 'traditional', ...introductionSettings,
+    characterPresentation, sentenceCharacterPresentation: 'traditional', ...introductionSettings,
   } as BackendStatus;
   return renderToStaticMarkup(createElement(SessionSettingsPanel, {
     backendStatus, onSaveSessionSettings: async () => {}, onSavingChange: () => {}, onClose: () => {},
@@ -27,10 +27,10 @@ test('shows remembered sentence preference only with Both cards in Mandarin', ()
 });
 
 
-test('introduction order reflects the saved preference and legacy fallback', () => {
-  assert.match(render('simplified', 'mandarin', true), /value="first" selected=""/);
+test('introduction order reflects the saved preference and default order', () => {
+  assert.match(render('simplified', 'mandarin', { studyIntroductionOrder: 'first' }), /value="first" selected=""/);
   assert.match(render('simplified'), /value="random" selected=""/);
-  const paced = render('simplified', 'mandarin', true, { studyIntroductionOrder: 'paced' });
+  const paced = render('simplified', 'mandarin', { studyIntroductionOrder: 'paced' });
   assert.match(paced, /value="paced" selected=""/);
   assert.match(paced, /id="study-introduction-spacing"[^>]*>.*?<option value="3" selected=""/);
   assert.match(paced, /value="10"/);
@@ -40,7 +40,7 @@ test('introduction order reflects the saved preference and legacy fallback', () 
 });
 
 test('paced introduction spacing reflects its remembered value', () => {
-  const markup = render('simplified', 'mandarin', false, {
+  const markup = render('simplified', 'mandarin', {
     studyIntroductionOrder: 'paced', studyIntroductionSpacing: 10,
   });
   assert.match(markup, /id="study-introduction-spacing"[^>]*>.*?<option value="10" selected=""/);

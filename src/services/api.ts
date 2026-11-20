@@ -13,9 +13,8 @@ import type { WhatsNewAttention } from '../domain/whats-new-attention';
 import type { ModelInvocationRow } from '../domain/model-invocations';
 import type { SessionDebrief } from '../domain/session-debrief';
 import type { ContentReactionInput, ContentReactionState, ContentReactionSummary, SavedCollection } from '../domain/content-reactions';
-import type { PriorityWord, ReviewFailureRateDay, SessionActiveTimeMetrics, Word } from '../types';
+import type { PriorityWord, Word } from '../types';
 import type { CharacterPresentation, SentenceCharacterPresentation } from '../domain/card-characters';
-import type { MarkReflectionInboxSeenRequest } from '../domain/reflection';
 import type {
   ContentDiagnosticKind,
   ContentDiagnosticsResponse,
@@ -198,14 +197,10 @@ type BackendStatus = {
   studyProfile: 'mandarin' | 'french';
   dataDir: string;
   dbPath: string;
-  wordStatusCounts: Record<Word['status'], number>;
-  reviewFailureRateDays: ReviewFailureRateDay[];
-  sessionActiveTimeMetrics: SessionActiveTimeMetrics;
   dailyNewWordLimit: number;
   unstudiedAdmissionSource: UnstudiedAdmissionSource;
   characterPresentation: CharacterPresentation;
   sentenceCharacterPresentation: SentenceCharacterPresentation;
-  studyNewWordsFirst: boolean;
   studyIntroductionOrder: StudyIntroductionOrder;
   studyIntroductionSpacing: number;
   /** The learner's rough sense of how much a day holds; read by timed sessions. */
@@ -213,9 +208,6 @@ type BackendStatus = {
   /** New sessions use the timed daily paradigm. */
   timedSessions: boolean;
   debriefInterests: string;
-  learningCoverageDate: string;
-  /** True when deck-based diet admission is active (Mandarin profile with a manifest). */
-  dietDecksActive: boolean;
   serviceBanner: ServiceBanner | null;
 };
 
@@ -230,13 +222,10 @@ export type UsageDailySnapshot = {
   practiceCompleted: number;
   reviewCorrect: number;
   reviewWrong: number;
-  proposalsAccepted: number;
   meanStashSize: number | null;
   sessionActiveMs: number;
   learnersInactive7d: number;
   sessionsAbandoned: number;
-  learnersSpendWithoutAccepts: number;
-  studyCommitFailures: number;
 };
 
 export type UsagePulsePayload = {
@@ -288,8 +277,7 @@ type PriorityWordsResponse = {
 };
 
 export async function fetchStatus(): Promise<BackendStatus> {
-  const studyDayKey = getCurrentStudyDayKey();
-  const response = await apiFetch(`${API_BASE}/api/status?studyDayKey=${encodeURIComponent(studyDayKey)}`);
+  const response = await apiFetch(`${API_BASE}/api/status`);
   if (!response.ok) {
     throw new Error('Failed to load backend status');
   }
@@ -428,54 +416,6 @@ export async function updateSentenceCharacterPresentation(
   return response.json();
 }
 
-export async function fetchAttentionBadges(): Promise<AttentionBadgesDto> {
-  const response = await apiFetch(`${API_BASE}/api/attention-badges`);
-  if (!response.ok) {
-    throw new Error(await readApiErrorMessage(response, 'Failed to load attention badges'));
-  }
-  return response.json();
-}
-
-export async function markReflectionInboxSeen(
-  request: MarkReflectionInboxSeenRequest,
-): Promise<{ marked: boolean; reflectionUnseenCount: number }> {
-  const response = await apiFetch(`${API_BASE}/api/reflection-inbox-seen`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(request),
-  });
-  if (!response.ok) {
-    throw new Error(await readApiErrorMessage(response, 'Failed to mark feedback inbox item seen'));
-  }
-  return response.json();
-}
-
-export async function markFailedReflectionRunsSeen(request: {
-  seenThroughAt?: string;
-} = {}): Promise<{
-  failedReflectionRunIds: string[];
-  failedReflectionRunsSeenThroughAt: string;
-}> {
-  const response = await apiFetch(`${API_BASE}/api/failed-reflection-runs-seen`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(request),
-  });
-  if (!response.ok) {
-    throw new Error(await readApiErrorMessage(response, 'Failed to acknowledge failed feedback runs'));
-  }
-  return response.json();
-}
-
-export type AttentionBadgesDto = {
-  reflectionGenerating: boolean;
-  reflectionUnseenCount: number;
-  failedReflectionRunIds: string[];
-  failedReflectionRunsSeenThroughAt: string | null;
-  whatsNewSeenThroughDate: string | null;
-  whatsNewSeenThroughSequence: number | null;
-};
-
 export async function fetchUnstudiedPriorityWords(signal?: AbortSignal): Promise<PriorityWordsResponse> {
   const response = await apiFetch(`${API_BASE}/api/priority/unstudied`, { signal });
   if (!response.ok) {
@@ -538,30 +478,6 @@ async function readApiErrorMessage(response: Response, fallbackMessage: string) 
   }
 
   return fallbackMessage;
-}
-
-function getCurrentStudyDayKey(): string {
-  const userTimeZone = Intl.DateTimeFormat().resolvedOptions().timeZone ?? 'UTC';
-  const now = new Date();
-  // A study day starts at 04:00 local time. Shift the instant back by 4h first,
-  // then derive the local calendar date in the user's configured time zone.
-  const shiftedInstant = new Date(now.getTime() - 4 * 60 * 60 * 1000);
-  const parts = new Intl.DateTimeFormat('en-US', {
-    timeZone: userTimeZone,
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-  }).formatToParts(shiftedInstant);
-
-  const year = parts.find((part) => part.type === 'year')?.value;
-  const month = parts.find((part) => part.type === 'month')?.value;
-  const day = parts.find((part) => part.type === 'day')?.value;
-
-  if (!year || !month || !day) {
-    throw new Error('Failed to derive study day key');
-  }
-
-  return `${year}-${month}-${day}`;
 }
 
 export type PreparationFailure = {

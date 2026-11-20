@@ -11,7 +11,7 @@ import { setDb } from '../server/db/connection.ts';
 import { listWhatsNewPosts, saveWhatsNewPost, WhatsNewConflictError } from '../server/db/whats-new.ts';
 import { parseWhatsNewWriteRequest, WhatsNewInputError } from '../src/domain/whats-new.ts';
 import { runWithLearnerId } from '../server/db/learner-context.ts';
-import { getWhatsNewSeenThroughSequence, updateWhatsNewSeenThroughSequence } from '../server/db/attention.ts';
+import { getWhatsNewAttention } from '../server/db/whats-new-attention.ts';
 const request = { id: 'new-post', expectedRevision: null, date: '2026-10-07', title: 'Hello', summary: 'A short welcome.', paragraphs: ['你好'], status: 'draft' as const, sourceFrom: null, sourceThrough: null };
 
 test('blog migration preserves history and learners, repeats safely, and matches fresh schema', () => {
@@ -63,17 +63,16 @@ test('blog migration preserves history and learners, repeats safely, and matches
     assert.equal(write.status, 0, write.stderr); assert.equal(listWhatsNewPosts()[0].title, 'Changed live');
     db.prepare('INSERT INTO learner_params (learner_id,param_key,value_json,updated_at) VALUES (?,?,?,?)').run('reader', 'whats_new_seen_through_date', JSON.stringify('2026-09-16'), 'now');
     runWithLearnerId('reader', () => {
-      assert.equal(getWhatsNewSeenThroughSequence(), 5);
+      const readPostIds = () => getWhatsNewAttention().items.filter(item => item.readAt !== null).map(item => item.postId);
+      const grandfathered = readPostIds();
+      assert.equal(grandfathered.length, 5);
+      assert(grandfathered.includes('update-2026-09-16'));
       const seeded = listWhatsNewPosts().find(p => p.id === 'update-2026-09-16')!;
       const { revision, publicationSequence: _sequence, updatedAt: _updatedAt, ...seedInput } = seeded;
       saveWhatsNewPost({ ...seedInput, expectedRevision: revision, date: '2026-10-07' }, 'operator');
-      assert.equal(getWhatsNewSeenThroughSequence(), 5, 'editing historical dates preserves old read state');
+      assert.deepEqual(readPostIds(), grandfathered, 'editing historical dates preserves old read state');
       saveWhatsNewPost({ ...request, id: 'backdated', date: '2026-09-01', status: 'published' }, 'operator');
-      assert.equal(getWhatsNewSeenThroughSequence(), 5, 'new backdated publication is not grandfathered');
-      assert.equal(updateWhatsNewSeenThroughSequence(14, 'ensure'), 5);
-      assert.equal(updateWhatsNewSeenThroughSequence(14, 'seen'), 14);
-      assert.equal(updateWhatsNewSeenThroughSequence(0, 'seen'), 14);
-      assert.throws(() => updateWhatsNewSeenThroughSequence(15, 'seen'), WhatsNewInputError);
+      assert.deepEqual(readPostIds(), grandfathered, 'new backdated publication is not grandfathered');
     });
   } finally { db.close(); other.close(); fs.rmSync(dir, { recursive: true, force: true }); fs.rmSync(otherDir, { recursive: true, force: true }); }
 });

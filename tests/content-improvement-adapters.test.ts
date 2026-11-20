@@ -145,11 +145,12 @@ test('pure cue wording repair retains identity and served snapshot while attribu
         (learner_id,snapshot_id,pure_cue_id,served_at,stimulus,axis_note,teaching_note,accepted_answers_json)
         VALUES ('owner','pure-snapshot','pure',?,'Say hello','greetings','Original note',?)`)
         .run(now, JSON.stringify([{ wordId: 'a', hanzi: '你好', traditional: null }, { wordId: 'b', hanzi: '您好', traditional: null }]));
-    const snapshot = db.runWithLearnerId('owner', () => db.getPureCueServedSnapshot('pure-snapshot'));
+    const snapshotQuery = sql.prepare("SELECT * FROM pure_cue_served_snapshots WHERE learner_id = 'owner' AND snapshot_id = 'pure-snapshot'");
+    const snapshot = snapshotQuery.get();
     assert.ok(snapshot);
     const result = apply(draft('pure_cue', 'pure', { stimulus: 'Offer a greeting', teachingNote: 'Choose the level of politeness.' }));
     assert.equal(result.outcome!.replacementSourceId, 'pure');
-    assert.deepEqual(db.runWithLearnerId('owner', () => db.getPureCueServedSnapshot(snapshot.snapshotId)), snapshot);
+    assert.deepEqual(snapshotQuery.get(), snapshot);
     assert.deepEqual({ ...sql.prepare(`SELECT * FROM learner_pure_cue_state WHERE pure_cue_id='pure'`).get() }, schedule);
     assert.equal(sql.prepare('SELECT stimulus FROM pure_cues WHERE id=\'pure\'').get()!.stimulus, 'Offer a greeting');
     assert.equal(sql.prepare('SELECT previous_stimulus FROM operator_pure_cue_repairs WHERE case_id=?').get(result.id)!.previous_stimulus, 'Say hello');

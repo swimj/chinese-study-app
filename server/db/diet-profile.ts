@@ -1,4 +1,4 @@
-import { config, getDb } from './connection.ts';
+import { getDb } from './connection.ts';
 import { requireLearnerId } from './learner-context.ts';
 import {
   loadDeckManifest,
@@ -18,15 +18,12 @@ type DietIntakePlacementRunMetadata = {
  *
  * The profile is a versioned JSON value in the `learner_settings` key-value
  * store under `diet_profile`. When unset, the effective profile defaults to
- * 100% weight on the first HSK 2.0 Level 6 deck by manifest order. Deck machinery is never
- * user-visible; nudges are the learner's coarse steering signal and operator
- * jumps happen through scripts/set-diet-deck.ts (no HTTP endpoint).
+ * 100% weight on the first HSK 2.0 Level 6 deck by manifest order. Operators
+ * can assign a deck through scripts/set-diet-deck.ts.
  */
 
 export const DIET_PROFILE_SETTING_KEY = 'diet_profile';
 export const DIET_PROFILE_VERSION = 1;
-/** Fixed weight quantum shifted by one nudge. Internal, never user-visible. */
-export const DIET_NUDGE_QUANTUM = 0.1;
 
 export const STASH_DIET_SPLIT_SETTING_KEY = 'stash_diet_split';
 export const DEFAULT_STASH_DIET_SPLIT = 0.5;
@@ -76,8 +73,6 @@ export type DietProfile = {
   updatedAt: string;
   intake?: DietIntakeRecord;
 };
-
-export type DietNudgeDirection = 'easier' | 'harder';
 
 export class DietManifestUnavailableError extends Error {
   constructor() {
@@ -133,54 +128,6 @@ export function resolveEffectiveDietWeights(
     effective[first.id] = 1;
   }
   return effective;
-}
-
-/**
- * Shift one weight quantum across the adjacent-deck boundary in the nudge
- * direction. Edge-drain semantics: 'harder' drains the lowest-order weighted
- * deck into its successor, 'easier' drains the highest-order weighted deck
- * into its predecessor — so nudges are directional and reversible (an
- * 'easier' nudge undoes a 'harder' one). Clamped at the ends: a nudge past
- * the first/last deck is a no-op and records no provenance.
- */
-export function applyDietNudge(
-  profile: DietProfile,
-  manifest: DeckManifest,
-  direction: DietNudgeDirection,
-  now: string,
-): { profile: DietProfile; changed: boolean } {
-  const weights = resolveEffectiveDietWeights(profile, manifest);
-  const orderedDecks = manifest.decks;
-
-  const weightedIndices = orderedDecks
-    .map((deck, index) => ({ index, weight: weights[deck.id] ?? 0 }))
-    .filter((entry) => entry.weight > 0);
-  const sourceEntry = direction === 'harder' ? weightedIndices[0] : weightedIndices[weightedIndices.length - 1];
-  if (!sourceEntry) {
-    throw new Error('Diet profile invariant violated: no weighted deck.');
-  }
-
-  const targetIndex = sourceEntry.index + (direction === 'harder' ? 1 : -1);
-  const source = orderedDecks[sourceEntry.index];
-  const target = orderedDecks[targetIndex];
-  if (!source || !target) {
-    return { profile, changed: false };
-  }
-
-  const moved = Math.min(DIET_NUDGE_QUANTUM, weights[source.id] ?? 0);
-  const nextWeights: Record<string, number> = { ...weights };
-  nextWeights[source.id] = (nextWeights[source.id] ?? 0) - moved;
-  nextWeights[target.id] = (nextWeights[target.id] ?? 0) + moved;
-
-  return {
-    profile: {
-      ...profile,
-      weights: normalizeWeights(nextWeights),
-      provenance: [...profile.provenance, { actor: 'learner-nudge', at: now, note: direction }],
-      updatedAt: now,
-    },
-    changed: true,
-  };
 }
 
 /** Operator jump: 100% weight on a chosen deck (concierge correction). */
@@ -275,29 +222,6 @@ export function getDietProfile(manifest: DeckManifest | null = loadDeckManifest(
     return null;
   }
   return createDefaultDietProfile(manifest, new Date().toISOString());
-}
-
-/** True when deck-based diet admission is active (Mandarin profile with a manifest). */
-export function isDietDeckModeActive(manifest: DeckManifest | null = loadDeckManifest()): boolean {
-  return config.studyProfile === 'mandarin' && manifest !== null;
-}
-
-// --- Learner/operator-facing operations -------------------------------------
-
-export function nudgeDietProfile(
-  direction: DietNudgeDirection,
-  manifest: DeckManifest | null = loadDeckManifest(),
-): { profile: DietProfile; changed: boolean } {
-  if (!manifest) {
-    throw new DietManifestUnavailableError();
-  }
-  const now = new Date().toISOString();
-  const current = getStoredDietProfile() ?? createDefaultDietProfile(manifest, now);
-  const result = applyDietNudge(current, manifest, direction, now);
-  if (result.changed) {
-    saveDietProfile(result.profile);
-  }
-  return result;
 }
 
 export function setOperatorDietDeck(
@@ -404,15 +328,6 @@ function isNormalizedTokenUsage(value: unknown): boolean {
 
 export function isDietSelfSelect(value: unknown): value is DietSelfSelect {
   return typeof value === 'string' && (DIET_SELF_SELECT_VALUES as readonly string[]).includes(value);
-}
-
-function normalizeWeights(weights: Record<string, number>): Record<string, number> {
-  const entries = Object.entries(weights).filter(([, weight]) => weight > 1e-9);
-  const total = entries.reduce((sum, [, weight]) => sum + weight, 0);
-  if (total <= 0) {
-    throw new Error('Diet profile invariant violated: weights sum to zero.');
-  }
-  return Object.fromEntries(entries.map(([deckId, weight]) => [deckId, weight / total]));
 }
 
 function isPlainRecord(value: unknown): value is Record<string, unknown> {

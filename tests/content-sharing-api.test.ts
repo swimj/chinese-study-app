@@ -42,7 +42,6 @@ test('operator report uses migrated schema, requires allowlist, validates date, 
 test('real immutable published package and exact rehearsal reuse appear without private identities', async () => {
   const {getDb} = await import('../server/db/connection.ts');
   const {runWithLearnerId} = await import('../server/db/learner-context.ts');
-  const {recordContentQualityEncounter} = await import('../server/db/content-quality.ts');
   const {currentSharingWeek} = await import('../server/db/content-sharing.ts');
   const db = getDb();
   const first = '2020-01-01T00:00:00.000Z';
@@ -56,10 +55,13 @@ test('real immutable published package and exact rehearsal reuse appear without 
   const teaching = {schemaVersion:1,id:'t',wordContentId:'c',beats:[{id:'b',parts:[{kind:'text',text:'Lagging behind'}]}],rehearsals:[{id:'r',responseMode:'hanzi_entry',contract:{kind:'target_rehearsal',wordId:'w'},instruction:'',stimulus:{kind:'direct_text',text:'Lag behind'},acceptedAnswers:[{wordId:'w',hanzi:'滞后',traditional:null}]}]};
   db.prepare('INSERT INTO word_content_documents(content_id,word_id,content_json,model,created_at,publication_id) VALUES (?,?,?,?,?,?)').run('c','w',JSON.stringify(content),'fixture-model',first,'pc');
   db.prepare('INSERT INTO word_teaching_packages VALUES (?,?,?,?,?,?,?)').run('t','w','c',JSON.stringify(teaching),'fixture-model',first,'pt');
+  db.prepare(`INSERT INTO content_quality_items VALUES
+    ('historical-rehearsal', 'rehearsal', 't:r', 'w', 'Lag behind', ?, '{}', ?)`)
+    .run(JSON.stringify(teaching.rehearsals[0]), first);
   for (const [learner,time] of [['private-identity',first],['second-identity',second]]) {
     runWithLearnerId(learner,() => {
       db.prepare('INSERT INTO learner_word_introduction_events(event_id,learner_id,word_id,package_id,event_kind,occurred_at) VALUES (?,?,?,?,?,?)').run(`open-${learner}`,learner,'w','t','opened',time);
-      recordContentQualityEncounter({kind:'rehearsal',packageId:'t',rehearsalId:'r'},`enc-${learner}`);
+      db.prepare("INSERT INTO learner_content_quality_encounters VALUES (?, ?, 'historical-rehearsal', ?)").run(learner, `enc-${learner}`, time);
     });
   }
   const response = await fetch(`${base}/api/operator/content-sharing`);

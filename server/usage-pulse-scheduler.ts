@@ -1,4 +1,3 @@
-import { config as dbConfig } from './db/connection.ts';
 import {
   ensureUsagePulseSnapshots,
   utcDayKey,
@@ -10,12 +9,10 @@ export type UsagePulseScheduler = {
 
 export function startUsagePulseScheduler(options?: {
   now?: () => Date;
-  dataDir?: string | null;
   setTimeoutFn?: typeof setTimeout;
   clearTimeoutFn?: typeof clearTimeout;
 }): UsagePulseScheduler {
   const nowFn = options?.now ?? (() => new Date());
-  const dataDir = options?.dataDir ?? dbConfig.dataDir;
   const setTimeoutFn = options?.setTimeoutFn ?? setTimeout;
   const clearTimeoutFn = options?.clearTimeoutFn ?? clearTimeout;
   let timer: ReturnType<typeof setTimeout> | null = null;
@@ -24,7 +21,6 @@ export function startUsagePulseScheduler(options?: {
   const runCatchUp = () => {
     ensureUsagePulseSnapshots({
       todayDayKey: utcDayKey(nowFn()),
-      dataDir,
       now: nowFn(),
     });
   };

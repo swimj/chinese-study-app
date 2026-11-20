@@ -66,8 +66,8 @@ describe('learning policy settings', { concurrency: false }, () => {
 
   test('daily new-word limit defaults to 5 and persists independently from the completed count', () => {
     sqlite.exec("DELETE FROM learner_settings WHERE setting_key = 'daily_new_word_limit'");
-    assert.equal(dbModule.getLearningPolicy(studyDayKey).dailyNewWordLimit, 5);
-    assert.equal(dbModule.getLearningPolicy(studyDayKey).unstudiedAdmissionSource, 'mixed');
+    assert.equal(dbModule.getLearningPolicy().dailyNewWordLimit, 5);
+    assert.equal(dbModule.getLearningPolicy().unstudiedAdmissionSource, 'mixed');
     assert.throws(
       () => dbModule.setDailyNewWordLimit(-1),
       /Expected integer dailyNewWordLimit between 0 and 20/,
@@ -90,7 +90,7 @@ describe('learning policy settings', { concurrency: false }, () => {
 
     assert.equal(settingRow?.value_json, '5');
     assert.equal(intakeRow?.new_study_count, 1);
-    assert.equal(dbModule.getLearningPolicy(studyDayKey).dailyNewWordLimit, 5);
+    assert.equal(dbModule.getLearningPolicy().dailyNewWordLimit, 5);
   });
 
   test('unstudied admission source defaults to mixed and persists independently from the daily limit', () => {
@@ -109,8 +109,8 @@ describe('learning policy settings', { concurrency: false }, () => {
     assert.equal(settingRow?.value_json, '"stash_only"');
     assert.equal(policy.unstudiedAdmissionSource, 'stash_only');
     assert.equal(policy.dailyNewWordLimit, 4);
-    assert.equal(dbModule.getLearningPolicy(studyDayKey).unstudiedAdmissionSource, 'stash_only');
-    assert.equal(dbModule.getLearningPolicy(studyDayKey).dailyNewWordLimit, 4);
+    assert.equal(dbModule.getLearningPolicy().unstudiedAdmissionSource, 'stash_only');
+    assert.equal(dbModule.getLearningPolicy().dailyNewWordLimit, 4);
   });
 
   test('character presentation defaults to simplified and persists independently of learning policy', () => {
@@ -130,7 +130,7 @@ describe('learning policy settings', { concurrency: false }, () => {
     assert.equal(settingRow?.value_json, '"both"');
     assert.deepEqual(saved, { characterPresentation: 'both' });
     assert.equal(dbModule.getCharacterPresentation(), 'both');
-    assert.equal(dbModule.getLearningPolicy(studyDayKey).dailyNewWordLimit, 4);
-    assert.equal(dbModule.getLearningPolicy(studyDayKey).unstudiedAdmissionSource, 'mixed');
+    assert.equal(dbModule.getLearningPolicy().dailyNewWordLimit, 4);
+    assert.equal(dbModule.getLearningPolicy().unstudiedAdmissionSource, 'mixed');
   });
 });

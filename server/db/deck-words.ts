@@ -1,10 +1,7 @@
 import type { DatabaseSync } from 'node:sqlite';
 import { getDb } from './connection.ts';
-import type { WordRow } from './types.ts';
 import { deckAssignmentKey, type DeckManifest } from '../decks/manifest.ts';
 
-export type DeckWordRow = WordRow & { personal_updated_at: string | null };
-type DeckWordPurpose = 'diet' | 'browse';
 type ResolvedIds = ReadonlyMap<string, readonly string[]>;
 type CachedIds = { dataVersion: number; ids: ResolvedIds };
 const resolvedIds = new WeakMap<DatabaseSync, WeakMap<DeckManifest, CachedIds>>();
@@ -43,18 +40,6 @@ export function getResolvedDeckWordIds(manifest: DeckManifest): ResolvedIds {
   return ids;
 }
 
-/** Shared by composition and browsing: hydrate current learner state by cached IDs. */
-export function queryManifestDeckWords(manifest: DeckManifest, deckIds: readonly string[], purpose: DeckWordPurpose): DeckWordRow[] {
-  const byDeck = getResolvedDeckWordIds(manifest);
-  const ids = [...new Set(deckIds.flatMap((id) => byDeck.get(id) ?? []))];
-  const rows: DeckWordRow[] = [];
-  for (let offset = 0; offset < ids.length; offset += 400) {
-    const chunk = ids.slice(offset, offset + 400);
-    rows.push(...getDb().prepare(deckWordProbeSql(chunk.length, purpose)).all(...chunk) as DeckWordRow[]);
-  }
-  return rows;
-}
-
 function placeholders(count: number): string {
   if (!Number.isInteger(count) || count < 1 || count > 400) throw new Error('Expected 1–400 deck probes');
   return Array.from({ length: count }, () => '?').join(', ');
@@ -63,16 +48,6 @@ function placeholders(count: number): string {
 /** Exported SQL builders let regression tests explain the actual production queries. */
 export function deckIdentityProbeSql(count: number): string {
   return `SELECT id, hanzi, pinyin FROM lexical_words WHERE hanzi IN (${placeholders(count)})`;
-}
-
-export function deckWordProbeSql(count: number, purpose: DeckWordPurpose): string {
-  return `SELECT words.*, personal.updated_at AS personal_updated_at
-    FROM words
-    LEFT JOIN user_word_priority personal ON personal.word_id = words.id
-    WHERE words.id IN (${placeholders(count)})
-      AND ${purpose === 'diet'
-        ? "words.status = 'unstudied' AND personal.word_id IS NULL"
-        : '(personal.priority_tier IS NULL OR personal.priority_tier >= 0)'}`;
 }
 
 // One learner-history pass for the entire result set, rather than one per word

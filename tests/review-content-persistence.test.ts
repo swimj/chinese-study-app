@@ -13,6 +13,7 @@ type DbModule = typeof import('../server/db.ts');
 let dir = '';
 let db: DbModule;
 let sqlite: DatabaseSync;
+let currentLearner = 'learner-a';
 const wordId = 'word-review';
 const content: WordContentDocument = {
   schemaVersion: 1, id: 'review-source',
@@ -38,7 +39,7 @@ before(async () => {
   db.bootstrapLearner({ learnerId: 'learner-b' });
   sqlite = new DatabaseSync(path.join(dir, 'app.db'));
   sqlite.exec('PRAGMA foreign_keys=ON');
-  sqlite.function('current_learner_id', () => 'learner-a');
+  sqlite.function('current_learner_id', () => currentLearner);
   sqlite.prepare(`INSERT INTO lexical_words
     (id,hanzi,traditional,pinyin,meaning,meanings_json,examples_json,priority,created_at)
     VALUES (?,'你好',NULL,'nǐ hǎo','hello','["hello"]','[]',10,'2026-09-25T00:00:00.000Z')`)
@@ -85,14 +86,16 @@ test('review claim publishes canonical shared exercise and supplement atomically
   });
   assert.equal(call(() => db.claimWordReviewPreparation(wordId, content.id, 'worker-c', now, expiry)), 'ready');
   assert.equal(db.getSharedWordReviewPreparation(wordId)?.ready, true);
-  const other = db.runWithLearnerId('learner-b', () =>
-    db.getCanonicalReviewContent('production_cue', 'review-definition'));
-  assert.equal(other?.kind, 'production_cue');
-  assert.equal(other?.sourceWordContentId, content.id);
-  assert.equal(other?.model, 'fake-review-model');
-  assert.equal(db.runWithLearnerId('learner-b', () =>
-    db.getCanonicalReviewContent('production_cue_supplement', 'review-definition:supplement'))?.kind,
-  'production_cue_supplement');
+  const read = sqlite.prepare('SELECT kind, source_word_content_id, model FROM review_content_records WHERE content_id=?');
+  currentLearner = 'learner-b';
+  try {
+    assert.deepEqual({ ...read.get('review-definition') }, {
+      kind: 'production_cue', source_word_content_id: content.id, model: 'fake-review-model',
+    });
+    assert.equal(read.get('review-definition:supplement')?.kind, 'production_cue_supplement');
+  } finally {
+    currentLearner = 'learner-a';
+  }
   assert.throws(() => sqlite.exec(`UPDATE scoped_review_content_records SET model = 'changed'`), /immutable/);
   const quarantinedAt = new Date().toISOString();
   sqlite.prepare(`INSERT INTO shared_content_publication_events
@@ -101,8 +104,7 @@ test('review claim publishes canonical shared exercise and supplement atomically
     .run(quarantinedAt);
   sqlite.prepare(`UPDATE shared_content_publications SET publication_status = 'quarantined', status_updated_at = ?
     WHERE publication_id = 'review-source-publication'`).run(quarantinedAt);
-  assert.equal(call(() => db.getCanonicalReviewContent('production_cue', 'review-definition'))?.kind,
-    'production_cue');
+  assert.equal(read.get('review-definition')?.kind, 'production_cue');
   assert.equal(call(() => db.claimWordReviewPreparation(wordId, content.id, 'worker-d', now, expiry)), 'ready');
 });
 
@@ -127,11 +129,14 @@ test('private embedded supplement source is invisible across learners', () => {
       source: { kind: 'example', supplementId: 'private-supplement', englishFrame: 'Say hello:',
         example: { contentId: privateContent.id, exampleId: 'private-example' } },
       contents: [privateContent] }), new Date().toISOString());
-  assert.equal(db.runWithLearnerId('learner-a', () =>
-    db.getCanonicalReviewContent('production_cue_supplement', 'private-supplement'))?.kind,
-  'production_cue_supplement');
-  assert.equal(db.runWithLearnerId('learner-b', () =>
-    db.getCanonicalReviewContent('production_cue_supplement', 'private-supplement')), null);
+  const readPrivate = sqlite.prepare("SELECT kind FROM review_content_records WHERE content_id = 'private-supplement'");
+  assert.equal(readPrivate.get()?.kind, 'production_cue_supplement');
+  currentLearner = 'learner-b';
+  try {
+    assert.equal(readPrivate.get(), undefined);
+  } finally {
+    currentLearner = 'learner-a';
+  }
   assert.equal(sqlite.prepare(`SELECT 1 FROM shared_content_publications
     WHERE content_kind = 'production_cue_supplement' AND content_id = 'private-supplement'`).get(), undefined);
 });

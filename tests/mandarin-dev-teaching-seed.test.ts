@@ -24,8 +24,8 @@ test('Mandarin dev seed respects stash-only defaults and seeds unopened shared l
         limit, seed: buildUnstudiedAdmissionSeedSource(studyDayKey, limit), now: new Date().toISOString(),
       }).newWordIds;
     };
-    assert.deepEqual(db.getLearningPolicy(studyDayKey), {
-      dailyNewWordLimit: 5, unstudiedAdmissionSource: 'stash_only', learningCoverageDate: studyDayKey,
+    assert.deepEqual(db.getLearningPolicy(), {
+      dailyNewWordLimit: 5, unstudiedAdmissionSource: 'stash_only',
     });
     assert.equal(admittedNewWordIds().length, 0, 'empty stash never falls back to diet');
     for (const { content, teaching } of wordContentFixtures) {

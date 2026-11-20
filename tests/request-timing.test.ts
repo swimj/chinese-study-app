@@ -290,7 +290,7 @@ describe('request timing in the application', { concurrency: false }, () => {
       await new Promise<void>((resolve) => server.once('listening', () => resolve()));
       const address = server.address();
       assert.ok(address && typeof address === 'object');
-      const response = await fetch(`http://127.0.0.1:${address.port}/api/my-words`);
+      const response = await fetch(`http://127.0.0.1:${address.port}/api/status`);
       assert.equal(response.status, 200);
       const serverTiming = response.headers.get('server-timing') ?? '';
       const statementCount = Number(/sqlite;dur=[\d.]+;desc="(\d+) statements"/.exec(serverTiming)?.[1]);
@@ -300,7 +300,7 @@ describe('request timing in the application', { concurrency: false }, () => {
     }
     await waitFor(() => slowLines.length > 0);
     const event = JSON.parse(slowLines.at(-1)!) as { route: string; learnerId: string | null; sqlite: { statements: number } };
-    assert.equal(event.route, '/api/my-words');
+    assert.equal(event.route, '/api/status');
     assert.ok(event.learnerId);
     assert.ok(event.sqlite.statements > 0);
   });

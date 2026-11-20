@@ -4,10 +4,7 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { test } from 'node:test';
 import { WordBrowserPage, type MyWordsPageProps } from '../src/pages/MyWordsPage.tsx';
 import {
-  ALL_MY_WORDS_STATUSES,
   myWordsRecentLapseSinceDay,
-  normalizeMyWordsStatuses,
-  toggleMyWordsStatus,
   type MyWord,
 } from '../src/domain/my-words.ts';
 
@@ -107,14 +104,7 @@ test('muted count appears on bounded collections and lapses, not recency paginat
   assert.doesNotMatch(render({ view: 'deck', words: [], total: 0 }), /0 words/);
 });
 
-test('status chip helpers start from implicit all, isolate on first click, and drop unstudied-only on Recently studied', () => {
-  assert.deepEqual(toggleMyWordsStatus([], 'learning'), ['learning']);
-  assert.deepEqual(toggleMyWordsStatus([...ALL_MY_WORDS_STATUSES], 'learning'), ['learning']);
-  assert.deepEqual(toggleMyWordsStatus(['learning'], 'learning'), []);
-  assert.deepEqual(toggleMyWordsStatus(['learning'], 'review'), ['learning', 'review']);
-  assert.deepEqual(normalizeMyWordsStatuses('recent', []), ['learning', 'review']);
-  assert.deepEqual(normalizeMyWordsStatuses('recent', ['unstudied']), ['learning', 'review']);
-  assert.deepEqual(normalizeMyWordsStatuses('personal', ['unstudied']), ['unstudied']);
+test('recent lapses include the current UTC day and two preceding days', () => {
   assert.equal(myWordsRecentLapseSinceDay('2026-09-16'), '2026-09-14');
 });
 

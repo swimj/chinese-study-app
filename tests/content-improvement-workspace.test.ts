@@ -64,16 +64,20 @@ test('operator authorization protects reads, drafts, application and direct doma
 });
 
 test('flagged correction retains evidence, requires approval, replaces future selection and preserves old content', async () => {
+  assert.throws(() => api.createImprovementCase({kind:'definition_fallback',sourceId:'w1'},'editor'), /not supported/);
   prompt('flagged');
-  const quality = await import('../server/db/content-quality.ts');
-  const rating = quality.recordContentQualityEncounter({kind:'contrast_prompt',id:'flagged',expected:{promptText:'老师要____学生。',explanation:'Testing knowledge.',targetWordId:'w1'}},'seen');
-  quality.setContentQualityRating(rating.contentKey,'down');
-  const created = await request('',{kind:'contrast_prompt',sourceId:'flagged',contentKey:rating.contentKey,id:'case-fixed'});
+  const contentKey = 'historical-flag';
+  const snapshot = { prompt_text: '老师要____学生。', explanation: 'Testing knowledge.', target_word_id: 'w1' };
+  db.prepare(`INSERT INTO content_quality_items VALUES (?, 'contrast_prompt', 'flagged', 'w1', ?, ?, ?, '2026-09-01')`)
+    .run(contentKey, snapshot.prompt_text, JSON.stringify(snapshot), JSON.stringify({ source: 'contrast prompt', model: null }));
+  db.prepare("INSERT INTO learner_content_quality_encounters VALUES ('editor', 'seen', ?, '2026-09-01')").run(contentKey);
+  db.prepare("INSERT INTO learner_content_quality_ratings VALUES ('editor', ?, 'down', '2026-09-01')").run(contentKey);
+  const created = await request('',{kind:'contrast_prompt',sourceId:'flagged',contentKey,id:'case-fixed'});
   assert.equal(created.status,200);
   let item = await created.json() as ImprovementCase;
   assert.equal(item.source.scope,'private');
-  assert.equal(item.flagged?.contentKey,rating.contentKey);
-  assert.equal((await (await request('',{kind:'contrast_prompt',sourceId:'flagged',contentKey:rating.contentKey,id:'case-fixed'})).json()).revision,1);
+  assert.equal(item.flagged?.contentKey,contentKey);
+  assert.equal((await (await request('',{kind:'contrast_prompt',sourceId:'flagged',contentKey,id:'case-fixed'})).json()).revision,1);
   const saved = await request(`/${item.id}`,revised(item),'PUT'); assert.equal(saved.status,200);
   item = await saved.json() as ImprovementCase;
   assert.equal(item.revision,2);
@@ -90,7 +94,7 @@ test('flagged correction retains evidence, requires approval, replaces future se
     SELECT 1 FROM content_improvement_replacements r WHERE r.kind='contrast_prompt' AND r.source_id=contrast_prompts.id)
     ORDER BY id`).all('cluster') as Array<{id:string}>;
   assert(!selected.some(p => p.id === 'flagged'));assert(selected.some(p => p.id === result.outcome!.replacementSourceId));
-  assert.equal(db.prepare('SELECT rating FROM learner_content_quality_ratings WHERE content_key=?').get(rating.contentKey)!.rating,'down');
+  assert.equal(db.prepare('SELECT rating FROM learner_content_quality_ratings WHERE content_key=?').get(contentKey)!.rating,'down');
   const history = await (await request(`/${item.id}/history`)).json() as ImprovementCase[];
   assert.deepEqual(history.map(h=>h.revision),[1,2,3]);assert.equal(history[2].proposalOrigin,'agent');
   assert.equal(history[2].updatedBy,'editor');assert.equal(history[2].diagnosis,item.diagnosis);

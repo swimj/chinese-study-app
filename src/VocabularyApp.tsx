@@ -23,7 +23,7 @@ import { PriorityPage } from './pages/PriorityPage';
 import { useContentDiagnosticsController } from './features/content/useContentDiagnosticsController';
 import { ContentDiagnosticsPage } from './pages/ContentDiagnosticsPage';
 import { useContentReactions } from './features/reactions/useContentReactions';
-import { useAttentionBadges } from './features/attention/useAttentionBadges';
+import { useWhatsNewAttention } from './features/attention/useWhatsNewAttention';
 import { useVocabularyIntake } from './features/vocabulary-intake/useVocabularyIntake';
 import { VocabularyIntakeChat, VocabularyIntakeOutstanding } from './features/vocabulary-intake/VocabularyIntakePanels';
 
@@ -66,7 +66,7 @@ function App({ onSignOut, accountScope = 'trusted-local' }: { onSignOut?: () => 
   const [feedbackView, setFeedbackView] = useState<'lessons' | 'saved'>('lessons');
   const [backendStatus, setBackendStatus] = useState<BackendStatus | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const attention = useAttentionBadges();
+  const updatesAttention = useWhatsNewAttention();
   const reactions = useContentReactions();
   const updatesCatalog = useWhatsNewCatalog();
   const [feedbackAttention,setFeedbackAttention]=useState({unseenCount:0,hasFailure:false,generating:false});
@@ -164,7 +164,7 @@ function App({ onSignOut, accountScope = 'trusted-local' }: { onSignOut?: () => 
 
     const introductionSettings = settings.studyIntroductionOrder !== undefined || settings.studyIntroductionSpacing !== undefined
       ? await updateStudyIntroductionOrder(
-          settings.studyIntroductionOrder ?? backendStatus?.studyIntroductionOrder ?? (backendStatus?.studyNewWordsFirst ? 'first' : 'random'),
+          settings.studyIntroductionOrder ?? backendStatus?.studyIntroductionOrder ?? 'random',
           settings.studyIntroductionSpacing ?? backendStatus?.studyIntroductionSpacing ?? DEFAULT_INTRODUCTION_SPACING,
         )
       : null;
@@ -185,7 +185,7 @@ function App({ onSignOut, accountScope = 'trusted-local' }: { onSignOut?: () => 
     setBackendStatus((currentStatus) => currentStatus
       ? {
           ...currentStatus,
-          ...(introductionSettings ? { ...introductionSettings, studyNewWordsFirst: introductionSettings.studyIntroductionOrder === 'first' } : {}),
+          ...introductionSettings,
           ...(nextPolicy
             ? {
                 dailyNewWordLimit: nextPolicy.dailyNewWordLimit,
@@ -246,8 +246,8 @@ function App({ onSignOut, accountScope = 'trusted-local' }: { onSignOut?: () => 
           catch { /* Optional browser storage must not block settings. */ }
         }}
         updatesCatalog={updatesCatalog}
-        unseenPostIds={attention.whatsNewUnseenPostIds}
-        onUnseenBadgeVisible={attention.acknowledgeWhatsNewBadge}
+        unseenPostIds={updatesAttention.unseenPostIds}
+        onUnseenBadgeVisible={updatesAttention.exposeBadge}
         updatesCollapsed={homeUpdatesCollapsed}
         onToggleUpdatesCollapsed={() => setHomeUpdatesCollapsed(collapsed => !collapsed)}
         onOpenUpdate={(id) => { setSelectedUpdateId(id); setAboutView('whats-new'); setCurrentPage('about'); }}
@@ -330,7 +330,7 @@ function App({ onSignOut, accountScope = 'trusted-local' }: { onSignOut?: () => 
         <AboutPage
           updatesCatalog={updatesCatalog}
           view={aboutView}
-          onWhatsNewRead={attention.acknowledgeWhatsNew}
+          onWhatsNewRead={updatesAttention.read}
           selectedPostId={selectedUpdateId}
           onViewAllUpdates={() => setSelectedUpdateId(null)}
           onSelectView={(view) => {

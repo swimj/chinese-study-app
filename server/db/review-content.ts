@@ -1,72 +1,18 @@
 import { importLegacyVocabularyWord } from './vocabulary-import.ts';
 import { linkVocabularyPublicationOutput } from './vocabulary-provenance.ts';
 import { randomUUID } from 'node:crypto';
-import type { ContentExercise, WordContentDocument } from '../../src/domain/word-content/types.ts';
-import type { ReviewSupplementSource } from '../../src/domain/word-content/review-compat.ts';
+import type { WordContentDocument } from '../../src/domain/word-content/types.ts';
 import { adaptTargetedReviewExercise, toProductionExerciseSnapshot } from '../../src/domain/word-content/review-compat.ts';
-import { freezeContent, parseContentExercise, parseWordContent } from '../../src/domain/word-content/validation.ts';
+import { parseContentExercise, parseWordContent } from '../../src/domain/word-content/validation.ts';
 import { getDb } from './connection.ts';
 import { requireLearnerId } from './learner-context.ts';
 import type { AuthoredReviewExercise } from '../word-content/review-authoring.ts';
-
-export type CanonicalReviewKind = 'production_cue' | 'production_cue_supplement' | 'pure_cue';
-type Header = {
-  kind: CanonicalReviewKind; contentId: string; recordId: string; revision: number;
-  wordId: string | null; sourceWordContentId: string | null; createdAt: string; model: string | null;
-};
-export type CanonicalReviewExerciseRecord = Header & {
-  kind: 'production_cue' | 'pure_cue'; exercise: ContentExercise; contents: WordContentDocument[];
-};
-export type CanonicalReviewSupplementRecord = Header & {
-  kind: 'production_cue_supplement'; source: ReviewSupplementSource; contents: WordContentDocument[];
-};
-export type CanonicalReviewContentRecord = CanonicalReviewExerciseRecord | CanonicalReviewSupplementRecord;
-type Row = {
-  record_id: string; kind: CanonicalReviewKind; content_id: string; exercise_id: string | null; revision: number;
-  word_id: string | null; source_word_content_id: string | null; document_json: string; created_at: string;
-  model: string | null;
-};
 
 function canonicalTime(value: string): string {
   if (!Number.isFinite(Date.parse(value)) || new Date(value).toISOString() !== value) {
     throw new Error('Review content timestamp must be canonical UTC ISO time');
   }
   return value;
-}
-
-function documents(input: readonly WordContentDocument[]): WordContentDocument[] {
-  if (!Array.isArray(input)) throw new Error('Review content documents must be an array');
-  const parsed = input.map(parseWordContent);
-  if (new Set(parsed.map((item) => item.id)).size !== parsed.length) {
-    throw new Error('Duplicate review source content identity');
-  }
-  return parsed;
-}
-
-export function getCanonicalReviewContent(kind: CanonicalReviewKind, contentId: string): CanonicalReviewContentRecord | null {
-  requireLearnerId();
-  const row = getDb().prepare(`
-    SELECT record_id, kind, content_id, exercise_id, revision, word_id, source_word_content_id,
-      document_json, created_at, model
-    FROM review_content_records WHERE kind = ? AND content_id = ? ORDER BY revision DESC LIMIT 1
-  `).get(kind, contentId) as Row | undefined;
-  if (!row) return null;
-  const envelope = JSON.parse(row.document_json) as {
-    schemaVersion: number; exercise?: ContentExercise; source?: ReviewSupplementSource;
-    contents: WordContentDocument[];
-  };
-  if (envelope.schemaVersion !== 1) throw new Error('Unknown canonical review schema version');
-  const sourceContents = documents(envelope.contents);
-  const header = { kind: row.kind, contentId: row.content_id, recordId: row.record_id,
-    revision: row.revision, wordId: row.word_id, sourceWordContentId: row.source_word_content_id,
-    createdAt: row.created_at, model: row.model };
-  if (row.kind === 'production_cue_supplement') {
-    if (!envelope.source) throw new Error('Canonical supplement source missing');
-    return freezeContent({ ...header, kind: row.kind, source: envelope.source, contents: sourceContents });
-  }
-  if (!envelope.exercise) throw new Error('Canonical review exercise missing');
-  return freezeContent({ ...header, kind: row.kind,
-    exercise: parseContentExercise(envelope.exercise), contents: sourceContents });
 }
 
 function transaction<T>(operation: () => T): T {

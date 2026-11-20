@@ -1,4 +1,4 @@
-import { type AcceptedCueAnswer, type PureCueContent } from './cues';
+import type { PureCueContent } from './cues';
 
 export type { PureCueContent } from './cues';
 export const PURE_CUE_MINIMUM_EASE_FACTOR = 1.8;
@@ -25,18 +25,6 @@ export type PureCueStudyState = {
 export type PureCue = PureCueContent & PureCueStudyState & {
   /** Imported content retains its prior daily draw; replacements use their own identity. */
   maintenanceIdentity?: string;
-};
-
-export type PureCueAcceptedAnswer = AcceptedCueAnswer;
-
-export type PureCueServedSnapshot = {
-  snapshotId: string;
-  pureCueId: string;
-  servedAt: string;
-  stimulus: string;
-  axisNote: string;
-  teachingNote: string;
-  acceptedAnswers: PureCueAcceptedAnswer[];
 };
 
 export type PureCueAssessmentSummary = {

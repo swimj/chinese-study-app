@@ -150,22 +150,15 @@ describe('Clerk learner authentication', { concurrency: false }, () => {
     invokeForSubject('user_clerk_a', () => recordFixtureReflectionRun('a-run', 'a-session'));
     invokeForSubject('user_clerk_c', () => recordFixtureReflectionRun('c-run', 'c-session'));
 
-    let aRuns: Array<{ runId: string; sourceSessionId: string }> = [];
-    let cRuns: Array<{ runId: string; sourceSessionId: string }> = [];
     const listRuns = () => getDb().prepare(`
       SELECT run_id AS runId, source_session_id AS sourceSessionId FROM reflection_generation_runs ORDER BY run_id
-    `).all() as Array<{ runId: string; sourceSessionId: string }>;
-    let aFailed: string[] = [];
-    let cFailed: string[] = [];
-    invokeForSubject('user_clerk_a', () => { aRuns = listRuns(); aFailed = dbModule.listFailedReflectionRunIds(); });
-    invokeForSubject('user_clerk_c', () => { cRuns = listRuns(); cFailed = dbModule.listFailedReflectionRunIds(); });
-
-    assert.deepEqual(aRuns.map((run) => run.runId), ['a-run']);
-    assert.deepEqual(cRuns.map((run) => run.runId), ['c-run']);
-    assert.equal(aRuns[0]?.sourceSessionId, 'a-session');
-    assert.equal(cRuns[0]?.sourceSessionId, 'c-session');
-    assert.deepEqual(aFailed, ['a-run']);
-    assert.deepEqual(cFailed, ['c-run']);
+    `).all().map(({ runId, sourceSessionId }) => ({ runId, sourceSessionId }));
+    for (const [subject, runId, sourceSessionId] of [
+      ['user_clerk_a', 'a-run', 'a-session'], ['user_clerk_c', 'c-run', 'c-session'],
+    ] as const) {
+      const response = invokeForSubject(subject, () => assert.deepEqual(listRuns(), [{ runId, sourceSessionId }]));
+      assert.equal(response.statusCode, 200);
+    }
   });
 });
 

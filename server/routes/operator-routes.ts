@@ -1,5 +1,5 @@
 import { createOperatorAllowlistMiddleware } from '../operator-access.ts';
-import { getUsagePulse, dbConfig, getActiveServiceBanner, toPublicServiceBanner, setServiceBanner, clearServiceBanner } from '../db.ts';
+import { getUsagePulse, getActiveServiceBanner, toPublicServiceBanner, setServiceBanner, clearServiceBanner } from '../db.ts';
 import { listModelInvocations, ModelInvocationInputError } from '../db/model-invocations.ts';
 import { listWordPreparationFailures } from '../db/preparation-work.ts';
 import { getTeachingSetReport } from '../db/teaching-set-report.ts';
@@ -14,7 +14,7 @@ export function registerOperatorRoutes(app: Express, { options }: { options: Pic
     createOperatorAllowlistMiddleware(),
     (_req, res) => {
       try {
-        res.json(getUsagePulse({ dataDir: dbConfig.dataDir }));
+        res.json(getUsagePulse());
       } catch (error) {
         console.error('Failed to load operator usage pulse', error);
         res.status(500).json({ error: 'Failed to load operator usage pulse' });

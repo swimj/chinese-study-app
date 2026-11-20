@@ -53,8 +53,8 @@ describe('learner isolation', { concurrency: false }, () => {
     const external = dbModule.resolveOrBootstrapExternalLearner({ provider: 'clerk', providerSubject: 'user_defaults_test' });
     for (const learner of ['learner-a', external]) {
       dbModule.runWithLearnerId(learner, () => {
-        assert.equal(dbModule.getLearningPolicy('2026-10-07').dailyNewWordLimit, 5);
-        assert.equal(dbModule.getLearningPolicy('2026-10-07').unstudiedAdmissionSource, 'stash_only');
+        assert.equal(dbModule.getLearningPolicy().dailyNewWordLimit, 5);
+        assert.equal(dbModule.getLearningPolicy().unstudiedAdmissionSource, 'stash_only');
         assert.deepEqual(dbModule.getDietProfile()?.weights, { 'hsk2-l6-s1': 1 });
       });
     }
@@ -65,8 +65,8 @@ describe('learner isolation', { concurrency: false }, () => {
     });
     assert.equal(dbModule.resolveOrBootstrapExternalLearner({ provider: 'clerk', providerSubject: 'user_defaults_test' }), external);
     dbModule.runWithLearnerId(external, () => {
-      assert.equal(dbModule.getLearningPolicy('2026-10-07').dailyNewWordLimit, 12);
-      assert.equal(dbModule.getLearningPolicy('2026-10-07').unstudiedAdmissionSource, 'mixed');
+      assert.equal(dbModule.getLearningPolicy().dailyNewWordLimit, 12);
+      assert.equal(dbModule.getLearningPolicy().unstudiedAdmissionSource, 'mixed');
       assert.deepEqual(dbModule.getDietProfile()?.weights, { 'hsk2-l2': 1 });
     });
   });
@@ -75,10 +75,10 @@ describe('learner isolation', { concurrency: false }, () => {
     dbModule.bootstrapLearner({ learnerId: 'existing-local' });
     dbModule.runWithLearnerId('existing-local', () => dbModule.setUnstudiedAdmissionSource('mixed'));
     dbModule.bootstrapLearner({ learnerId: 'existing-local' });
-    assert.equal(dbModule.runWithLearnerId('existing-local', () => dbModule.getLearningPolicy('2026-10-07').unstudiedAdmissionSource), 'mixed');
+    assert.equal(dbModule.runWithLearnerId('existing-local', () => dbModule.getLearningPolicy().unstudiedAdmissionSource), 'mixed');
     sqlite.prepare("DELETE FROM learner_settings WHERE learner_id = ? AND setting_key = 'unstudied_admission_source'").run('existing-local');
     dbModule.bootstrapLearner({ learnerId: 'existing-local' });
-    assert.equal(dbModule.runWithLearnerId('existing-local', () => dbModule.getLearningPolicy('2026-10-07').unstudiedAdmissionSource), 'mixed');
+    assert.equal(dbModule.runWithLearnerId('existing-local', () => dbModule.getLearningPolicy().unstudiedAdmissionSource), 'mixed');
   });
 
   test('shares lexical content while isolating learner overlays', () => {

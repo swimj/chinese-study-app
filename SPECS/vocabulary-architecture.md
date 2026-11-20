@@ -179,7 +179,9 @@ The implementation guide owns routing weights, retry delays, and cache policies.
 ## Compatibility and operation
 
 Retired Mandarin write paths cannot mutate current learner or content state.
-Historical records remain readable within their ownership boundaries. Schema and
+The legacy study and reflection tables and their records remain readable in
+the database and backups within their original ownership boundaries. Current
+vocabulary session history, feedback and operator reviews use their own APIs. Schema and
 data changes use versioned migrations and the
 [stopped-writer procedure](../docs/ops/schema-migrations.md); app-only upgrades
 must satisfy the [release runbook](../docs/ops/hosted-beta-deployment.md).

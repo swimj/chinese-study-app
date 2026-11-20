@@ -352,7 +352,6 @@ window.fetch = async (input, init) => {
   if (path === '/api/status') return Response.json({ dailyNewWordLimit: 10, unstudiedAdmissionSource: 'stash_then_deck' });
   if (path.endsWith('/completion/current') || path.endsWith('/session-debriefs/latest')) return Response.json(null);
   if (path.endsWith('/feedback/attention')) return Response.json({ unseenCount: 0, hasFailure: false, generating: false });
-  if (path.endsWith('/attention-badges')) return Response.json({ reflectionUnseenCount: 0, failedReflectionRunIds: [] });
   if (path.endsWith('/whats-new-attention')) return Response.json({ serverNow: new Date().toISOString(), items: [], unseenPostIds: [] });
   if (path.endsWith('/whats-new')) return Response.json({ posts: [] });
   if (path.endsWith('/content-reactions')) return Response.json({ reactions: [] });

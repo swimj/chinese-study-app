@@ -253,20 +253,6 @@ export function getLearnerParam(paramKey: string): unknown {
   return json === null ? null : JSON.parse(json) as unknown;
 }
 
-export function upsertLearnerParam(paramKey: string, value: unknown, updatedAt = new Date().toISOString()): void {
-  getDb().prepare(`
-    INSERT INTO learner_params (
-      learner_id,
-      param_key,
-      value_json,
-      updated_at
-    ) VALUES (?, ?, ?, ?)
-    ON CONFLICT(learner_id, param_key) DO UPDATE SET
-      value_json = excluded.value_json,
-      updated_at = excluded.updated_at
-  `).run(requireLearnerId(), requireParamKey(paramKey), JSON.stringify(value), updatedAt);
-}
-
 function requireParamKey(paramKey: string): string {
   if (typeof paramKey !== 'string' || paramKey.length === 0) {
     throw new Error('Expected non-empty param key');

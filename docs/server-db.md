@@ -26,21 +26,19 @@ encounters and ratings and requires the offline schema-upgrade procedure.
 | [`connection.ts`](../server/db/connection.ts) | Config resolution per `initDbConnection()`, SQLite singleton (`getDb` / `setDb`) |
 | [`statement-timing.ts`](../server/db/statement-timing.ts) | `setDb` wraps the live connection so every statement and transaction is timed for [request timing](ops/hosted-observability.md#diagnose-a-slow-request) |
 | [`types.ts`](../server/db/types.ts) | Row/DTO types, scheduling constants, public type re-exports |
-| [`persistence.ts`](../server/db/persistence.ts) | `initializeDatabase`, the frozen baseline schema and dev seeding, word/meaning/priority reads and edits, learner settings and learning policy, status analytics, and the legacy word-state writes the vocabulary fixture builder still uses |
+| [`persistence.ts`](../server/db/persistence.ts) | `initializeDatabase`, the frozen baseline schema and dev seeding, word/meaning/priority reads and edits, learner settings and learning policy, and the legacy word-state writes the vocabulary fixture builder still uses |
 | [`unstudied-admission.ts`](../server/db/unstudied-admission.ts) | Experimental diet/stash unstudied admission selector |
 | [`deck-words.ts`](../server/db/deck-words.ts) | Shared resolved deck-ID cache for session composition and whole-deck browsing; fresh details by ID and batched learner study dates |
 | [`reflections.ts`](../server/db/reflections.ts) | Schema creation and validation for the retained legacy reflection tables |
 | [`content-sharing.ts`](../server/db/content-sharing.ts) | Read-only weekly exact-content second-learner milestones, cross-origin shared cue attempts, current word overlap, and bounded evidence examples |
-| [`content-quality.ts`](../server/db/content-quality.ts) | Exact-content exposure records, standing learner votes, and operator triage |
+| [`content-quality.ts`](../server/db/content-quality.ts) | Historical exact-content ratings for the operator ledger |
 | [`reflection-quality.ts`](../server/db/reflection-quality.ts) | Schema for the retained dogfood item quality-tag overlay |
-| [`reflection-help-inbox.ts`](../server/db/reflection-help-inbox.ts) | Schema for retained explanation-only Help inbox rows, keyed by `(artifact_id, item_id)`; attention reads count them |
+| [`reflection-help-inbox.ts`](../server/db/reflection-help-inbox.ts) | Schema for retained explanation-only Help inbox rows keyed by `(artifact_id, item_id)` |
 | [`whats-new.ts`](../server/db/whats-new.ts) | Shared blog posts, publication ordering, revision conflicts, and immutable attributable save history; see [What’s New](whats-new.md) |
 | [`whats-new-attention.ts`](../server/db/whats-new-attention.ts) | Learner-private per-post first badge exposure and read timestamps, twelve-hour expiry, and legacy cursor compatibility |
-| [`attention.ts`](../server/db/attention.ts) | Help `inbox_seen_at` stamps, unseen Help-queue count, durable queued/running reflection dispatch state, unseen failed generation-run ids, failed-run seen-through cursor, and the What’s New seen-through cursor |
 | [`intake-triage.ts`](../server/db/intake-triage.ts) | Dormant intake-triage schema creation and validation retained for database compatibility |
 | [`domain-commands.ts`](../server/db/domain-commands.ts) | Contextual-selection eligibility for trusted-local contrast seeding |
 | [`production-cues.ts`](../server/db/production-cues.ts) | Schema creation and validation for legacy production tasks, cues, evidence and supplements, plus stored supplement decoding |
-| [`pure-cues.ts`](../server/db/pure-cues.ts) | Reads frozen served snapshots for content-quality checks |
 | [`schema.ts`](../server/db/schema.ts) | Re-exports `applyProductionContrastExerciseSeed` and `initializeDatabase` for init ordering |
 | [`ownership-manifest.ts`](../server/db/ownership-manifest.ts) | Auditable ownership, enforcement, history, migration, and lifecycle classification for every durable application table |
 | [`identity.ts`](../server/db/identity.ts) | Stable learner records, auth-provider mappings, learner settings, learner params, and explicit Clerk-free bootstrap |
@@ -65,10 +63,10 @@ These modules group exports from the underlying implementations.
 
 | Shim | Key exports |
 | --- | --- |
-| [`words.ts`](../server/db/words.ts) | `getWords`, `getMyWords` learner collection projection, `searchWords`, meanings |
+| [`words.ts`](../server/db/words.ts) | `getWords`, `searchWords`, meanings |
 | [`priority.ts`](../server/db/priority.ts) | Unstudied priority queues, `listUnstudiedPriorityMatchesByTarget`, `addUnstudiedUserPriorityByHanzi` |
 | [`session-composition.ts`](../server/db/session-composition.ts) | Dual-pool unstudied admission re-exports |
-| [`analytics.ts`](../server/db/analytics.ts) | Failure rates from saved exercise summaries and forward-only daily compensation counters, active-session-time metrics |
+| [`analytics.ts`](../server/db/analytics.ts) | Learner admission settings and the historical summary writer used by fixtures |
 
 The legacy session composition, study-event, study-management, scheduler,
 contrast-authoring, completion, recovery-highlight, and reflection lifecycle
@@ -78,9 +76,7 @@ baseline schema for retained records.
 ## Reflection persistence
 
 The legacy reflection tables preserve evidence, results, learner decisions and
-applied effects. Startup still validates their schema. The attention routes
-read retained Help items and generation runs and maintain learner seen state.
-Current vocabulary feedback and reconciliation have their own storage.
+applied effects. Startup still validates their schema. The learner Feedback badge reads vocabulary feedback from its own tables.
 
 Migration `0069_sense_content_reconciliation` adds operator-owned current resolution
 records and immutable per-version history. A resolution stores the linguistic draft,
@@ -304,8 +300,8 @@ switches away from Both. These are display preferences, with no corpus rewrite
 or schema migration.
 
 `learner_params` is the sibling per-learner key-value store for non-setting
-parameters (`learner_id`, `param_key`, `value_json`, `updated_at`). The blog's
-read cursors use this store. The [blog explanation](whats-new.md#unread-updates)
+parameters (`learner_id`, `param_key`, `value_json`, `updated_at`). Historical blog read cursors remain in this store. Per-post read and exposure
+timestamps live in `learner_whats_new_attention`. The [blog explanation](whats-new.md#unread-updates)
 maintains their meaning and compatibility behavior; its
 [persistence section](whats-new.md#persistence-and-live-updates) describes the
 current-post and revision tables introduced by migration `0028_whats_new_blog`.
@@ -381,8 +377,7 @@ Migration `0036_session_completion` adds three learner-private tables:
 | `learner_session_completions` | Frozen completion input, fixed deadline, provisional/confirmed report, and pending/cancelled/closed/failed state keyed by learner/session/revision |
 | `learner_session_reflection_dispatches` | Frozen reflection supplement and queued/running/succeeded/skipped/failed dispatch state, active token, lease and result; references its same-owner completion revision |
 
-These rows preserve earlier session history. The attention badge still checks
-the learner's queued or running dispatches. Current vocabulary completion uses
+These rows preserve earlier session history. Current vocabulary completion uses
 its [own session and dispatch records](vocabulary-learning.md).
 See the [migration note](ops/migration-notes.md#durable-session-completion-0036)
 for the original installation.
