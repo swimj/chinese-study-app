@@ -18,7 +18,7 @@ import type { JsonSchema } from '../../src/domain/reflection-result-schema.ts';
 import { VocabularySenseReadinessPending,VocabularySenseSelectionRequired,VOCABULARY_SENSE_SERVICE } from './sense-readiness.ts';
 import { recordPreparationAttempt,linkPreparationInvocation,completePreparationAttempt,failPreparationAttempt } from './preparation-retry.ts';
 const actor={kind:'service' as const,id:VOCABULARY_SENSE_SERVICE};
-const livePrompt = { version: '2', text: readFileSync(new URL('./reflection-prompts/default-useful-decisions.md',import.meta.url),'utf8') };
+const livePrompt = { version: '1', text: readFileSync(new URL('./reflection-prompts/default-useful-decisions.md',import.meta.url),'utf8') };
 const timeoutMs=180_000;
 type SelectionInput = { word: NonNullable<ReturnType<typeof getSharedIntroductionLexicalWord>>; senses: VocabularySense[] };
 export type UsefulSelectionProvider={isConfigured():boolean;select(input:SelectionInput,context:{workflowId:string;attemptNumber:number;onInvocation:(id:string|null|undefined)=>void}):Promise<unknown>};

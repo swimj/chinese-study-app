@@ -136,6 +136,16 @@ test('paid v9 inventory and v1 Decisions verify and apply with their archived pr
   assert.equal(getVocabularyWordSenseCoverage('w1').defaultUsefulSenseIds!.length,1);
 });
 
+test('the pre-merge v2 label replays only the clarified Decisions prompt',async()=>{
+  const {result}=await generate();
+  const selection=result.calls[1]!.request;
+  assert.equal(selection.provenance!.promptVersion,'1');
+  selection.provenance!.promptVersion='2';
+  await verifyBulkWord(result);
+  selection.systemPrompt=fs.readFileSync(new URL('../artifacts/invocation-prompts/c921642d51cb210d5ba3d023b0d3b1f1557a675e65243a67d584029e67b09e8b.txt',import.meta.url),'utf8');
+  await assert.rejects(verifyBulkWord(result),/Unrecognized retained Decisions prompt/);
+});
+
 test('fresh bulk stops after an empty inventory or an empty Decisions recommendation',async()=>{
   const empty=await generate(false,false,false,'inventory');
   assert.equal(empty.result.status,'empty_inventory');assert.deepEqual(empty.steps,['sense_inventory']);
