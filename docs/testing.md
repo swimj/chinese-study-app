@@ -227,7 +227,7 @@ All HTTP is intercepted, so these fixtures do not modify learner data.
 | `diet-profile.test.ts` | Default diet selection, profile round-trip, nudge/jump behavior, and historical intake compatibility | `server/db/diet-profile.ts` + temporary SQLite |
 | `unstudied-admission.test.ts` | Experimental dual-pool unstudied admission selector, including stash-only source | `server/db/unstudied-admission.ts` |
 | `session-completion.test.ts` | Session completion commits | Dynamic `server/db.ts` |
-| `durable-session-completion.test.ts` | Fixed deadline, cancel/expiry, atomic final acceptance, outcome reporting, restart, and durable reflection dispatch | Completion persistence + worker with temporary SQLite |
+| `durable-session-completion.test.ts` | Fixed deadline, cancel/expiry, atomic final acceptance, outcome reporting, and restart for retained completion persistence | Completion persistence with temporary SQLite |
 | `card-characters.test.ts` | Study-card simplified/traditional character formatting | `src/domain/card-characters.ts` |
 | `sentence-characters.test.ts` | Script conversion, Taiwan variants, comparison preservation, and contextual cloze alignment | OpenCC + sentence display helpers |
 | `sentence-character-settings.test.ts` | Private sentence preferences, retention, status, and HTTP validation | Temporary SQLite + Express app |
@@ -240,16 +240,12 @@ All HTTP is intercepted, so these fixtures do not modify learner data.
 | `contrast-content.test.ts` | Contrast clusters and prompts | Dynamic `server/db.ts` |
 | `reflection-domain.test.ts` | V3 result/operation validation, registry, exact/revised classification, lifecycle transitions | `src/domain/reflection.ts` |
 | `reflection-evidence-validation.test.ts` | Strict supplement/full-bundle shapes, validation-only attempt links, retired attempt/management metadata rejection, and initial-milestone evidence boundary | `src/domain/reflection-evidence.ts` |
-| `reflection-evidence-enrichment.test.ts` | Completed-session/attempt verification, managed-action exclusion, read-only durable context enrichment, and stable fifty-item initial cap | `server/reflection/evidence.ts` with temporary SQLite fixtures |
-| `reflection-provider.test.ts` | Pinned Luna request, lazy credentials, production prompt, strict output validation, sanitized failures, and retained truncation metadata | `server/reflection/luna-provider.ts` with injected fetch |
-| `reflection-generation.test.ts` | Prelookup idempotency, provider/materialization/run metadata, included/eligible counts, in-process coalescing, exact saved-bundle failure retry, and model selection | `server/reflection/generation.ts` with injected dependencies |
-| `reflection-generation-isolation.test.ts` | Real enrichment/provider failures preserve completed session, summary, and attempt state while recording available run usage | Reflection generation stack + temporary SQLite |
 | `reflection-run-pricing.test.ts` | Pinned token-category pricing math, partial usage handling, and unknown-rate unavailability | `server/reflection/run-pricing.ts` |
 | `model-invocation-cost-backfill.test.ts` | Read-only preview, exact-plan confirmation, shared live/backfill cache accounting, preserved evidence/known spend, skipped unsupported usage, atomic rollback and repeatability | Temporary SQLite + `hosted:backfill-luna-costs` CLI |
 | `reflection-store.test.ts` | Seven-table schema, session-backed and sessionless provenance, retained failed-run bundles/retryability, immutable run-price reconstruction, atomic artifact/review persistence, queue/detail, review/invocation lifecycle | Dynamic `server/db.ts` |
 | `reflection-application.test.ts` | Suppression/contrast/cue adapters, effect attribution, application outcomes, and requested-correct reflection through generation, acceptance, and application | Dynamic `server/db.ts`, real provider with mocked transport |
 | `reflection-persistence-reload.test.ts` | Queue/detail/review/application/effect reconstruction across fresh Node processes | Shared temporary `APP_DATA_DIR` |
-| `reflection-api.test.ts` | Generation statuses/errors, queue/detail, compact generation run log/retry, strict independent proposal review, quality tag upsert/stats, Help inbox Done, attention badges, durable failed-run acknowledgement, explanation-only manual authorization, apply/withdraw, startup recovery | `server/index.ts` registered Express route handlers + temporary SQLite |
+| `reflection-api.test.ts` | Attention badges, Help-card inbox-seen stamps, and durable failed-run acknowledgement over HTTP | `server/index.ts` attention routes + temporary SQLite |
 | `reflection-quality.test.ts` | Item quality tag-set upsert, multi-tag coexistence, model-arm disposition + tag stats | `server/db/reflection-quality.ts` + temporary SQLite |
 | `reflection-help-inbox.test.ts` | Explanation-only Help inbox seed at materialize, Done delete, manual authorization, independence from proposal disposition, 404 | `server/db/reflection-help-inbox.ts` + temporary SQLite |
 | `whats-new-blog.test.ts` | Migration/seeding, authored preview backfill and preserved revisions, atomic revisions, draft visibility, publication ordering, live connection updates, input bounds and legacy sequence attention | Temporary SQLite + shared parser |
@@ -296,7 +292,7 @@ All HTTP is intercepted, so these fixtures do not modify learner data.
 | `content-sharing-page.test.ts` | UTC week navigation, reuse evidence, current overlap distinction, missing generation data, safe labels, and empty weeks | Presentation helpers + React server render |
 | `usage-pulse.test.ts` | Daily cohort exercise/time totals, lower-bound practice with missing records, mean stash, snapshot idempotency, smoke-learner inactive exclusion, operator allowlist, and usage-pulse, preparation-retry, model-invocation, and service-banner API behavior | `server/db/usage-pulse.ts`, operator routes and access control |
 | `client-incident-diagnostics.test.ts` | Account-scoped client queue bounds/retention, visible IDs, private sidecar deduplication/pruning, and inspection | Client/server incident diagnostic modules |
-| `study-commit-diagnostics.test.ts` | Success/failure correlation, exact private payload/error retention, 30-day pruning, diagnostic-id responses, contrast routing, and logging isolation | `server/study-commit-diagnostics.ts`, study-commit API handlers |
+| `study-commit-diagnostics.test.ts` | Reader for the retained study-commit sidecar (payload/cause retention, id filtering, malformed lines, limits) and the client-incident upload route | `server/study-commit-diagnostics.ts`, `server/index.ts` |
 
 ## Retained vocabulary sessions
 
@@ -430,17 +426,15 @@ multiword rollback, idempotence, preparation refresh, and preserved learner hist
 | --- | --- |
 | New-learner defaults / diet profile | `diet-profile.test.ts`, `diet-intake-placement-api.test.ts`, `learner-isolation.test.ts` |
 | Session composition / SQL scheduling | `session-composition.test.ts`, `unstudied-admission.test.ts` |
-| Session end / word lifecycle commits | `session-completion.test.ts`, `durable-session-completion.test.ts`, `session-finalization.test.ts`; browser completion and final reinforcement fixtures |
+| Session end / word lifecycle commits | `session-completion.test.ts`, `durable-session-completion.test.ts` |
 | Contrast content | `contrast-content.test.ts` |
 | Study management / suppression | `study-management.test.ts` |
 | Priority / aliases | `user-priority.test.ts`, `priority-aliases.test.ts` |
 | Clerk frontend session gate | `clerk-auth-gate.test.ts` |
 | Hosted Clerk invitations | `hosted-clerk-invite.test.ts` |
 | Reflection contracts / validation | `reflection-domain.test.ts`, `reflection-evidence-validation.test.ts`, `reflection-v7-schema.test.ts` |
-| Reflection evidence / finalization | `reflection-evidence-enrichment.test.ts` |
-| Reflection provider / generation | `reflection-provider.test.ts`, `reflection-generation.test.ts`, `reflection-generation-isolation.test.ts` |
 | Reflection persistence / application | `reflection-store.test.ts`, `reflection-application.test.ts`, `reflection-persistence-reload.test.ts`, `reflection-quality.test.ts`, `reflection-help-inbox.test.ts` |
-| Reflection HTTP | `reflection-api.test.ts` |
+| Attention badges HTTP | `reflection-api.test.ts` |
 | Schema or bootstrap | `dev-db-bootstrap.test.ts` + any db-touching tests above |
 | Hosted metrics / Grafana export | `observability.test.ts`, `request-timing.test.ts`, `hosted-runtime.test.ts` |
 | Hosted code-only upgrade pipeline | `hosted-upgrade.test.ts`, `hosted-build.test.ts`, `hosted-smoke.test.ts` |
@@ -448,7 +442,6 @@ multiword rollback, idempotence, preparation refresh, and preserved learner hist
 | Ephemeral migration rehearsal lifecycle, isolation, checks, and the production gate | `hosted-rehearsal.test.ts` |
 | Hosted migration release pipeline | `hosted-migration-release.test.ts`, `hosted-migration.test.ts` |
 | Hosted service banner | `hosted-operations.test.ts`, `hosted-runtime.test.ts`, `app-chrome-nav.test.ts` |
-| Hosted study-commit failures | `study-commit-diagnostics.test.ts` |
 | Client transport incident capture/upload | `client-incident-diagnostics.test.ts`, `study-commit-diagnostics.test.ts` |
 
 Tests that dynamic-import `server/db.ts` set `APP_MODE=study` and
@@ -463,43 +456,7 @@ demonstration still requires a separate manual study-mode run with a real
 completed session and `OPENAI_API_KEY`; secrets must not enter fixtures, logs,
 or artifacts.
 
-## Reflection lifecycle logs
-
-The backend writes one newline-delimited JSON event to its normal stdout for
-each reflection boundary. No prompts, learner responses, provider responses, or
-credentials are logged. The events are:
-
-| Event | Meaning |
-| --- | --- |
-| `reflection.summary_recorded` | Finish saved the completed-review summary. |
-| `reflection.generation_requested` | The reflection endpoint received a request. |
-| `reflection.provider_started` | Durable evidence formed a bundle and the provider request is about to begin. |
-| `reflection.generation_succeeded` | An artifact was materialized. |
-| `reflection.generation_failed` | The endpoint failed; `failure` is `invalid_evidence`, `provider`, or `internal`, and `code` is a safe reflection error code when available. Provider failures also include `clientRequestId`. |
-
-Every event includes `at` and `sessionId`; completion/failure events include
-`elapsedMs`, and `reflection.summary_recorded` includes the submitted
-`activeDurationMs`. Deferred second-opinion requests use the same lifecycle
-events with a null `sessionId`; this keeps failures that occur before a durable
-generation run visible. Unexpected second-opinion failures also return a
-diagnostic id to the learner and write a correlated stderr record containing
-the exact error name/message plus bounded request metadata (model and proposal
-count, but not proposal ids or request bodies). In a manual run, read the
-terminal running `dev:reflection:backend`. A timeout should produce
-`provider_started`, followed
-about 900 seconds later by `generation_failed` with `failure: "provider"` and
-`code: "upstream_failure"`.
-
-For provider failures only, the backend also appends an allowlisted local JSON
-record to `reflection-provider-diagnostics.jsonl` beside `app.db` in the active
-data directory. It records correlation and classification data: the session and
-client request IDs, failure kind, safe error and cause names/codes, and, for HTTP
-failures, the status, OpenAI `x-request-id`, and processing-time header. It never
-writes request or response bodies, error or cause messages, stacks, or API keys.
-Treat the file as private because it still contains local session identifiers.
-The `clientRequestId` is sent to OpenAI as `X-Client-Request-Id`, so it can also
-be supplied to OpenAI Support if a transport failure gives no server-generated
-request ID.
+## Other focused coverage
 
 `usage-exercise-totals-migration.test.ts` covers populated upgrade preservation,
 unknown historical values, learner-scoped writes, repeat migration, fresh schema

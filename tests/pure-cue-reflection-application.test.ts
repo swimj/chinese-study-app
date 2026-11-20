@@ -4,7 +4,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { after, before, test } from 'node:test';
-import { normalizePureCueReflectionResult } from '../src/domain/pure-cue-reflection.ts';
+import { normalizePureCueReflectionResult, parsePureCueReflectionBundle, type PureCueReflectionBundleV1 } from '../src/domain/pure-cue-reflection.ts';
 import { PURE_CUE_REFLECTION_FLOW_VERSION, PURE_CUE_REFLECTION_PROMPT_VERSION } from '../src/domain/reflection-contracts.ts';
 import type { PureCueAssessmentEvent } from '../src/domain/pure-cues.ts';
 const now = '2026-09-18T00:00:00.000Z';
@@ -12,12 +12,14 @@ const appliedAt = '2026-09-18T01:00:00.000Z';
 let dir: string;
 let sqlite: DatabaseSync;
 let db: typeof import('../server/db.ts');
-let evidence: typeof import('../server/reflection/pure-cue-evidence.ts');
+let pureCues: typeof import('../server/db/pure-cues.ts');
+let productionCues: typeof import('../server/db/production-cues.ts');
 before(async () => {
   dir = fs.mkdtempSync(path.join(os.tmpdir(), 'pure-reflection-application-'));
   process.env.APP_MODE = 'study'; process.env.APP_DATA_DIR = dir; process.env.APP_LEARNER_ID = 'learner';
   db = await import('../server/db.ts');
-  evidence = await import('../server/reflection/pure-cue-evidence.ts');
+  pureCues = await import('../server/db/pure-cues.ts');
+  productionCues = await import('../server/db/production-cues.ts');
   sqlite = new DatabaseSync(path.join(dir, 'app.db'));
   sqlite.function('current_learner_id', () => 'learner'); sqlite.exec('PRAGMA foreign_keys=ON');
 });
@@ -52,9 +54,42 @@ function sourceFixture(id: string, axisNote = '') {
     outcome: index ? 'accepted' : 'rejected', submittedWordId: index ? words[0]! : null, rating: index ? 'good' : 'forgot' }));
   db.recordPureCueAssessment({ attemptId: `attempt-${id}`, snapshotId: snapshot.snapshotId,
     sessionId: `session-${id}`, sessionActionId: id, events, committedAt: now });
-  const bundle = evidence.buildPureCueReflectionBundle(`session-${id}`, now)!;
-  assert.ok(bundle);
+  const bundle = pureCueBundle({ id, sessionId: `session-${id}`, snapshotId: snapshot.snapshotId,
+    submittedWordId: words[2]!, firstEvent: events[0]! });
   return { words, bundle };
+}
+/** Fixture evidence for the rejected first response, which names the third word (C). */
+function pureCueBundle(input: { id: string; sessionId: string; snapshotId: string; submittedWordId: string;
+  firstEvent: PureCueAssessmentEvent }): PureCueReflectionBundleV1 {
+  const servedSnapshot = pureCues.getPureCueServedSnapshot(input.snapshotId);
+  const currentCue = pureCues.getPureCueContent(input.id);
+  assert.ok(servedSnapshot && currentCue);
+  return parsePureCueReflectionBundle({
+    schemaVersion: 'pure_cue_reflection_bundle.v1', generatedAt: now,
+    session: { sessionId: input.sessionId, startedAt: now, endedAt: now, studyProfile: 'mandarin' },
+    items: [{
+      source: 'pure_cue_mistake', sourceActionKind: 'pure_cue',
+      itemId: `pure-cue:attempt-${input.id}`, sourceAttemptId: `attempt-${input.id}`,
+      firstEventId: input.firstEvent.eventId, sessionActionId: input.id,
+      occurredAt: input.firstEvent.occurredAt, rawResponse: input.firstEvent.response,
+      submittedWord: reflectionWord(input.submittedWordId), servedSnapshot,
+      currentCue: { id: currentCue.id, stimulus: currentCue.stimulus, axisNote: currentCue.axisNote,
+        teachingNote: currentCue.teachingNote, acceptedWordIds: currentCue.acceptedWordIds,
+        acceptedWords: currentCue.acceptedWordIds.map(reflectionWord) },
+      activeProductionCues: productionCues.getActiveProductionCuesForWord(input.submittedWordId).map((cue) => ({
+        cueId: cue.cueId, cueType: cue.cueType, text: cue.text, acceptedWordIds: cue.acceptedWordIds,
+      })),
+      targetWord: null, sessionNote: null,
+      existingContent: { contrastClusters: [], knownAcceptedAlternates: [] },
+    }],
+  });
+}
+function reflectionWord(wordId: string) {
+  const word = sqlite.prepare('SELECT hanzi, pinyin, meaning, meanings_json FROM lexical_words WHERE id = ?')
+    .get(wordId) as { hanzi: string; pinyin: string; meaning: string; meanings_json: string } | undefined;
+  assert.ok(word);
+  const meanings = JSON.parse(word.meanings_json) as string[];
+  return { wordId, hanzi: word.hanzi, pinyin: word.pinyin, meanings: meanings.length ? meanings : [word.meaning] };
 }
 function fixture(id: string, drafts = false) {
   const { words, bundle } = sourceFixture(id);
@@ -149,7 +184,6 @@ test('accepted stimulus repair preserves identity, axis and members, audits the 
   assert.deepEqual(JSON.parse(originalRow.document_json).exercise, originalCanonical.exercise);
   assert.deepEqual(db.getPureCueServedSnapshot(originalSnapshot!.snapshotId), originalSnapshot);
   assert.equal(bundle.items[0]!.servedSnapshot.stimulus, 'to tell an untruth');
-  assert.equal(evidence.buildPureCueReflectionBundle('session-stimulusrepair', appliedAt), null);
   assert.equal(db.applyReflectionInvocation(oldAuthorized.invocation.invocation.invocationId, appliedAt).application.state.kind, 'stale');
   assert.deepEqual(db.getPureCueContent('stimulusrepair')?.acceptedWordIds, words.slice(0, 2));
   assert.deepEqual(db.getCanonicalReviewContent('pure_cue', 'stimulusrepair'), repairedCanonical);
@@ -227,63 +261,4 @@ test('authorization rejects plans that retire A or B instead of C', () => {
       createdAt: appliedAt }), /active C cues/);
     assert.equal(db.getProductionCue(`cue-${word}`)?.active, true);
   }
-});
-
-test('real failed provider run retains exact evidence and retry materializes the inbox artifact once', async () => {
-  const { createInitialReflectionGenerationService } = await import('../server/reflection/generation.ts');
-  const { ReflectionEvidenceError } = await import('../server/reflection/evidence.ts');
-  const { bundle } = sourceFixture('retry');
-  let fail = true;
-  let requests = 0;
-  let builds = 0;
-  const provider: import('../server/reflection/luna-provider.ts').LunaReflectionProvider = {
-    async generate() { throw new Error('Unexpected ordinary generation'); },
-    async generateDiagnosis() { throw new Error('Unexpected diagnosis generation'); },
-    async generatePureCueReflection(input) {
-      requests += 1;
-      assert.deepEqual(input, bundle);
-      if (fail) throw new Error('Temporary pure cue provider failure');
-      return {
-        result: { schemaVersion: 'pure_cue_reflection_result.v2', itemResults: [{
-          submittedWord: input.items[0]!.submittedWord.hanzi, learnerExplanation: 'C also fits this cue.', rationale: 'C is valid.',
-          decision: 'extend', reason: null, repair: null, extension: { teachingNote: 'A, B and C all fit.',
-            responseWordPlan: { deactivateCueIds: [], distinctiveCueDrafts: [] } },
-        }] },
-        metadata: { provider: 'openai', modelConfig: 'gpt-5.6-luna-high', providerModel: 'gpt-5.6-luna',
-          promptVersion: PURE_CUE_REFLECTION_PROMPT_VERSION, responseId: 'retry-response', finishReason: 'stop',
-          usage: { inputTokens: 10, outputTokens: 5, totalTokens: 15, cachedInputTokens: null,
-            cacheWriteInputTokens: null, reasoningTokens: null } },
-      };
-    },
-  };
-  const service = createInitialReflectionGenerationService({ provider, now: () => now,
-    buildBundle: () => { throw new ReflectionEvidenceError('no_qualifying_evidence', 'No ordinary evidence'); },
-    buildPureCueBundle: () => { builds += 1; return bundle; },
-  });
-  await assert.rejects(service.generate(bundle.session.sessionId, {}), /Temporary pure cue provider failure/);
-  const failed = db.listReflectionGenerationRuns().find(run => run.sourceSessionId === bundle.session.sessionId)!;
-  assert.ok(failed);
-  assert.equal(failed.state, 'failed');
-  assert.equal(failed.retryable, true);
-  assert.deepEqual(db.getPureCueReflectionRetrySource(failed.runId)?.bundle, bundle);
-  const stored = sqlite.prepare('SELECT evidence_bundle_json FROM reflection_generation_runs WHERE run_id = ?')
-    .get(failed.runId) as { evidence_bundle_json: string };
-  assert.deepEqual(JSON.parse(stored.evidence_bundle_json), bundle);
-  assert.equal(db.runWithLearnerId('other', () => db.getPureCueReflectionRetrySource(failed.runId)), null);
-  fail = false;
-  const retried = await service.retry(failed.runId);
-  assert.equal(retried.status, 'created');
-  assert.equal(retried.proposalCount, 1);
-  const detail = db.getReflectionArtifactDetail(retried.artifactId);
-  assert.deepEqual(detail.evidenceBundle, bundle);
-  assert.equal(detail.proposals.length, 1);
-  assert.equal(detail.proposals[0]!.review.disposition.kind, 'pending');
-  const runs = db.listReflectionGenerationRuns().filter(run => run.sourceSessionId === bundle.session.sessionId);
-  assert.equal(runs.length, 2);
-  assert.equal(runs.find(run => run.runId === failed.runId)?.retryable, false);
-  assert.equal(runs.filter(run => run.state === 'succeeded').length, 1);
-  assert.throws(() => db.getPureCueReflectionRetrySource(failed.runId), /already has a successful artifact/);
-  await assert.rejects(service.retry(failed.runId), /already has a successful artifact/);
-  assert.equal(requests, 2);
-  assert.equal(builds, 1, 'retry must use the saved provider input without rebuilding evidence');
 });

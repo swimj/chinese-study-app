@@ -4,48 +4,87 @@ import os from 'node:os';
 import path from 'node:path';
 import { after, before, describe, test } from 'node:test';
 import { pathToFileURL } from 'node:url';
-import type { DatabaseSync } from 'node:sqlite';
 import type { ClientTransportIncident } from '../src/domain/client-incidents.ts';
 import {
-  createStudyCommitDiagnosticSink,
-  describeStudyCommitFailure,
-  describeStudyCommitSuccess,
   readStudyCommitDiagnostics,
   STUDY_COMMIT_DIAGNOSTICS_FILENAME,
   type StudyCommitFailureDiagnostic,
-  type StudyCommitSuccessEvent,
 } from '../server/study-commit-diagnostics.ts';
 
 type IndexModule = typeof import('../server/index.ts');
 type ExpressApp = ReturnType<IndexModule['createApp']>;
 
-test('pure-cue diagnostics correlate standalone action and event IDs without a word target', () => {
-  const input = {
-    route: '/api/study-sessions/:sessionId/pure-cue-assessments' as const,
-    learnerId: 'learner-1',
-    params: { sessionId: 'session-1' },
-    body: {
-      sessionActionId: 'pure-cue/action-1',
-      events: [{ eventId: 'pure-event-1', outcome: 'accepted', rating: 'good' }],
-    },
-    elapsedMs: 3,
-  };
-  const success = describeStudyCommitSuccess(input);
-  const failure = describeStudyCommitFailure({
-    ...input, responseStatus: 400, error: new Error('invalid assessment'),
-  });
-  for (const diagnostic of [success, failure]) {
-    assert.equal(diagnostic.correlation.sessionActionId, 'pure-cue/action-1');
-    assert.deepEqual(diagnostic.correlation.eventIds, ['pure-event-1']);
-    assert.equal(diagnostic.correlation.targetWordId, null);
+test('reads retained study commit failures, filtering by diagnostic id and counting malformed records', () => {
+  const isolatedDir = fs.mkdtempSync(path.join(os.tmpdir(), 'chinese-study-app-commit-record-'));
+  try {
+    const diagnostic = storedFailure({
+      diagnosticId: 'diagnostic-1',
+      response: '保留这份失败答案',
+      error: {
+        name: 'Error',
+        message: 'failed to persist exact attempt payload',
+        stack: 'Error: failed to persist exact attempt payload',
+        details: {},
+        cause: {
+          name: 'Error',
+          message: 'constraint detail',
+          stack: null,
+          details: { code: 'SQLITE_CONSTRAINT' },
+          cause: null,
+        },
+      },
+    });
+    const other = storedFailure({ diagnosticId: 'diagnostic-2', response: 'other' });
+    fs.writeFileSync(
+      path.join(isolatedDir, STUDY_COMMIT_DIAGNOSTICS_FILENAME),
+      [
+        JSON.stringify(diagnostic),
+        'not json',
+        JSON.stringify({ schemaVersion: 'something-else' }),
+        JSON.stringify(other),
+      ].join('\n') + '\n',
+    );
+
+    const stored = readStudyCommitDiagnostics({ dataDir: isolatedDir, limit: 10 });
+    assert.equal(stored.totalRecordCount, 2);
+    assert.equal(stored.malformedRecordCount, 2);
+    assert.deepEqual(stored.diagnostics.map((item) => item.diagnosticId), ['diagnostic-1', 'diagnostic-2']);
+    assert.equal(JSON.stringify(stored.diagnostics[0]?.request.body).includes('保留这份失败答案'), true);
+    assert.equal(stored.diagnostics[0]?.error.cause?.message, 'constraint detail');
+    assert.equal(stored.diagnostics[0]?.error.cause?.details.code, 'SQLITE_CONSTRAINT');
+    assert.match(stored.diagnostics[0]?.error.stack ?? '', /failed to persist exact attempt payload/);
+    assert.deepEqual(
+      readStudyCommitDiagnostics({ dataDir: isolatedDir, limit: 1 }).diagnostics.map((item) => item.diagnosticId),
+      ['diagnostic-2'],
+    );
+    assert.equal(readStudyCommitDiagnostics({
+      dataDir: isolatedDir,
+      diagnosticId: 'diagnostic-1',
+    }).diagnostics[0]?.diagnosticId, 'diagnostic-1');
+    assert.equal(readStudyCommitDiagnostics({
+      dataDir: isolatedDir,
+      diagnosticId: 'missing-diagnostic',
+    }).diagnostics.length, 0);
+  } finally {
+    fs.rmSync(isolatedDir, { recursive: true, force: true });
   }
-  assert.deepEqual(success.results, [{ eventId: 'pure-event-1', outcome: 'accepted', rating: 'good' }]);
 });
 
-describe('study commit diagnostics', { concurrency: false }, () => {
+test('reads an absent diagnostics file as empty', () => {
+  const isolatedDir = fs.mkdtempSync(path.join(os.tmpdir(), 'chinese-study-app-commit-record-'));
+  try {
+    const stored = readStudyCommitDiagnostics({ dataDir: isolatedDir });
+    assert.equal(stored.totalRecordCount, 0);
+    assert.equal(stored.malformedRecordCount, 0);
+    assert.deepEqual(stored.diagnostics, []);
+  } finally {
+    fs.rmSync(isolatedDir, { recursive: true, force: true });
+  }
+});
+
+describe('client incident route', { concurrency: false }, () => {
   let dataDir = '';
   let indexModule: IndexModule;
-  let sqlite: DatabaseSync;
 
   before(async () => {
     dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'chinese-study-app-commit-diagnostics-'));
@@ -57,7 +96,6 @@ describe('study commit diagnostics', { concurrency: false }, () => {
       indexModule = await import(
         `${pathToFileURL(path.resolve('server/index.ts')).href}?test=${Date.now()}`
       );
-      sqlite = (await import('../server/db/connection.ts')).getDb();
     } finally {
       restoreEnv('APP_MODE', previousMode);
       restoreEnv('APP_DATA_DIR', previousDataDir);
@@ -66,365 +104,6 @@ describe('study commit diagnostics', { concurrency: false }, () => {
 
   after(() => {
     fs.rmSync(dataDir, { recursive: true, force: true });
-  });
-
-  test('retains the full failed request and error chain while logging a compact correlation event', () => {
-    const isolatedDir = fs.mkdtempSync(path.join(os.tmpdir(), 'chinese-study-app-commit-record-'));
-    const loggedLines: string[] = [];
-    try {
-      const cause = Object.assign(new Error('constraint detail'), { code: 'SQLITE_CONSTRAINT' });
-      const error = new Error('failed to persist exact attempt payload', { cause });
-      const diagnostic = describeStudyCommitFailure({
-        route: '/api/study-sessions/:sessionId/accepted-review-attempt-batch',
-        responseStatus: 500,
-        learnerId: 'learner-1',
-        params: { sessionId: 'session-1' },
-        body: {
-          events: [{
-            id: 'attempt-1',
-            sessionId: 'session-1',
-            sessionActionId: 'review/word-1/production',
-            targetWordId: 'word-1',
-            actionKind: 'production',
-            response: '保留这份失败答案',
-          }],
-          commitIntent: {
-            sessionActionId: 'review/word-1/production',
-            targetWordId: 'word-1',
-            actionKind: 'production',
-          },
-        },
-        error,
-        elapsedMs: 7,
-        diagnosticId: 'diagnostic-1',
-        at: '2026-09-05T04:00:00.000Z',
-      });
-      const expiredDiagnostic = describeStudyCommitFailure({
-        route: '/api/review-session-summaries',
-        responseStatus: 500,
-        learnerId: 'learner-1',
-        params: {},
-        body: { sessionId: 'expired-session' },
-        error: new Error('expired failure'),
-        diagnosticId: 'expired-diagnostic',
-        at: '2026-07-01T00:00:00.000Z',
-      });
-      fs.writeFileSync(
-        path.join(isolatedDir, STUDY_COMMIT_DIAGNOSTICS_FILENAME),
-        `${JSON.stringify(expiredDiagnostic)}\n`,
-      );
-      createStudyCommitDiagnosticSink(isolatedDir, {
-        logLine(line) {
-          loggedLines.push(line);
-        },
-      }).record(diagnostic);
-
-      const logEvent = JSON.parse(loggedLines[0]!) as Record<string, unknown>;
-      assert.equal(logEvent.event, 'study_commit.failed');
-      assert.equal(logEvent.diagnosticId, 'diagnostic-1');
-      assert.equal(logEvent.elapsedMs, 7);
-      assert.equal(logEvent.sessionActionId, 'review/word-1/production');
-      assert.equal(logEvent.errorMessage, 'failed to persist exact attempt payload');
-      assert.equal(loggedLines[0]!.includes('保留这份失败答案'), false);
-
-      const stored = readStudyCommitDiagnostics({ dataDir: isolatedDir, limit: 10 });
-      assert.equal(stored.totalRecordCount, 1);
-      assert.equal(stored.malformedRecordCount, 0);
-      assert.equal(stored.diagnostics[0]?.request.body && JSON.stringify(stored.diagnostics[0]?.request.body).includes('保留这份失败答案'), true);
-      assert.equal(stored.diagnostics[0]?.error.cause?.message, 'constraint detail');
-      assert.equal(stored.diagnostics[0]?.error.cause?.details.code, 'SQLITE_CONSTRAINT');
-      assert.match(stored.diagnostics[0]?.error.stack ?? '', /failed to persist exact attempt payload/);
-      assert.equal(readStudyCommitDiagnostics({
-        dataDir: isolatedDir,
-        diagnosticId: 'diagnostic-1',
-      }).diagnostics[0]?.diagnosticId, 'diagnostic-1');
-      assert.equal(readStudyCommitDiagnostics({
-        dataDir: isolatedDir,
-        diagnosticId: 'missing-diagnostic',
-      }).diagnostics.length, 0);
-      assert.equal(
-        fs.existsSync(path.join(isolatedDir, STUDY_COMMIT_DIAGNOSTICS_FILENAME)),
-        true,
-      );
-    } finally {
-      fs.rmSync(isolatedDir, { recursive: true, force: true });
-    }
-  });
-
-  test('returns a diagnostic id and records the exact payload for an unexpected review commit failure', async () => {
-    const diagnostics: StudyCommitFailureDiagnostic[] = [];
-    const app = indexModule.createApp({
-      studyCommitDiagnosticSink: {
-        record(diagnostic) {
-          diagnostics.push(diagnostic);
-        },
-      },
-    });
-    const body = {
-      events: [{
-        id: 'session-failure/review/missing-word/recognition/attempt-1',
-        occurredAt: '2026-09-05T04:05:00.000Z',
-        sessionId: 'session-failure',
-        sessionActionId: 'review/missing-word/recognition',
-        sessionEventSequence: 1,
-        actionAttemptSequence: 1,
-        actionKind: 'recognition',
-        targetWordId: 'missing-word',
-        sampledSkillIds: ['recognition'],
-        response: null,
-        outcome: 'correct',
-        rating: 'good',
-        contentRef: null,
-        metadata: {},
-      }],
-      commitIntent: {
-        type: 'commit-review-action-session',
-        sessionActionId: 'review/missing-word/recognition',
-        targetWordId: 'missing-word',
-        actionKind: 'recognition',
-        sampledSkillIds: ['recognition'],
-        failureCount: 0,
-        terminalRating: 'good',
-      },
-    };
-
-    const result = await request(
-      app,
-      '/api/study-sessions/session-failure/accepted-review-attempt-batch',
-      { method: 'POST', body },
-    );
-    assert.equal(result.status, 500);
-    assert.equal(typeof (result.json as { diagnosticId?: unknown }).diagnosticId, 'string');
-    assert.equal(diagnostics.length, 1);
-    assert.equal(diagnostics[0]?.diagnosticId, (result.json as { diagnosticId: string }).diagnosticId);
-    assert.equal(diagnostics[0]?.learnerId, 'test-learner');
-    assert.deepEqual(diagnostics[0]?.request.body, body);
-    assert.equal(diagnostics[0]?.correlation.sessionId, 'session-failure');
-    assert.equal(diagnostics[0]?.correlation.sessionActionId, 'review/missing-word/recognition');
-    assert.deepEqual(diagnostics[0]?.correlation.eventIds, [body.events[0]!.id]);
-    assert.match(diagnostics[0]?.error.message ?? '', /FOREIGN KEY constraint failed/);
-    assert.match(String(diagnostics[0]?.error.details.code), /SQLITE/);
-  });
-
-  test('correlates successful and failed contrast commits without letting success logging fail the request', async () => {
-    insertReviewWordForContrast(sqlite, 'diagnostic-contrast-word');
-    const diagnostics: StudyCommitFailureDiagnostic[] = [];
-    const successes: StudyCommitSuccessEvent[] = [];
-    const app = indexModule.createApp({
-      studyCommitDiagnosticSink: {
-        record(diagnostic) {
-          diagnostics.push(diagnostic);
-        },
-        recordSuccess(event) {
-          successes.push(event);
-          throw new Error('success logger unavailable');
-        },
-      },
-    });
-    const successfulBody = contrastBody({
-      sessionId: 'contrast-success',
-      wordId: 'diagnostic-contrast-word',
-      selectedWordId: 'diagnostic-contrast-word',
-      promptTargetWordId: 'diagnostic-contrast-word',
-    });
-    const successful = await request(
-      app,
-      '/api/study-sessions/contrast-success/accepted-contrast-selection-attempt',
-      { method: 'POST', body: successfulBody },
-    );
-    assert.equal(successful.status, 204, JSON.stringify(successful.json));
-    assert.equal(successes.length, 1);
-    assert.equal(successes[0]?.correlation.sessionId, 'contrast-success');
-    assert.equal(successes[0]?.correlation.selectedWordId, 'diagnostic-contrast-word');
-    assert.equal(successes[0]?.results[0]?.outcome, 'correct');
-    assert.equal(successes[0]?.results[0]?.rating, 'good');
-    assert.equal(typeof successes[0]?.elapsedMs, 'number');
-
-    const failedBody = contrastBody({
-      sessionId: 'contrast-failure',
-      wordId: 'diagnostic-missing-word',
-      selectedWordId: 'diagnostic-missing-word',
-      promptTargetWordId: 'diagnostic-missing-word',
-    });
-    const failed = await request(
-      app,
-      '/api/study-sessions/contrast-failure/accepted-contrast-selection-attempt',
-      { method: 'POST', body: failedBody },
-    );
-    assert.equal(failed.status, 500);
-    assert.equal(typeof (failed.json as { diagnosticId?: unknown }).diagnosticId, 'string');
-    assert.equal(diagnostics.length, 1);
-    assert.deepEqual(diagnostics[0]?.request.body, failedBody);
-    assert.equal(diagnostics[0]?.correlation.sessionId, 'contrast-failure');
-    assert.equal(diagnostics[0]?.correlation.promptTargetWordId, 'diagnostic-missing-word');
-    assert.equal(diagnostics[0]?.correlation.selectedWordId, 'diagnostic-missing-word');
-    assert.deepEqual(diagnostics[0]?.correlation.eventIds, [failedBody.event.id]);
-    assert.match(diagnostics[0]?.error.message ?? '', /FOREIGN KEY constraint failed/);
-  });
-
-  test('pure cue assessment route validates its standalone identity and event objects before persistence', async () => {
-    const app = indexModule.createApp({ frontendDistPath: null });
-    const invalidEvent = await request(
-      app,
-      '/api/study-sessions/pure-session/pure-cue-assessments',
-      {
-        method: 'POST',
-        body: {
-          attemptId: 'pure-attempt', snapshotId: 'pure-snapshot', sessionActionId: 'pure-cue/pure-snapshot',
-          events: [null],
-        },
-      },
-    );
-    assert.equal(invalidEvent.status, 400);
-    assert.match(String((invalidEvent.json as { error?: unknown }).error), /event objects/);
-
-    const unknownSnapshot = await request(
-      app,
-      '/api/study-sessions/pure-session/pure-cue-assessments',
-      {
-        method: 'POST',
-        body: {
-          attemptId: 'pure-attempt', snapshotId: 'pure-snapshot', sessionActionId: 'pure-cue/pure-snapshot',
-          events: [{
-            eventId: 'pure-event', occurredAt: '2026-09-18T00:00:00.000Z', response: '撒谎',
-            outcome: 'accepted', submittedWordId: 'word-a', rating: 'good',
-          }],
-        },
-      },
-    );
-    assert.equal(unknownSnapshot.status, 400);
-    assert.equal(typeof (unknownSnapshot.json as { error?: unknown }).error, 'string');
-  });
-
-  test('review commits require an explicit boolean skip for unfinished reinforcement', async () => {
-    const wordId = 'explicit-skip-word';
-    insertReviewWordForContrast(sqlite, wordId);
-    sqlite.prepare(`INSERT INTO word_skill_state
-      (word_id, skill_id, enabled, interval_hours, last_studied_at, next_due_at, ease_factor)
-      VALUES (?, 'recognition', 1, 24, ?, ?, 2.5)`)
-      .run(wordId, '2026-09-03T00:00:00.000Z', '2026-09-04T00:00:00.000Z');
-    const app = indexModule.createApp({ frontendDistPath: null });
-    const sessionId = 'explicit-skip-session';
-    const sessionActionId = `review/${wordId}/recognition`;
-    const events = [false, true, true, true].map((correct, index) => ({
-      id: `${sessionId}/attempt-${index + 1}`,
-      occurredAt: `2026-09-05T04:05:0${index}.000Z`,
-      sessionId, sessionActionId, sessionEventSequence: index + 1, actionAttemptSequence: index + 1,
-      actionKind: 'recognition', targetWordId: wordId, sampledSkillIds: ['recognition'],
-      response: null, outcome: correct ? 'correct' : 'incorrect', rating: correct ? 'good' : 'forgot',
-      contentRef: null, metadata: {},
-    }));
-    const commitIntent = {
-      type: 'commit-review-action-session', sessionActionId, targetWordId: wordId,
-      actionKind: 'recognition', sampledSkillIds: ['recognition'], failureCount: 1, terminalRating: null,
-    };
-    const post = (body: unknown) => request(app,
-      `/api/study-sessions/${sessionId}/accepted-review-attempt-batch`, { method: 'POST', body });
-    for (const reinforcementSkipped of [undefined, false, 'true', 1, null]) {
-      const result = await post({ events: events.slice(0, 1), commitIntent: { ...commitIntent, reinforcementSkipped } });
-      assert.equal(result.status, 400, JSON.stringify(result.json));
-    }
-    const alreadyCovered = await post({ events, commitIntent: { ...commitIntent, reinforcementSkipped: true } });
-    assert.equal(alreadyCovered.status, 400, JSON.stringify(alreadyCovered.json));
-    const clean = await post({
-      events: [{ ...events[0], outcome: 'correct', rating: 'good' }],
-      commitIntent: { ...commitIntent, failureCount: 0, terminalRating: 'good', reinforcementSkipped: true },
-    });
-    assert.equal(clean.status, 400, JSON.stringify(clean.json));
-    assert.equal(sqlite.prepare('SELECT COUNT(*) AS count FROM study_attempt_events WHERE session_id = ?')
-      .get(sessionId)?.count, 0);
-    const accepted = await post({ events: events.slice(0, 1), commitIntent: { ...commitIntent, reinforcementSkipped: true } });
-    assert.equal(accepted.status, 204, JSON.stringify(accepted.json));
-    assert.equal(sqlite.prepare('SELECT COUNT(*) AS count FROM study_attempt_events WHERE session_id = ?')
-      .get(sessionId)?.count, 1);
-    assert.equal(sqlite.prepare("SELECT interval_hours FROM word_skill_state WHERE word_id = ? AND skill_id = 'recognition'")
-      .get(wordId)?.interval_hours, 6);
-  });
-
-  test('pure cue commits require an explicit boolean skip before consuming the snapshot', async () => {
-    const now = '2026-09-05T04:05:00.000Z';
-    sqlite.prepare(`INSERT INTO pure_cues (id, stimulus, axis_note, created_at)
-      VALUES ('explicit-skip-cue', 'diagnose', '', ?)`).run(now);
-    sqlite.prepare(`INSERT INTO learner_pure_cue_state
-      (learner_id, pure_cue_id, interval_hours, ease_factor, next_due_at, adopted_at)
-      VALUES ('test-learner', 'explicit-skip-cue', 24, 2.5, ?, ?)`).run(now, now);
-    sqlite.prepare(`INSERT INTO pure_cue_served_snapshots
-      (learner_id, snapshot_id, pure_cue_id, served_at, stimulus, axis_note, accepted_answers_json)
-      VALUES ('test-learner', 'explicit-skip-snapshot', 'explicit-skip-cue', ?, 'diagnose', '', ?)`)
-      .run(now, JSON.stringify([{ wordId: 'explicit-skip-word', hanzi: '诊断', traditional: null }]));
-    const app = indexModule.createApp({ frontendDistPath: null });
-    const events = [false, true, true, true].map((correct, index) => ({
-      eventId: `explicit-pure-event-${index}`, occurredAt: `2026-09-05T04:05:0${index}.000Z`,
-      response: correct ? '诊断' : 'wrong', outcome: correct ? 'accepted' : 'rejected',
-      submittedWordId: correct ? 'explicit-skip-word' : null, rating: correct ? 'good' : 'forgot',
-    }));
-    const body = {
-      attemptId: 'explicit-skip-assessment', snapshotId: 'explicit-skip-snapshot',
-      sessionActionId: 'pure-cue/explicit-skip-snapshot', events: events.slice(0, 1),
-    };
-    const post = (payload: unknown) => request(app,
-      '/api/study-sessions/explicit-pure-session/pure-cue-assessments', { method: 'POST', body: payload });
-    for (const reinforcementSkipped of [undefined, false, 'true', 1, null]) {
-      const result = await post({ ...body, reinforcementSkipped });
-      assert.equal(result.status, 400, JSON.stringify(result.json));
-    }
-    for (const coveredEvents of [events, [events[1]]]) {
-      const result = await post({ ...body, events: coveredEvents, reinforcementSkipped: true });
-      assert.equal(result.status, 400, JSON.stringify(result.json));
-    }
-    assert.equal(sqlite.prepare("SELECT consumed_attempt_id FROM pure_cue_served_snapshots WHERE snapshot_id = 'explicit-skip-snapshot'")
-      .get()?.consumed_attempt_id, null);
-    const accepted = await post({ ...body, reinforcementSkipped: true });
-    assert.equal(accepted.status, 204, JSON.stringify(accepted.json));
-    const stored = sqlite.prepare("SELECT failure_count, terminal_rating FROM pure_cue_attempts WHERE attempt_id = 'explicit-skip-assessment'").get();
-    assert.deepEqual({ ...stored }, { failure_count: 1, terminal_rating: null });
-    assert.equal(sqlite.prepare("SELECT interval_hours FROM learner_pure_cue_state WHERE pure_cue_id = 'explicit-skip-cue'")
-      .get()?.interval_hours, 6);
-  });
-
-  test('records rejected session summary statistics and keeps successful summary logging failure-isolated', async () => {
-    const diagnostics: StudyCommitFailureDiagnostic[] = [];
-    const app = indexModule.createApp({
-      reflectionLifecycleLogger: {
-        emit() {
-          throw new Error('logger unavailable');
-        },
-      },
-      studyCommitDiagnosticSink: {
-        record(diagnostic) {
-          diagnostics.push(diagnostic);
-        },
-      },
-    });
-    const invalidBody = {
-      sessionId: 'summary-invalid',
-      completedAt: '2026-09-05T04:10:00.000Z',
-      completedReviewActionCount: 1,
-      failedReviewActionCount: 2,
-      activeDurationMs: 123_456,
-    };
-    const invalid = await request(app, '/api/review-session-summaries', {
-      method: 'POST',
-      body: invalidBody,
-    });
-    assert.equal(invalid.status, 400);
-    assert.equal(typeof (invalid.json as { diagnosticId?: unknown }).diagnosticId, 'string');
-    assert.equal(diagnostics[0]?.responseStatus, 400);
-    assert.equal(diagnostics[0]?.correlation.sessionId, 'summary-invalid');
-    assert.deepEqual(diagnostics[0]?.request.body, invalidBody);
-
-    const successful = await request(app, '/api/review-session-summaries', {
-      method: 'POST',
-      body: {
-        sessionId: 'summary-successful',
-        completedAt: '2026-09-05T04:11:00.000Z',
-        completedReviewActionCount: 2,
-        failedReviewActionCount: 1,
-        activeDurationMs: 234_567,
-      },
-    });
-    assert.equal(successful.status, 204);
-    assert.equal(diagnostics.length, 1);
   });
 
   test('accepts authenticated bounded client incident batches and rejects malformed records', async () => {
@@ -478,68 +157,35 @@ describe('study commit diagnostics', { concurrency: false }, () => {
   });
 });
 
-function insertReviewWordForContrast(sqlite: DatabaseSync, wordId: string): void {
-  sqlite.prepare(`
-    INSERT INTO words (
-      id, hanzi, pinyin, meaning, examples_json, status, priority, created_at,
-      learning_streak, last_learning_success_on, last_learning_covered_on
-    ) VALUES (?, ?, ?, ?, '[]', 'review', 100, ?, 0, NULL, NULL)
-  `).run(wordId, '诊断', 'zhen duan', 'diagnose', '2026-09-01T00:00:00.000Z');
-  sqlite.prepare(`
-    INSERT INTO word_study_admission_state (
-      word_id, study_phase, earliest_next_study_at
-    ) VALUES (?, 'review', NULL)
-  `).run(wordId);
-  sqlite.prepare(`
-    INSERT INTO word_skill_state (
-      word_id, skill_id, enabled, interval_hours, last_studied_at,
-      next_due_at, ease_factor
-    ) VALUES (?, 'contextual_selection', 1, 24, ?, ?, 2.5)
-  `).run(wordId, '2026-09-03T00:00:00.000Z', '2026-09-04T00:00:00.000Z');
-}
-
-function contrastBody(input: {
-  sessionId: string;
-  wordId: string;
-  selectedWordId: string;
-  promptTargetWordId: string;
-}) {
-  const sessionActionId = `review/${input.wordId}/contextual_selection`;
-  const eventId = `${sessionActionId}/attempt-1`;
-  const choiceWordIds = [input.promptTargetWordId, `${input.wordId}-distractor`];
+function storedFailure(input: {
+  diagnosticId: string;
+  response: string;
+  error?: StudyCommitFailureDiagnostic['error'];
+}): StudyCommitFailureDiagnostic {
   return {
-    event: {
-      id: eventId,
-      occurredAt: '2026-09-05T04:07:00.000Z',
-      sessionId: input.sessionId,
-      sessionActionId,
-      sessionEventSequence: 1,
-      actionAttemptSequence: 1,
-      actionKind: 'contrast_selection',
-      targetWordId: input.wordId,
-      sampledSkillIds: ['contextual_selection'],
-      response: input.selectedWordId,
-      outcome: 'correct',
-      rating: 'good',
-      contentRef: { type: 'contrast_prompt', id: `${input.wordId}/prompt` },
-      metadata: {
-        promptTargetWordId: input.promptTargetWordId,
-        choiceWordIds,
-        practiceMore: false,
-      },
+    schemaVersion: 'study_commit_failure.v1',
+    event: 'study_commit.failed',
+    diagnosticId: input.diagnosticId,
+    at: '2026-09-05T04:00:00.000Z',
+    route: '/api/study-sessions/:sessionId/accepted-review-attempt-batch',
+    responseStatus: 500,
+    elapsedMs: 7,
+    learnerId: 'learner-1',
+    correlation: {
+      sessionId: 'session-1',
+      sessionActionId: 'review/word-1/production',
+      targetWordId: 'word-1',
+      actionKind: 'production',
+      promptTargetWordId: null,
+      selectedWordId: null,
+      eventIds: ['attempt-1'],
     },
-    commitIntent: {
-      type: 'commit-contrast-selection-action-session',
-      sessionActionId,
-      targetWordId: input.wordId,
-      actionKind: 'contrast_selection',
-      sampledSkillIds: ['contextual_selection'],
-      selectedWordId: input.selectedWordId,
-      promptTargetWordId: input.promptTargetWordId,
-      choiceWordIds,
-      rating: 'good',
-      practiceMore: false,
+    request: {
+      params: { sessionId: 'session-1' },
+      body: { events: [{ id: 'attempt-1', response: input.response }] },
     },
+    error: input.error ?? { name: 'Error', message: 'failed', stack: null, details: {}, cause: null },
+    runtime: { appVersion: null, appRevision: null, flyMachineId: null, processId: 1 },
   };
 }
 

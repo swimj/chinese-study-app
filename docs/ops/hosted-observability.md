@@ -141,27 +141,11 @@ the server. The full contract and limitations are documented in
 
 ## Diagnose a failed study commit
 
-Every successful accepted-review or contrast-selection commit emits a compact
-`study_commit.succeeded` JSON event. It includes learner/session/action/word and
-event-id correlations, the submitted outcome and rating, and elapsed time. This
-makes an ambiguous retry diagnosable: an operator can tell whether the same
-event id was already committed before a later request failed.
-
-Every caught study-commit failure receives a UUID diagnostic id. The API returns
-that id to the frontend, which includes it in the visible error. The process also
-writes:
-
-- one compact `study_commit.failed` JSON event to stderr for immediate `fly logs`
-  inspection; and
-- one complete line in `/data/study-commit-diagnostics.jsonl`, on the attached
-  volume beside `app.db`.
-
-The compact failure event includes the diagnostic id, route/status, elapsed
-time, learner, session, action, event and target-word correlations, plus the
-exact error name, message, code and related scalar details. It omits the attempt
-response and full body.
-The sidecar contains the complete diagnostic, including the submitted payload
-and stack.
+The legacy study-commit routes that produced `study_commit.*` events and the
+`/data/study-commit-diagnostics.jsonl` sidecar have been removed. An existing
+sidecar is no longer written or pruned. Each retained record holds a diagnostic
+id, route/status, learner/session/action/event correlations, the error chain, and
+the complete submitted payload; treat it as private operational evidence.
 
 Read recent records without opening or copying the database:
 
@@ -177,12 +161,9 @@ fly ssh console --app <app-name> --command \
   'npm run --silent hosted:inspect-study-commits -- --data-dir=/data --diagnostic-id=<id>'
 ```
 
-The file is failure-only and survives an application restart, but it is not part
-of the database backup. Treat it as private operational evidence
-and inspect or preserve it before replacing the Machine or volume. On the first
-failed write of each UTC day, the application removes valid records older than
-30 days. Malformed lines are preserved for manual diagnosis rather than silently
-discarded.
+The file survives an application restart, but it is not part of the database
+backup. Inspect or preserve it before replacing the Machine or volume, or delete
+it once it is no longer needed.
 
 <a id="deploy-and-open-the-admin-view"></a>
 

@@ -252,8 +252,9 @@ Mandarin legacy `/api/study-sessions/*` writes, legacy word completion/dismissal
 introduction open/complete, review-summary commits, learner proposal/application,
 and old operator content-editor writes return `409 VOCABULARY_CUTOVER`.
 Both methods of `/api/session-payload` are retired because even GET composed
-and reserved work. Reload into the new client. Historical read endpoints
-below remain useful for retained records; they do not define the new study flow.
+and reserved work. Reload into the new client. The legacy study and reflection
+route handlers themselves have been removed; this fence keeps the explicit 409
+answer for stale clients.
 
 ## My words
 
@@ -322,19 +323,6 @@ Cluster items include members and prompts; durable production-cue items include
 their anchor and accepted words, lifecycle state, provenance, and current evidence
 projection.
 It does not expose a content mutation path.
-
-## Shared content reports
-
-| Method | Path | Handler domain |
-| --- | --- | --- |
-| POST | `/api/shared-content/production-cues/:cueId/reports` | Learner-private shared-content report |
-
-The JSON body contains `category` (`incorrect`, `misleading`, `unsafe`, or
-`other`) and an optional string `note`. The authenticated learner is derived at
-the request boundary; clients never submit a learner id. A report is private,
-idempotent per learner and published cue, and does not itself change shared
-eligibility. Operator quarantine is a separate backend command and is not
-exposed as a learner-controlled HTTP endpoint.
 
 ## Status
 
@@ -499,9 +487,6 @@ budgets.
 | GET | `/api/words/:id/meanings` | `words` |
 | PATCH | `/api/words/:id/personal-notes` | `words` |
 | PATCH | `/api/words/:id/user-priority` | `priority` |
-| POST | `/api/words/:id/complete-learning-session` | `words` |
-| POST | `/api/words/:id/complete-unstudied-session` | `words` |
-| POST | `/api/words/:id/dismiss` | `words` |
 | PATCH | `/api/words/:wordId/meanings/:meaningId` | `words` |
 
 ## Priority / unstudied intake
@@ -555,177 +540,10 @@ The `/api/diet/intake` and `/api/diet/intake/assess` routes are retired.
 Operator jumps (100% weight on a chosen deck, provenance actor `operator`)
 are performed with `scripts/set-diet-deck.ts`; there is no HTTP endpoint.
 
-## Session composition
-
-The review bucket includes word-owned items and standalone pure-cue items
-(`itemType: pure_cue_production`). Pure-cue items have a server-issued frozen
-snapshot and no target word. Their admission is independent of word review;
-fragile cues are due-date admitted and strong cues use proportional sampling.
-
-`POST /api/study-sessions/:sessionId/pure-cue-assessments` accepts
-`{ attemptId, snapshotId, sessionActionId, events, reinforcementSkipped? }`. Each event supplies
-`eventId`, `occurredAt`, `response`, `outcome`, `submittedWordId`, and `rating`.
-The server verifies outcomes against its saved snapshot and covering rules,
-uses its own commit clock, and returns 204. An identical retry is idempotent;
-conflicting evidence or a snapshot already consumed by another action is 400.
-No member-word scheduler or admission state is changed.
-
-Word-review completion accepts optional `commitIntent.reinforcementSkipped`;
-pure-cue completion accepts optional top-level `reinforcementSkipped`. Both are
-booleans and default to `false` when omitted. Only `true` allows a recorded lapse
-with fewer than three subsequent consecutive successful recalls to complete.
-`true` is rejected for clean or already-covered evidence; an unfinished batch
-without it is rejected. Validation also applies to retries. These commits preserve
-supplied attempts and ordinary lapse scheduling, add no successful recall, and
-imply no compensation. Empty batches, inconsistent evidence, and events after
-normal coverage remain invalid. The flag is a completion instruction, not a
-separate stored attempt or scheduler state.
-
-| Method | Path | Handler domain |
-| --- | --- | --- |
-| GET | `/api/session-payload` | Immediate composition from currently ready content |
-| POST | `/api/session-payload` | `{ "studyDayKey": "YYYY-MM-DD" }`; bounded session-entry preparation and ready payload |
-
-The session payload contains the three study-item buckets, admitting at most
-1000 units in total, including standalone pure cues in review. Above that cap,
-slots follow the live scheduler's 50/30/20 review/learning/unstudied weights,
-redistributing unused slots from smaller buckets and retaining internal order.
-Review production
-items freeze their selected durable cue or meaning-derived fallback, the canonical
-`{ wordId, hanzi, traditional }` rows whose ids define the accepted set used for
-client grading, and nullable recheck-demand id. Unstudied membership is the
-experimental dual-pool admitted set from
-[`SPECS/study-action-model.md`](../SPECS/archive/study-action-model.md#experimental-dual-pool-unstudied-admission)
-(mixed stash/diet split of remaining daily new-word quota, or stash-only when
-that source is selected). Mandarin applies readiness within those pools without
-a require bypass; legacy non-Mandarin selection remains unchanged. Entry waits
-up to 30 seconds total, then may return fewer or no new words. Mandarin new-word
-items include exact teaching/source snapshots; the active player does not fetch
-or generate missing introductions. Quotas are computed before readiness filtering,
-so temporary stash preparation delays do not transfer slots to diet.
-The nullable `traditional` form is canonical content; lookup aliases are excluded.
-Typed production grading uses only that frozen accepted-answer snapshot. The
-server derives `submittedWordId` at commit: accepted results from the frozen
-accepted set, and rejected typed responses from a best-effort unique catalog
-match. The payload does not include the shared word catalog.
-
-## Study sessions and attempts
-
-| Method | Path | Handler domain |
-| --- | --- | --- |
-| POST | `/api/study-sessions/:sessionId/accepted-review-attempt-batch` | `study-sessions` |
-| POST | `/api/study-sessions/:sessionId/accepted-contrast-selection-attempt` | `study-sessions` |
-| POST | `/api/study-sessions/:sessionId/manage-study-action` | `study-management` |
-| POST | `/api/study-sessions/:sessionId/reflections` | `reflection` |
-| GET | `/api/session-completions/current` | `session-completion` |
-| GET | `/api/study-sessions/:sessionId/completion` | `session-completion` |
-| POST | `/api/study-sessions/:sessionId/completion` | `session-completion` |
-| POST | `/api/study-sessions/:sessionId/completion/undo` | `session-completion` |
-| POST | `/api/study-sessions/:sessionId/completion/close` | `session-completion` |
-| POST | `/api/review-session-summaries` | `analytics` |
-| POST | `/api/client-incidents` | `client diagnostics` |
-
-Completion POST accepts the
-[`StageSessionCompletionRequest`](../src/domain/session-completion.ts):
-`revisionId`, canonical ISO UTC `startedAt`, UTC `studyDayKey`, `summary`,
-`pendingCommit` (a deferred final action or null), and `reflectionEvidence`
-(a supported evidence supplement or null). The summary requires canonical
-`completedAt`, non-negative integer completion/failure counts and
-`activeDurationMs`, and may include a learning count and exact debrief inventory.
-Completion cannot precede start, and failure count cannot exceed completion
-count. Final action validation uses the owning study persistence contract;
-review, contrast, and pure-cue commits must match the route session.
-
-Stage/read/cancel/close return `SessionCompletion`: session/revision IDs,
-`status` (`pending`, `cancelled`, `closed`, or `failed`), `closeAt`, `serverNow`,
-`completedAt`, `canUndo`, deterministic word `report`, and nullable `error`.
-Staging previews the final action without accepting it and freezes a 15-second
-server deadline. Repeating the exact revision preserves its deadline; changing
-its input conflicts. Undo and close POST accept `{ revisionId }`. Undo cancels
-only before expiry; close accepts the final action, summary, and generation work
-atomically and can close early or retry failed closure. Repeated cancellation or
-successful closure returns the saved result.
-
-Current GET returns `{ completion: SessionCompletion | null }` for the learner's
-pending/failed completion. Session GET returns its latest revision and may close
-an overdue pending revision. Every operation is learner-scoped. Explicit input
-errors return `400`, missing completion returns `404`, lifecycle or revision
-conflicts return `409`, and persistence failures return `500`. Browser unload is
-not required; server recovery closes acknowledged overdue completions. See the
-[earlier completion contract](../SPECS/archive/session-progress-and-completion.md#session-completion).
-
-Accepted review production events must include their exact frozen
-`metadata.production` snapshot. The accepted-review batch transaction appends
-cue evidence, applies the bounded anchor scheduler response, consumes or creates
-the 48-hour one-shot recheck demand, and marks the attempt events projected as
-one atomic operation.
-
-Caught accepted-review and contrast-selection commit failures return a
-`diagnosticId` alongside the safe `error`. The frontend includes this id in its
-visible error. The server retains a private failure record keyed by that id with
-the exact parsed request, error chain, and release identity; see the hosted
-observability runbook. Successful commits emit a failure-isolated structured
-lifecycle event with stable learner/session/action/event correlations, outcome,
-rating, and elapsed time so an ambiguous retry can be paired with an earlier
-durable success.
-
-The homepage exercise failure rate reads saved session totals and daily
-compensation counters. New session-summary writes include word reviews and
-standalone pure cues in the existing completion/failure fields: each exercise
-counts once, with one failure if it lapsed even when reinforcement succeeds.
-All exercise types use the summary's UTC completion day. Repeated summary writes
-replace totals rather than incrementing them.
-
-The legacy `reviewFailureRateDays` response field names describe these combined
-exercise counts. `compensatedReviewActionSessions` reads a learner-private daily
-counter incremented transactionally when a word-production or pure-cue scheduler
-restoration first applies. Pending/unavailable restorations and already-restored
-retries add nothing. Compensation-only days are included by UTC application date.
-Daily/rolling failure-rate fields remain unadjusted; the homepage derives each
-window's adjusted failure rate as
-`max(0, sum(failures) - sum(compensations)) / sum(completions)` and compensation
-rate as `sum(compensations) / sum(completions)`. Both rates are null without
-completions; compensation counts remain visible and rates are not capped at
-100%. No matching of source-failure dates is required.
-
-Migration `0022_exercise_compensation_days` starts the compensation table empty.
-There is no backfill: old summaries retain their word-only totals, and old
-restorations are not counted. New restorations of old failures do count. This is
-a forward-looking rough signal; rollout-spanning windows mix old and new coverage.
-
-`POST /api/review-session-summaries` accepts a non-negative integer `activeDurationMs` alongside the existing completion counts. The `sessionId` upsert replaces all summary fields, including the duration.
-Caught summary persistence failures use the same diagnostic-id contract so the
-otherwise-lost completion counts and active duration remain inspectable.
-
-`POST /api/client-incidents` accepts an authenticated batch of 1–20 strictly
-bounded `client_transport_incident.v1` records. The current schema accepts only
-authentication or native-fetch failures from accepted-review and accepted-
-contrast commit routes. A valid batch returns `204`; malformed records return
-`400`. Upload is diagnostic-only and never retries or changes the associated
-study commit. See [error logging and diagnostics](./ops/error-diagnostics.md#client-transport-incidents).
-
-## Post-session reflection
-
-This section describes the retained earlier reflection API. Its historical
-contract is
-[`SPECS/archive/reflection-proposals-and-handles.md`](../SPECS/archive/reflection-proposals-and-handles.md).
-Request/result types live in
-[`src/domain/reflection-evidence.ts`](../src/domain/reflection-evidence.ts) and
-[`src/domain/reflection.ts`](../src/domain/reflection.ts).
+## Attention and What's New
 
 | Method | Path | Purpose |
 | --- | --- | --- |
-| POST | `/api/study-sessions/:sessionId/reflections` | Generate or return the session's initial reflection |
-| POST | `/api/deferred-reflection-second-opinions` | Generate a selected deferred-item second opinion |
-| GET | `/api/reflection-artifacts?review=open\|all` | Load the unresolved queue or recent history |
-| GET | `/api/reflection-generation-runs` | Load the compact dogfood log of concluded provider attempts |
-| POST | `/api/reflection-generation-runs/:runId/retry` | Retry a failed run from its saved bounded evidence bundle |
-| GET | `/api/reflection-artifacts/:artifactId` | Load immutable evidence/result plus current proposal/application statuses |
-| POST | `/api/reflection-proposals/:proposalId/review` | Defer, dismiss, reopen, or authorize one proposal |
-| POST | `/api/reflection-invocations/:invocationId/withdraw-authorization` | Withdraw a pending or unsupported authorization |
-| PUT | `/api/reflection-quality` | Upsert the tag set on one reflection item |
-| DELETE | `/api/reflection-quality` | Clear quality tags for one reflection item |
-| GET | `/api/reflection-quality-stats` | Aggregate dogfood quality rates by model arm |
 | GET | `/api/attention-badges` | Unseen Help-queue count, durable reflection generation state, unseen failed generation-run ids, failed-run seen-through cursor, and What’s New read cursors |
 | POST | `/api/reflection-inbox-seen` | Stamp one Help card as displayed |
 | GET | `/api/whats-new` | Read shared published blog posts |
@@ -736,277 +554,6 @@ Request/result types live in
 | POST | `/api/whats-new-attention` | Record visible badge exposure or reading for a published-post snapshot |
 | POST | `/api/whats-new-seen` | Ensure or advance the What’s New seen-through date |
 | POST | `/api/failed-reflection-runs-seen` | Advance the failed-reflection-run seen-through timestamp |
-| GET | `/api/reflection-help-inbox` | List open explanation-only Help inbox rows |
-| DELETE | `/api/reflection-help-inbox` | Mark one explanation-only Help item Done by deleting its inbox row |
-| POST | `/api/reflection-help-inbox/defer` | Move one explanation-only Help item into second-opinion staging |
-| POST | `/api/reflection-artifacts/:artifactId/items/:itemId/manual-invocations` | Authorize a registered operation against an explanation-only item |
-
-### Generate
-
-The request body is a `SessionReflectionEvidenceSupplementV1` or V2 object
-itself, not a wrapper. It contains qualifying review-production
-items, including the cue as shown, nullable raw response, complete ordered ids
-of the accepted attempt batch, and the optional V2 learner-request marker. The
-backend uses those ids only to validate durable session/action identity, then
-enriches each into a canonical V4 `production_mistake` bundle item without
-attempt rows, attempt summaries, or production-management metadata. V4 keeps
-the exact nullable post-reveal supplement separate from the pre-reveal cue;
-new staged generation materializes the current V10 result contract. The items
-array may be empty for a pure-cue-only session: the server reconstructs eligible
-pure-cue first responses from durable assessments and invokes the independent
-pure-cue provider flow. Either call can succeed if the other fails.
-
-A successful response is exactly:
-
-```ts
-{
-  artifactId: string;
-  proposalCount: number;
-  status: 'created' | 'existing';
-  additionalArtifactIds?: string[];
-  partialFailure?: string;
-}
-```
-
-`created` returns `201`; an idempotent hit for the same
-`(sessionId, initial_post_session_reflection.v2)` returns `200` and does not
-call the provider again. Evidence validation errors return `400`, missing
-sessions or referenced entities return `404`, missing provider configuration
-returns `503`, provider/structured-output failures return `502`, and
-unexpected persistence failures return `500`. Typed generation failures use
-`{ error, code }`; internal failures expose only a safe `{ error }`.
-
-Generation is best-effort after study commits and the review-session summary
-are durable. It never rewrites study attempts, completion, or scheduling state.
-
-### Generation run log
-
-`GET /api/reflection-generation-runs` returns the most recent concluded
-provider attempts, newest first:
-
-```ts
-{
-  runs: ReflectionGenerationRunDto[];
-}
-```
-
-Each record is separate from immutable artifacts so failed or truncated provider
-attempts can appear without implying that a usable reflection was created. It
-includes provider/configured model and provider model, `succeeded` or `failed`
-state, failure code, response and finish metadata when available, eligible and
-included evidence counts, and nullable normalized token categories. Cost is an
-estimate for direct-provider arms: known initial Luna runs persist their
-complete versioned price basis, `pricingAsOf`, and USD estimate at write time.
-Successful OpenRouter runs instead persist its response's `usage.cost` as the
-amount charged, with `openrouter-usage-cost.v1` recorded as the source basis;
-the routed upstream price mix remains deliberately unmodeled. If that field is
-unavailable but complete token usage is present, the existing static
-transport/model estimate remains a fallback; unknown or partial usage returns
-those pricing fields as `null` rather than guessing. Each run also
-preserves nullable provider-request, bundle-schema, and result-schema
-provenance. Failed runs may expose a versioned diagnostic with phase
-`provider_transport`, `truncation`, `json_parse`, `structural_schema`, or
-`domain_validation`, bounded path/rule/message issues, and capped
-rejected-output context. This is intentionally verbatim in the local dogfood
-environment; only its size is bounded. Productization must add the appropriate
-retention and secret-handling policy before broader deployment. Legacy rows
-without detail return null diagnostics.
-The endpoint does not expose saved bundles, raw prompts, or provider response
-envelopes. Its `retryable` flag is true only for a failed run whose bundle is retained and
-whose session/flow does not already have a successful artifact.
-
-### Comparison arms
-
-The reflection service has a backend-only comparison-arm registry. Initial
-bundles with at most 10 included items sample GLM-5.3 Flash high at 70% and
-GPT-6 Luna high at 30%. Larger bundles sample GPT-6 Sol high at 60%, GLM at
-20%, and Luna at 20%. Ordinary and pure-cue bundles are routed independently
-using their actual item counts. Explicit choices and manual second opinions
-do not use these weights. Terra, GLM Flash max, and Gemini remain registered
-but are withdrawn from the default pool and learner-facing pickers. OpenRouter
-arms require `OPENROUTER_API_KEY` and use OpenRouter's normal eligible-provider routing;
-they do not pin one upstream host or disable fallbacks. Missing credentials fail
-only the selected arm with the existing `503` typed failure; they never affect
-finalization or other arms. OpenRouter's returned cost is preserved for a
-successful routed run; complete usage without a returned cost uses the existing
-model estimate, while unavailable usage remains unpriced.
-
-`POST /api/reflection-generation-runs/:runId/retry` reuses that run's exact
-saved bundle and returns the same response shape and `201`/`200` semantics as
-initial generation. The retry is a new append-only generation run; it never
-rewrites the failed attempt. Missing runs return `404`. Concluded runs that
-cannot be retried, same-model retries whose source model is no longer a
-configured comparison arm return `409`. An explicit current model may
-retry a retained bundle whose source model has been retired.
-Saved GPT-5.6 Luna choices resolve to GPT-6 Luna for new retry calls. Historical
-run metadata and pricing stay unchanged; a retry that only resumes persistence
-keeps the model provenance of its already completed call.
-
-### Queue and detail
-
-`review` is required and must be `open` or `all`. The open query includes
-artifacts having at least one `pending` or `deferred` proposal. The all query
-returns recent history, including informational artifacts with no proposals.
-The response is:
-
-```ts
-{ artifacts: ReflectionArtifactSummaryDto[] }
-```
-
-Each summary includes artifact/session/flow identity, generation and
-provider/model/prompt metadata, bundle/result schema versions, proposal and
-open-proposal counts, and a `readState` discriminator. Available artifacts have
-`readState: "available"` and a numeric item count. An artifact that cannot be
-reconstructed by the current reader has `readState: "unreadable"` and a null
-item count; it remains in the list without failing sibling artifacts or the
-page-wide request.
-
-Detail returns a `ReflectionArtifactDetailDto` directly. It adds the exact
-evidence bundle, validated result, and one joined proposal detail per immutable
-proposal. Each proposal detail contains its item locator, original proposal,
-current review status, and nullable invocation/application status.
-Both reads return `200` on success. Invalid queue filters return `400`, missing
-artifacts return `404`, and a detail request for an unreadable artifact returns
-`500`. Systemic list failures still return `500`.
-
-### Proposal review and authorization withdrawal
-
-Proposal review accepts only this strict union; unknown fields are rejected:
-
-```ts
-type ReviewProposalRequest =
-  | { action: 'defer' }
-  | {
-      action: 'dismiss';
-      reason: string | null;
-    }
-  | { action: 'reopen' }
-  | { action: 'accept'; operation: ReflectionOperation }
-  | { action: 'replace'; operation: ReflectionOperation };
-```
-
-Dismiss `reason` is an optional freeform note on the proposal review row. Item
-quality tags are a separate overlay and are not written by dismiss.
-`reopen` returns a learner-dismissed proposal to `pending` so it re-enters Help.
-Second-opinion retirement (`requested_second_opinion`) cannot be reopened.
-
-Defer, dismiss, and reopen return:
-
-```ts
-{ review: ProposalReviewStatus; invocation: null; application: null }
-```
-
-Accept revalidates the operation against the proposal evidence and current
-entities, classifies it as exact or revised, stores an immutable invocation,
-and immediately applies supported operations. Successful review returns `200`
-with:
-
-```ts
-{
-  review: ProposalReviewStatus;
-  invocation: OperationInvocation;
-  application: OperationApplicationStatus;
-}
-```
-
-Replace revalidates a different operation kind or version against the same
-proposal evidence, writes a `user_replacement` invocation, and supersedes the
-original proposal. It uses the same response and application behavior as
-acceptance.
-
-Cue repair and production-alternate acceptance return a truthful
-`unsupported` application without a domain write. Supported application may
-return `applied`, `already_satisfied`, `stale`, or `failed`.
-
-Withdrawal accepts no fields (the client sends `{}`) and is valid only from
-`pending` or `unsupported`. It leaves the accepted proposal historical
-disposition unchanged and returns `200` with:
-
-```ts
-{
-  invocation: OperationInvocation;
-  application: OperationApplicationStatus;
-}
-```
-
-Review/withdraw validation and invalid lifecycle transitions return `400`;
-missing proposal/invocation ids return `404`; unexpected failures return `500`.
-
-### Quality tags and model-arm stats
-
-Quality tags are a dogfood overlay on reflection items. They do not change
-proposal disposition, invocations, or application. Artifact detail includes
-`qualityItemTags` for items that have a tag row.
-
-`PUT /api/reflection-quality` accepts:
-
-```ts
-type UpsertReflectionQualityRequest = {
-  artifactId: string;
-  itemId: string;
-  tags: ReflectionQualityTag[];
-  note?: string | null;
-};
-```
-
-Tags are `praise`, `wrong_diagnosis`, `wrong_intervention`,
-`missed_intervention`, `low_quality_content`, `inconsistent`, and `other`.
-The set must be non-empty; `other` requires a non-empty note. Last write wins
-for the item. Success returns `200` with the stored item tag row. Validation
-errors return `400`; missing artifact/item return `404`.
-
-`DELETE /api/reflection-quality` accepts `{ artifactId, itemId }` and returns
-`200` with `{ cleared: true }` when a row existed or `{ cleared: false }` when
-none did. Missing artifact/item still return `404`.
-
-`GET /api/reflection-quality-stats` returns rates grouped by artifact `model`
-(model arm) and `promptVersion`. Terminal user reviews are
-`accepted` (exact/revised), `dismissed`, `requested_second_opinion`, and
-`superseded` with `user_replacement`. Pending, deferred, and system
-supersession are excluded from disposition rates. Second-opinion retirement
-increases the terminal denominator without counting as a dismiss. Tag counts include every present item tag row (including
-items whose proposals are still open). Each arm also includes `failedRunCount`,
-`totalCostUsd` (sum of priced generation runs, including validation failures),
-and `avgCostPerExactAcceptUsd` when both cost and exact accepts are available.
-Small-n counts are returned raw; the surface does not claim statistical
-significance. The UI aggregates arms by model and can expand multi-version
-models into per-`promptVersion` breakdown rows.
-
-### Help inbox
-
-The Help inbox is the open set of explanation-only items still in Help. Items
-with empty proposal lists are added when their artifact is materialized. Items
-that carry proposals are not inbox members; their Help presence follows
-proposal review. Artifact detail includes `helpInbox` for explanation-only
-items still open in Help, plus `deferredHelpInbox` for explanation items staged
-for a second opinion.
-
-`GET /api/reflection-help-inbox` returns `{ entries }` for every still-open
-explanation item. Success returns `200` with:
-
-```ts
-type ReflectionHelpInboxEntry = {
-  inboxId: string;
-  artifactId: string;
-  itemId: string;
-  openedAt: string;
-  disposition: 'open' | 'deferred' | 'requested_second_opinion';
-};
-```
-
-`DELETE /api/reflection-help-inbox` accepts `{ artifactId, itemId }` and
-removes that item from Help. Success returns `200` with `{ done: true }` when
-an open or deferred row existed (same end state: gone from Help and from
-second-opinion staging) or `{ done: false }` when none did. Terminal
-`requested_second_opinion` rows are not deleted. Missing artifact/item still
-return `404`. There is no learner-facing undo.
-
-Done leaves the artifact body unchanged, so By session and raw artifact reads
-still show the item.
-
-`POST /api/reflection-help-inbox/defer` accepts `{ artifactId, itemId }` and
-returns `{ deferred: true }` when an open row moved to second-opinion staging.
-The second-opinion request accepts `helpInboxIds` alongside `proposalIds`.
 
 ### Attention badges
 
@@ -1103,36 +650,14 @@ The retained `POST /api/whats-new-seen` accepts
 The [blog contract](whats-new.md#unread-updates) explains acknowledgement,
 initialization, and compatibility behavior.
 
-### Manual authorization from explanation-only items
+## Client incidents
 
-`POST /api/reflection-artifacts/:artifactId/items/:itemId/manual-invocations`
-authorizes a registered operation against one explanation-only item's evidence.
-It does not fabricate a proposal or rewrite the immutable artifact. The request
-body is `{ operation }`; unknown fields are rejected.
-
-The item must exist on the artifact and must have an empty proposal list.
-Validation, application, and withdrawal then follow the same invocation path as
-proposal acceptance. If the item still has a Help inbox row, that row is
-removed in the same authorization transaction.
-
-Success returns `200` with:
-
-```ts
-{
-  invocation: OperationInvocation;
-  application: OperationApplicationStatus;
-}
-```
-
-Invalid operations, items that already carry proposals, and unknown fields
-return `400`. Missing artifact or item ids return `404`. Unexpected failures
-return `500`.
-
-## Study management (outside session)
-
-| Method | Path | Handler domain |
-| --- | --- | --- |
-| POST | `/api/study-management/production/suppress` | `study-management` |
+`POST /api/client-incidents` accepts an authenticated batch of 1–20 strictly
+bounded `client_transport_incident.v1` records. The current schema accepts only
+authentication or native-fetch failures from accepted-review and accepted-
+contrast commit routes. A valid batch returns `204`; malformed records return
+`400`. Upload is diagnostic-only and never retries or changes the associated
+study commit. See [error logging and diagnostics](./ops/error-diagnostics.md#client-transport-incidents).
 
 ## Contrast clusters and intake (retired HTTP)
 
@@ -1235,10 +760,6 @@ use server-derived identity. A debrief DTO contains `sessionId`, `completedAt`
 exact input `refs`, and nullable `followUp`. No provider call is awaited by the
 summary or retry endpoint. Interrupted attempts require explicit retry; queued
 jobs resume after restart. See [the contract](../SPECS/session-debrief.md).
-### Session recovery highlights
-
-`GET /api/study-sessions/:sessionId/recovery-highlights` returns `{ highlights }` for a learner-owned completed summary. Missing, unfinished, and other-learner sessions return `404`; empty IDs return `400`. This independent read uses accepted attempts and currently applied corrections; it does not generate reflection or alter scheduling. See [the feature contract](../SPECS/session-recovery-highlights.md) for thresholds and evidence references.
-
 ## Operator content improvement
 
 Current review and application use `/api/operator/vocabulary`; see

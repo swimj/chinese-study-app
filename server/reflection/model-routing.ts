@@ -10,22 +10,6 @@ export function reflectionConfigForChoice(choice: ReflectionModelChoice): Reflec
   return config;
 }
 
-/** Size-weighted policy for batched reflection requests. */
-export function routeBatchedReflectionModel(itemCount: number, random = Math.random): ReflectionModelChoice {
-  if (!Number.isInteger(itemCount) || itemCount < 1) throw new Error('Reflection routing requires a positive item count');
-  const arms = REFLECTION_MODEL_ARMS.flatMap(arm => {
-    const weight = itemCount <= 10 ? arm.dogfoodSelectionWeight.smallBundle : arm.dogfoodSelectionWeight.largeBundle;
-    return arm.enabledByDefault && weight > 0 ? [{choice:arm.choice,weight}] : [];
-  });
-  if (!arms.length) throw new Error('No offered reflection model has a positive weight');
-  let ticket = random() * arms.reduce((sum, arm) => sum + arm.weight, 0);
-  for (const arm of arms) {
-    if (ticket < arm.weight) return arm.choice;
-    ticket -= arm.weight;
-  }
-  return arms[arms.length-1]!.choice;
-}
-
 /** Equal-probability policy; learner feedback excludes GLM's JSON-object-only route. */
 export function routeIndividualReflectionModel(random = Math.random, kind?: 'learner_feedback' | 'exercise_improvement'): ReflectionModelChoice {
   const arms = REFLECTION_MODEL_ARMS.filter(arm => arm.enabledByDefault

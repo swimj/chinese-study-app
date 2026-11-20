@@ -1,9 +1,4 @@
 import { PROVIDER_REQUEST_TIMEOUT_MS } from '../llm/types.ts';
-import {
-  createReflectionProvider,
-  type LunaReflectionProvider,
-  type LunaReflectionProviderOptions,
-} from './luna-provider.ts';
 
 const GLM_FLASH_TRANSPORT = {
   provider: 'zai',
@@ -29,15 +24,3 @@ export const GLM_FLASH_HIGH_REFLECTION_MODEL_CONFIG = {
   modelConfig: 'glm-5.3-flash-high',
   reasoningEffort: 'high',
 } as const;
-
-export function createGlmReflectionProvider(
-  options: LunaReflectionProviderOptions = {},
-): LunaReflectionProvider {
-  return createReflectionProvider(GLM_REFLECTION_MODEL_CONFIG, options);
-}
-
-export function createGlmFlashHighReflectionProvider(
-  options: LunaReflectionProviderOptions = {},
-): LunaReflectionProvider {
-  return createReflectionProvider(GLM_FLASH_HIGH_REFLECTION_MODEL_CONFIG, options);
-}

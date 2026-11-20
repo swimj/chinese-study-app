@@ -10,7 +10,6 @@ import { runWithLearnerId } from '../server/db/learner-context.ts';
 import { listModelInvocations } from '../server/db/model-invocations.ts';
 import { installModelInvocationLedger } from '../server/llm/invocation-ledger.ts';
 import { createSessionDebriefProvider } from '../server/session-debrief/provider.ts';
-import { createLunaReflectionProvider } from '../server/reflection/luna-provider.ts';
 import { createWordIntroductionProvider } from '../server/word-content/provider.ts';
 import { createWordReviewPreparationService, type WordReviewStore } from '../server/word-content/review-service.ts';
 import { createIntroductionLabService } from '../server/word-content-lab/service.ts';
@@ -45,7 +44,6 @@ async function rejectedInvocation(work: () => Promise<unknown>) {
 }
 const debrief: SessionDebriefInput = { schemaVersion: 'session_debrief_input.v1', sessionDate: '2026-10-06T00:00:00.000Z', interests: [],
   items: [{ ref: 'w1', word: '学问', pinyin: 'xué wèn' }] };
-const session = { sessionId: 's1', startedAt: null, endedAt: null, studyProfile: 'mandarin' } as const;
 
 test('debrief retains spend for JSON, schema, domain and truncation failures', async () => {
   for (const [content, finish] of [
@@ -53,16 +51,6 @@ test('debrief retains spend for JSON, schema, domain and truncation failures', a
     [JSON.stringify({ notes: [{ text: 'Example.', refs: ['missing'], followUp: null }] }), 'stop'],
     ['{"notes":[]}', 'length'],
   ]) await rejectedInvocation(() => createSessionDebriefProvider(providerOptions(content, finish)).generate(debrief, 'debrief-attempt'));
-});
-
-test('every reflection stage invalidates rejected output after the transport completed', async () => {
-  for (const content of ['not JSON', '{}']) {
-    const provider = createLunaReflectionProvider({ ...providerOptions(content), systemPrompt: 'test', diagnosisSystemPrompt: 'test', promotionSystemPrompt: 'test' });
-    await rejectedInvocation(() => provider.generate({ schemaVersion: 'session_reflection_bundle.v2', generatedAt: 'now', session, items: [] }));
-    await rejectedInvocation(() => provider.generateDiagnosis({ schemaVersion: 'session_reflection_bundle.v4', generatedAt: 'now', session, items: [] }));
-    await rejectedInvocation(() => provider.generatePromotion!({ schemaVersion: 'pure_cue_promotion_bundle.v3', generatedAt: 'now', sourceSessionId: 's1', studyProfile: 'mandarin', items: [] }));
-    await rejectedInvocation(() => provider.generatePureCueReflection!({ schemaVersion: 'pure_cue_reflection_bundle.v1', generatedAt: 'now', session, items: [] }));
-  }
 });
 
 const content = wordContentFixtures[0]!.content;
