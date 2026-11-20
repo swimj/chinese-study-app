@@ -38,3 +38,19 @@ On the initial 15 development cases the release prompt matched 12 complete sets 
 The originating checkout retains the local-only bundle in `artifacts/default-sense-decisions-2026-11-20/`. Its `dev.json`, `test.json` (refinement) and `final.json` contain the exact inventories and accepted sets. Each variant directory retains requests, raw responses and timings. `results.json` groups outputs by word. Inside this directory, run `python3 score.py chat-final full-final worked-final` to rescore the holdout offline. The release variant is named `worked`. The retained `run.mjs` issues live requests for a given split and variant, skipping saved results. To run a fresh comparison, use a private copy of the input JSON, prompt files and runner in an empty directory with project API credentials in the environment.
 
 The v7 chat rubric SHA-256 is `8678212c4a0c7c833247ddfdc11ed8e30175bf7254e6fa6795b56bbc804201e0`. The release rubric SHA-256 is `c921642d51cb210d5ba3d023b0d3b1f1557a675e65243a67d584029e67b09e8b`. [Archived chat rubric](../../../artifacts/invocation-prompts/8678212c4a0c7c833247ddfdc11ed8e30175bf7254e6fa6795b56bbc804201e0.txt) · [Release Decisions prompt](../../../server/vocabulary/reflection-prompts/default-useful-decisions.md)
+
+## Post-commit blind check
+
+After committing the selector at `b5e8da5e`, we drew 32 additional production words. The draw excluded all previous evaluation words and target strings appearing anywhere in the trial rubrics. Within each inventory-size group we sorted by SHA-256 of `b5e8da5e-postcommit-blind-1/` followed by the simplified headword. We took eight single-sense, sixteen two-sense and eight larger inventories (64 senses total). Selection did not use historical answers.
+
+A separately started reviewer received only these inventories and a short editorial brief. It froze acceptable ID sets before any calls, allowing two answers for six words. All three arms then ran once on every inventory. The authored prompt and 0.50 cutoff stayed fixed throughout.
+
+| Arm | Exact sets matching blind reviewer | Median latency |
+| --- | ---: | ---: |
+| Current v7 chat | 22/32 | 1,406 ms |
+| Full v7 rubric on Decisions | 19/32 | 189 ms |
+| Release Decisions | 19/32 | 204 ms |
+
+Release Decisions and chat agreed on 25/32 words. Among the seven disagreements the reviewer preferred chat on four, release Decisions on one, and a different selection on two. On 动态 the release prompt included the motion sense along with developments and social-media updates, matching the reviewer's full set. On 注销 it added the accounting write-off sense, and on 夫人 it dropped the prominent person's wife sense. Chat matched the reviewer on both. The two Decisions prompts agreed on 27/32. The tied scores hide five differences in the actual selections.
+
+This blind result reverses the small advantage over chat on the earlier 16-word set. The latency improvement replicated. Editorial superiority did not. This sample favors multisense words, and the reference is one independent model editor. The originating checkout retains the frozen inputs, labels, all 96 requests and responses, and the offline scorer under `artifacts/default-sense-decisions-postcommit/`. Input SHA-256 is `e22efcc25afdb70ed2db2b77f64148aac3b324030034faadefa22829e9446d72` and label SHA-256 is `4382585a6560004ee618b30dcaf69951a8699608c60469940fd61d46b66978d1`.
