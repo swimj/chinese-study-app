@@ -1299,6 +1299,25 @@ test('editorial direction reaches authoring separately from mapping and ordinary
   assert.equal(authoring.encounters[0].reactions.length,0);
 });
 
+test('the authoring request keeps the earlier proposal and critique separate from its source',async()=>{
+  const input=job();
+  const initial=await provider((_request,index)=>index===1?single:repair).provider.run(input);
+  if(initial.kind!=='exercise_improvement'||!initial.result.proposal)assert.fail('Expected proposal');
+  const proposal={proposalId:'previous',version:2,caseId:input.caseId,authorKind:'service' as const,authorId:'reflection',status:'awaiting_review' as const,
+    invocationId:null,bases:initial.result.proposal.bases??[],operations:initial.result.proposal.operations,rationale:initial.result.proposal.rationale};
+  input.editorial={instructions:'Avoid using a printing example.',priorProposal:proposal};
+  const fresh=provider(()=>repair);
+  await fresh.provider.run(input);
+  // The unchanged mapping stage can be reused. Authoring has a distinct input and prompt.
+  assert.equal(fresh.requests.length,1);
+  const request=fresh.requests[0],wire=JSON.parse(request.userPrompt);
+  assert.deepEqual(wire.operatorEditorial,{instructions:input.editorial.instructions,priorProposal:proposal});
+  assert.equal(wire.source.prompt,'请把这张照片____后再打印。');
+  assert.deepEqual(wire.operatorEditorial.priorProposal.operations[0].content.body.prompt,repair.source.prompt);
+  assert.match(request.provenance!.inputProjectionVersion!,/editorial.v2$/);
+  assert.match(request.systemPrompt,/earlier proposed change/);
+});
+
 bootstrapTest('editorial context composes with the shared repertoire call without changing its output contract',async()=>{
   retainBootstrapRoute();
   const input=job();input.editorial={instructions:'Prefer concise English frames.'};

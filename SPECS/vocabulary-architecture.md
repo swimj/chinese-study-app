@@ -91,7 +91,8 @@ an operator reviews and authorizes application of an exact proposal version.
 A first repertoire bootstrap is the exception: its proposal applies automatically
 when recorded, under a service-attributed approval, if its bases, sense catalog,
 source mapping and captured word-default version are unchanged since generation.
-Any intervening version change leaves it for ordinary operator review.
+Any intervening version change or inclusion of a prior proposal for critique
+leaves it for explicit operator review.
 A persisted request can acknowledge that authorization before background
 validation and application complete. Preparation
 and reflection repertoire generation share the general-exercise authoring contract;
@@ -118,10 +119,11 @@ proposal version and do not become the authoritative assessment.
 Standalone operator case notes persist independently of review actions. Saving a
 note neither resolves the case nor supplies instructions to a model. Action
 commentary belongs to its explicit action. Reassessment may include optional
-operator editorial instructions and an explicitly selected second opinion;
-submission captures that opinion's exact result for retries. Its analysis remains
-advisory, and editorial requests do not silently change the selected target,
-authoring boundaries, or application authority.
+operator editorial instructions, a selected second opinion, and the displayed
+proposal revision. Submission pins each selected attachment for retry and
+identity continuation. Authoring assesses the proposal against the current
+source and the operator's critique. The opinion is advisory. Any proposed
+change from a critique requires explicit operator approval.
 
 Operator reassessment pins the current source identity and version at submission.
 A difference from the historical assessed version requires explicit operator

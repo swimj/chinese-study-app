@@ -41,14 +41,17 @@ linguistic claims and requested remedies independently.
 The provider wrapper can append an operator-context contract to single-exercise,
 existing pure-cue, and repertoire authoring calls. Their linguistic prompt files
 remain intact. The user JSON gains `operatorEditorial`, containing operator
-instructions and, when explicitly selected, the captured second-opinion verdict,
-rationale, and identity. This is separate from learner reactions and standalone
+instructions and any explicitly selected attachments. `secondOpinion` carries
+the verdict, rationale and identity. `priorProposal` contains the exact saved
+proposal revision, including its operations, bases and rationale. Authoring
+compares this proposed change with the current source and the operator's
+critique. This is separate from learner reactions and standalone
 case notes. The wrapper asks authoring to address the request while preserving
 source/target boundaries, assess advisory analysis independently, and keep private
 commentary out of shared learning content. It never expands the output schema.
 
-These calls add `+editorial.v1` to the input-projection version; stage caching
-includes the exact composed system prompt and editorial input. Mapping, learner
+The projection suffix is `+editorial.v2` when the input includes a proposal and
+`+editorial.v1` for instructions or an opinion alone. Stage caching includes the exact composed system prompt and editorial input. Mapping, learner
 feedback, and jobs without editorial input retain their ordinary contracts.
 Database and provider-stub tests cover immutable capture, retry, and composed
 inputs. They do not establish the linguistic quality of model responses; no live

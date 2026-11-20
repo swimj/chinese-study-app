@@ -776,7 +776,7 @@ already-abandoned jobs return a conflict.
 
 `POST /api/operator/vocabulary/case-queue/:id/reassess` takes `expectedVersion`,
 `expectedContentVersion`, `modelChoice`, and optional
-`originProposal: {proposalId,expectedVersion}` and
+`originProposal: {proposalId,expectedVersion,includeInAssessment?}`,
 `editorial: {instructions,secondOpinionRequestId?}`, and
 `responseIdentities: {options,selections}` for ambiguous responses, where
 `options` is the displayed array of `{form,choices}` snapshots and `selections`
@@ -784,8 +784,10 @@ is an array of `{form,wordId}`. The single-card read supplies current options
 for existing assessments and captured options for pending identity decisions.
 The server checks the snapshots and selections against the current dictionary
 before queuing; omitting choices queues a fresh assessment to refresh the
-candidates. A continuation retains any direction and attached opinion from the
-paused assessment, along with any new direction. Instructions are optional
+candidates. Set `originProposal.includeInAssessment` to `true` to include that
+exact saved proposal revision as material for critique. Omission or `false`
+keeps it out of a fresh assessment. A continuation retains direction, opinion
+and proposal selections from the paused assessment, along with any new direction. Instructions are optional
 text up to 10,000 characters. The selected second opinion must be successful and
 belong to the displayed assessment or exact proposal version; the server captures
 its result rather than trusting submitted opinion text. It returns
@@ -810,11 +812,11 @@ case. Replaying the same request identity, case, actor, and trimmed text returns
 the current card without appending again; conflicting reuse returns 409. Notes
 persist independently of assessment and closure, and do not become model input.
 Cards also expose optional `activity` with up to 20 recent action commentaries:
-`{activityId,action,text,createdAt,actorId,secondOpinionRequestId?}`. Actions are
+`{activityId,action,text,createdAt,actorId,secondOpinionRequestId?,priorProposal?}`. Actions are
 `done`, `dismiss`, `approve`, `reassess`, or `second_opinion`. `activityHasMore`
 indicates older retained entries beyond this compact projection. Activity follows
 canonical case lineage and includes nonempty operator commentary; reassessment
-may additionally retain an explicitly selected opinion reference without text.
+may also carry a selected opinion reference or `priorProposal: {proposalId,version}` without text.
 Standalone notes remain in `notes` rather than appearing twice.
 
 ### Operator sense selection

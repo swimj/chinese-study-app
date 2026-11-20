@@ -6,7 +6,7 @@ import { vocabularyPhraseClozeError } from '../domain/vocabulary-production-cove
 import type { VocabularyDefaultSelectionFinding,VocabularySenseCoverageWorkspace } from '../domain/vocabulary-sense-coverage';
 import type { VocabularyRepairTargetWorkspace } from '../domain/vocabulary-reflection';
 import { repairTargetBlocksMutation } from '../features/vocabulary-operator/sense-coverage';
-import { ReassessmentDialog } from '../features/vocabulary-operator/ReassessmentDialog';
+import { emptyDirection, ReassessmentDialog, ReassessmentEditorialFields } from '../features/vocabulary-operator/ReassessmentDialog';
 import { RepairTargetEditor } from '../features/vocabulary-operator/RepairTargetEditor';
 import { ScopeCoverageEditor } from '../features/vocabulary-operator/ScopeCoverageEditor';
 import { mergeSenseLabels,scopeAffectsProposal } from '../features/vocabulary-operator/sense-coverage';
@@ -69,6 +69,7 @@ export function VocabularyOperatorPage(props:VocabularyOperatorPageProps) {
   const [caseNotes,setCaseNotes]=useState('');
   const [confirmReassessment,setConfirmReassessment]=useState<string|null>(null);
   const [reassessmentOpen,setReassessmentOpen]=useState(false);
+  const [direction,setDirection]=useState(emptyDirection);
   const [reassessmentModel,setReassessmentModel]=useState<VocabularyReassessmentModel>('openai:gpt-6-sol-high');
   const [proposals,setProposals]=useState<VocabularyContentProposal[]>([]);
   const [approvalRequests,setApprovalRequests]=useState<VocabularyApprovalRequest[]>([]);
@@ -283,7 +284,15 @@ export function VocabularyOperatorPage(props:VocabularyOperatorPageProps) {
     if(selected)setReviewReassessment({eligible:true,source,latest:current.reassessment??null});
     else setWorkspace(previous=>previous?.case.caseId===reassessmentCase.caseId?{...previous,reassessmentSource:source,reassessment:current.reassessment}:previous);
     if(source.currentVersion!==source.assessedVersion&&confirmedVersion!==source.currentVersion){setConfirmReassessment(`${reassessmentCase.caseId}/${source.currentVersion}`);return;}
-    const result=detailOnly&&current.case.review?await api.reassessCaseReview(reassessmentCase.caseId,current.case.review.version,reassessmentModel,source.currentVersion,selected?{proposalId:selected.proposalId,expectedVersion:selected.version}:undefined):await api.reassessCase(reassessmentCase.caseId,reassessmentModel,source.currentVersion,selected?{proposalId:selected.proposalId,expectedVersion:selected.version}:undefined);
+    const origin=selected?{proposalId:selected.proposalId,expectedVersion:selected.version}:undefined;
+    if(direction.priorProposal && (direction.priorProposal.proposalId!==origin?.proposalId || direction.priorProposal.version!==origin.expectedVersion)){
+      setDirection({...direction,priorProposal:null});
+      throw new Error('The selected proposal changed. Review the updated proposal before including it.');
+    }
+    const result=current.case.review
+      ? await api.reassessCaseReview(current.case.caseId,current.case.review.version,reassessmentModel,source.currentVersion,
+        origin&&direction.priorProposal?{...origin,includeInAssessment:true}:origin,{instructions:direction.instructions.trim()})
+      : await api.reassessCase(current.case.caseId,reassessmentModel,source.currentVersion,origin);
     setConfirmReassessment(null);
     const latest={...result,status:'queued',error:null};
     if(selected){setReviewReassessment({eligible:true,source,latest});cache.current.delete(snapshotKey(selected));}
@@ -297,12 +306,13 @@ export function VocabularyOperatorPage(props:VocabularyOperatorPageProps) {
     <RepairTargetEditor key={scopeCase.caseId} api={api} caseId={scopeCase.caseId} revision={scopeCase.review?.version} disabled={busy||dirty||!!selectedApproval||approvalUnconfirmed||caseLocked} onState={setRepairTarget} onActivity={setScopeEditing} onSaved={async()=>{setEditing(false);resetReview();await reload();}}/>
   ):null;
   const reassessmentControl=canReassess&&reassessmentCase?<>
-    <button className="secondary-button" aria-haspopup="dialog" disabled={reassessmentDisabled} onClick={()=>setReassessmentOpen(true)}>Reassess{repairTarget?.blocked?' · target pending':''}</button>
+    <button className="secondary-button" aria-haspopup="dialog" disabled={reassessmentDisabled} onClick={()=>{setDirection(emptyDirection);setReassessmentOpen(true);}}>Reassess{repairTarget?.blocked?' · target pending':''}</button>
     <ReassessmentDialog open={reassessmentOpen} onClose={()=>{setReassessmentOpen(false);setConfirmReassessment(null);}} busy={busy||scopeEditing}>
     {error&&<p role="alert">{error}</p>}
     {repairTargetControl}
     <div className="vocabulary-reassessment-control">
     <label>Model for reassessment<select aria-label="Model for reassessment" disabled={reassessmentDisabled} value={reassessmentModel} onChange={event=>setReassessmentModel(event.target.value as VocabularyReassessmentModel)}><option value="openai:gpt-6-sol-high">GPT-6 Sol high</option><option value="openai:gpt-6-luna-high">Luna high</option><option value="zai:glm-5.3-flash-high">GLM-5.3 Flash high</option></select></label>
+    {reassessmentCase.review&&<ReassessmentEditorialFields proposal={selected} retained={liveCase?.pendingEditorial} value={direction} onChange={setDirection} disabled={reassessmentDisabled}/>}
     {confirmingReassessment&&reassessmentSource?<div className="vocabulary-reassessment-confirmation" role="group" aria-label="Confirm changed source version">
       <p>Source changed from v{reassessmentSource.assessedVersion} to v{reassessmentSource.currentVersion}. Reassessment uses the current exercise.</p>
       <button className="secondary-button" autoFocus disabled={reassessmentDisabled} onClick={()=>submitReassessment(reassessmentSource.currentVersion)}>Reassess v{reassessmentSource.currentVersion}</button>
