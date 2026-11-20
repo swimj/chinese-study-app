@@ -76,6 +76,10 @@ multiple rendered variants may register their files together with the same
 name and version. Omit both options for source retention when the bytes have
 no established use and version.
 
+For inventory and default-selection prompts used by bulk repertoire, bump the
+prompt version and add its digest to the corresponding bulk replay provider.
+Keep prior versions so paid stages can resume and apply after the edit.
+
 Review and commit the generated archive file and any changes to
 `server/db/invocation-prompt-catalog.json` and `server/db/invocation-prompt-uses/`
 with the caller change. The registration command saves new associations in

@@ -145,7 +145,7 @@ test('Decisions sends the shared inventory and one predicate per alias and appli
   assert.equal(row.status, 'completed');
   assert.equal(row.invocation_type, 'vocabulary_default_useful_selection_v2');
   assert.equal(row.prompt_name, 'vocabulary-default-useful-decisions');
-  assert.equal(row.prompt_version, '1');
+  assert.equal(row.prompt_version, '2');
   assert.equal(row.workflow_id, 'decision-run');
   assert.equal(readInvocationPromptEvidence(db, String(row.id)).requestJson, wireBody);
   assert.deepEqual(JSON.parse(String(row.response_snapshot_json)), response);

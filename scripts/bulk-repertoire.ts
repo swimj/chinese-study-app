@@ -31,24 +31,29 @@ async function save(file:string,value:unknown):Promise<void> {
 async function exists(file:string):Promise<boolean>{try{await fs.access(file);return true;}catch{return false;}}
 type Manifest = { version:1; createdAt:string; sourceRevision:string; selection:ReturnType<typeof selectBulkRepertoireWords>;
   words:Array<{wordId:string;snapshot:BulkWordSnapshot}> };
-type HistoricalPrerequisite = { request:ProviderRunRequest; recoverable:boolean; uncertain:boolean };
-function isHistoricalPrerequisite(request?:ProviderRunRequest) {
-  return request?.outputSchemaName==='vocabulary_default_useful_selection_v1' || request?.outputSchemaName==='vocabulary_sense_inventory_v3';
+type PrerequisiteEvidence = { paidRequest?:ProviderRunRequest; uncertain:boolean };
+function prerequisiteKey(workflowId:string, stepName:string) {
+  return JSON.stringify([workflowId, stepName]);
 }
-function historicalPrerequisites(starts:BulkStart[], attempts:BulkAttempt[], responses:BulkResponse[]) {
-  const byWorkflow = new Map<string, HistoricalPrerequisite>();
+function retainedPrerequisites(starts:BulkStart[], attempts:BulkAttempt[], responses:BulkResponse[]) {
+  const byStage = new Map<string, PrerequisiteEvidence>();
   const finished = new Set(attempts.map(attempt=>attempt.attemptId));
-  function observe(request:ProviderRunRequest, recoverable:boolean, uncertain:boolean) {
-    const workflowId = request.provenance?.workflowId;
-    if(!workflowId || !isHistoricalPrerequisite(request)) return;
-    const prior = byWorkflow.get(workflowId);
-    if(prior && bulkHash(prior.request)!==bulkHash(request)) throw new Error('Conflicting retained prerequisite requests');
-    byWorkflow.set(workflowId,{request,recoverable:recoverable || !!prior?.recoverable,uncertain:uncertain || !!prior?.uncertain});
+  function observe(request:ProviderRunRequest, paid:boolean, uncertain:boolean) {
+    const { workflowId, stepName } = request.provenance ?? {};
+    if(!workflowId || (stepName!=='sense_inventory' && stepName!=='default_useful_selection')) return;
+    const key = prerequisiteKey(workflowId, stepName);
+    const evidence = byStage.get(key) ?? {uncertain:false};
+    if(paid) {
+      if(evidence.paidRequest && bulkHash(evidence.paidRequest)!==bulkHash(request)) throw new Error('Conflicting paid prerequisite requests');
+      evidence.paidRequest = request;
+    }
+    evidence.uncertain ||= uncertain;
+    byStage.set(key, evidence);
   }
   for(const start of starts) observe(start.request,false,!finished.has(start.attemptId));
   for(const attempt of attempts) observe(attempt.request,!!attempt.result,!!attempt.error?.outcomeUnknown);
   for(const response of responses) observe(response.request,response.responseStatus===200,false);
-  return byWorkflow;
+  return byStage;
 }
 type Bundle={version:1;operationId:string;actorId:string;results:BulkWordResult[]};
 if(positionals.length!==1)throw new Error('Use plan, generate, report, bundle, or apply');
@@ -91,7 +96,7 @@ if(positionals[0]==='plan') {
   const oldStarts=await Promise.all((await fs.readdir(startsDirectory)).map(name=>read<BulkStart>(path.join(startsDirectory,name))));
   const oldAttempts=await Promise.all((await fs.readdir(attemptsDirectory)).map(name=>read<BulkAttempt>(path.join(attemptsDirectory,name))));
   const oldResponses=await Promise.all((await fs.readdir(responsesDirectory)).map(name=>read<BulkResponse>(path.join(responsesDirectory,name))));
-  const legacyPrerequisites = historicalPrerequisites(oldStarts,oldAttempts,oldResponses);
+  const prerequisites = retainedPrerequisites(oldStarts,oldAttempts,oldResponses);
   const dispatcher=createBulkDispatcher({concurrency:Number(values.concurrency),probeLimits:true,onStart:async start=>{
     await save(path.join(startsDirectory,`${start.attemptId}.json`),start);
   },onResponse:async response=>{
@@ -109,15 +114,17 @@ if(positionals[0]==='plan') {
         ||retained.calls.some(call=>call.request.provenance?.workflowId!==workflowId))throw new Error('Completed result belongs to a different cohort entry');
       await verifyBulkWord(retained);return;
     }
-    // Historical runs could start with a combined inventory or a chat selector, but never both.
-    const firstStage = path.join(folder,'call-0.json');
-    const legacy = legacyPrerequisites.get(workflowId);
-    const savedFirst = await exists(firstStage) ? await read<BulkCall>(firstStage) : undefined;
-    const firstMarker = !savedFirst && await exists(firstStage+'.started')
-      ? await read<{request:ProviderRunRequest}>(firstStage+'.started') : undefined;
-    const retained = savedFirst?.request ?? (legacy?.recoverable ? legacy.request : undefined);
-    if(!retained && (legacy?.uncertain || (isHistoricalPrerequisite(firstMarker?.request) && !legacy)) && !values['retry-uncertain'])
-      throw new Error('Previous prerequisite outcome is uncertain; inspect retained evidence before --retry-uncertain');
+    async function retainedStage(step:string, index:number) {
+      const paid = prerequisites.get(prerequisiteKey(workflowId,step))?.paidRequest;
+      const file = path.join(folder,`call-${index}.json`);
+      if(!await exists(file)) return paid;
+      const saved = (await read<BulkCall>(file)).request;
+      if(saved.provenance?.stepName!==step) return paid;
+      if(paid && bulkHash(saved)!==bulkHash(paid)) throw new Error('Cached stage conflicts with paid prerequisite');
+      return saved;
+    }
+    const retainedInventoryRequest = snapshot.catalog.establishedAt===null ? await retainedStage('sense_inventory',0) : undefined;
+    const retainedSelectionRequest = await retainedStage('default_useful_selection',snapshot.catalog.establishedAt===null ? 1 : 0);
     let callIndex=0;
     const adapter:ProviderAdapter={...dispatcher.adapter,async run(request,config){
       const file=path.join(folder,`call-${callIndex++}.json`);
@@ -138,13 +145,11 @@ if(positionals[0]==='plan') {
       const startedFile=file+'.started';
       const unmatchedStart=oldStarts.some(start=>bulkHash(start.request)===bulkHash(request)&&!prior.some(attempt=>attempt.attemptId===start.attemptId));
       const marker = await exists(startedFile) ? await read<{request:ProviderRunRequest}>(startedFile) : undefined;
-      const replacingLegacy = isHistoricalPrerequisite(marker?.request) && marker?.request.provenance?.stepName===request.provenance?.stepName
-        && marker?.request.outputSchemaName!==request.outputSchemaName;
-      const legacyUncertain=marker && !replacingLegacy && !oldStarts.some(start=>bulkHash(start.request)===bulkHash(request));
-      if((prior.some(attempt=>attempt.error?.outcomeUnknown)||unmatchedStart||legacyUncertain)&&!values['retry-uncertain'])
+      const evidence=prerequisites.get(prerequisiteKey(workflowId,request.provenance?.stepName ?? ''));
+      if(evidence?.paidRequest) throw new Error('Paid prerequisite does not match the reconstructed request');
+      const markerWithoutStart=marker && !oldStarts.some(start=>bulkHash(start.request)===bulkHash(marker.request));
+      if((evidence?.uncertain || prior.some(attempt=>attempt.error?.outcomeUnknown) || unmatchedStart || markerWithoutStart) && !values['retry-uncertain'])
         throw new Error('Previous provider outcome is uncertain; inspect retained evidence before --retry-uncertain');
-      if(isHistoricalPrerequisite(request))
-        throw new Error('Historical prerequisite has no recoverable response for the reconstructed request');
       if(!await exists(startedFile))await save(startedFile,{request,startedAt:new Date().toISOString()});
       const startedAt=new Date().toISOString(),start=performance.now();
       const result=await dispatcher.adapter.run(request,config);
@@ -153,9 +158,7 @@ if(positionals[0]==='plan') {
     }};
     console.log(JSON.stringify({event:'started',wordId,hanzi:snapshot.word.hanzi,model:values.model}));
     const result=await generateBulkWord(snapshot,{model:values.model!,reasoningEffort:values.effort!,adapter,apiKey,
-      baseUrl:process.env.OPENAI_BASE_URL?.trim()||null,workflowId,
-      retainedInventoryRequest:retained?.provenance?.stepName==='sense_inventory' ? retained : undefined,
-      retainedSelectionRequest:retained?.provenance?.stepName==='default_useful_selection' ? retained : undefined});
+      baseUrl:process.env.OPENAI_BASE_URL?.trim()||null,workflowId,retainedInventoryRequest,retainedSelectionRequest});
     // Preserve original timing when resuming cached outputs.
     result.calls=await Promise.all(result.calls.map((_call,i)=>read<BulkCall>(path.join(folder,`call-${i}.json`))));
     await verifyBulkWord(result);await save(finalFile,result);

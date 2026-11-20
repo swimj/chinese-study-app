@@ -36,9 +36,15 @@ export function bulkGeneratedSenses(wordId: string, inventory: VocabularySenseIn
 
 export function bulkInventoryProvider(options: { environment: NodeJS.ProcessEnv; adapter: ProviderAdapter },
   retained?: RetainedBulkPrerequisite): VocabularySenseProvider {
-  if (retained?.outputSchemaName !== 'vocabulary_sense_inventory_v3') return createVocabularySenseProvider(options);
+  if (!retained) return createVocabularySenseProvider(options);
   const version = retained.provenance?.promptVersion ?? '';
-  if (combinedPromptHashes[version] !== createHash('sha256').update(retained.systemPrompt).digest('hex')) {
+  const digest = createHash('sha256').update(retained.systemPrompt).digest('hex');
+  if (retained.outputSchemaName === 'vocabulary_sense_inventory_v4') {
+    if (version !== '9' || digest !== '037e2efae2a7f6bbceea42fa337d3edadbcfa15bf428604524793d2aebe1f568')
+      throw new Error('Unrecognized retained inventory prompt');
+    return createVocabularySenseProvider(options, { version, text: retained.systemPrompt });
+  }
+  if (retained.outputSchemaName !== 'vocabulary_sense_inventory_v3' || combinedPromptHashes[version] !== digest) {
     throw new Error('Unrecognized retained combined inventory prompt');
   }
   return { isConfigured: () => true, async generate(word, context) {

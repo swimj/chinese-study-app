@@ -69,6 +69,34 @@ test('resume recovers the raw Decisions response, retains its cost and never red
   } finally {await fs.rm(f.root,{recursive:true,force:true});}
 });
 
+for (const selectionEvidence of ['stage file', 'raw response']) {
+  test(`resume uses archived v9 inventory and v1 Decisions bytes for a second-stage ${selectionEvidence}`,async()=>{
+    const f=await fixture(freshSnapshot);
+    try {
+      const [inventory,selection,repertoire]=f.result.calls;
+      assert.ok(inventory && selection && repertoire);
+      const archive=new URL('../artifacts/invocation-prompts/',import.meta.url);
+      inventory.request.systemPrompt=await fs.readFile(new URL('037e2efae2a7f6bbceea42fa337d3edadbcfa15bf428604524793d2aebe1f568.txt',archive),'utf8');
+      inventory.request.provenance={...inventory.request.provenance,promptVersion:'9'};
+      selection.request.systemPrompt=await fs.readFile(new URL('c921642d51cb210d5ba3d023b0d3b1f1557a675e65243a67d584029e67b09e8b.txt',archive),'utf8');
+      selection.request.provenance={...selection.request.provenance,promptVersion:'1'};
+      await fs.mkdir(path.join(f.directory,'responses'));
+      for(const [index,call] of [inventory,selection].entries()){
+        if(index===1 && selectionEvidence==='stage file') await f.save('0000/call-1.json',call);
+        else await f.save(`responses/paid-${index}.json`,{attemptId:`paid-${index}`,request:call.request,attempt:1,
+          startedAt:call.startedAt,receivedAt:call.finishedAt,responseStatus:200,body:call.result.rawResponse});
+      }
+      await f.save('attempts/repertoire.json',{...repertoire,attempt:1});
+      const output=await f.run();
+      assert.match(output.stdout,/"completed":1/);
+      const saved=JSON.parse(await fs.readFile(path.join(f.directory,'0000/result.json'),'utf8'));
+      await verifyBulkWord(saved);
+      assert.deepEqual(saved.calls.map((call:typeof inventory)=>call.request), f.result.calls.map(call=>call.request));
+      assert.deepEqual(await fs.readdir(path.join(f.directory,'starts')),[]);
+    } finally {await fs.rm(f.root,{recursive:true,force:true});}
+  });
+}
+
 test('resume recovers a paid combined inventory and its selection without issuing a Decisions call',async()=>{
   const f=await fixture(freshSnapshot,false,true);
   try {

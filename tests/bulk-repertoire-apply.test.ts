@@ -12,7 +12,7 @@ import { addVocabularyWord, changeVocabularyMode } from '../server/db/vocabulary
 import { createVocabularyContent, createVocabularySense, establishVocabularySenseCatalog, getVocabularySenses, getVocabularySenseCatalog, getVocabularyContentForMaintenance, updateVocabularyContent } from '../server/db/vocabulary-content.ts';
 import { writeVocabularyDefaultUsefulSenses, getVocabularyWordSenseCoverage } from '../server/db/vocabulary-sense-coverage.ts';
 import { snapshotBulkRepertoireWord } from '../server/db/bulk-repertoire-snapshot.ts';
-import { generateBulkWord } from '../server/vocabulary/bulk-repertoire.ts';
+import { generateBulkWord, verifyBulkWord } from '../server/vocabulary/bulk-repertoire.ts';
 import { applyBulkRepertoireWord } from '../server/db/bulk-repertoire-apply.ts';
 import { BULK_REPERTOIRE_APPLIED } from '../server/db/bulk-repertoire-state.ts';
 import { authoredVocabularyRepertoire } from '../server/db/vocabulary-authored-repertoire.ts';
@@ -114,6 +114,26 @@ test('unknown inventory imports exact provider evidence, selected canonical iden
   assert.equal(db.prepare("SELECT count(*) n FROM invocation_content_links WHERE role='output'").get()!.n,2);
   assert.equal(db.prepare("SELECT count(*) n FROM invocation_sense_links WHERE role='output'").get()!.n,2);
   assert.deepEqual(db.prepare('PRAGMA foreign_key_check').all(),[]);
+});
+
+test('paid v9 inventory and v1 Decisions verify and apply with their archived prompt bytes',async()=>{
+  const {result}=await generate();
+  const [inventory,selection]=result.calls;
+  const archived=(digest:string)=>fs.readFileSync(new URL(`../artifacts/invocation-prompts/${digest}.txt`,import.meta.url),'utf8');
+  inventory!.request.systemPrompt=archived('037e2efae2a7f6bbceea42fa337d3edadbcfa15bf428604524793d2aebe1f568');
+  inventory!.request.provenance!.promptVersion='9';
+  selection!.request.systemPrompt=archived('c921642d51cb210d5ba3d023b0d3b1f1557a675e65243a67d584029e67b09e8b');
+  selection!.request.provenance!.promptVersion='1';
+  await verifyBulkWord(result);
+  for(const index of [0,1]){
+    const tampered=structuredClone(result);
+    tampered.calls[index]!.request.systemPrompt+=' ';
+    await assert.rejects(verifyBulkWord(tampered),/Unrecognized retained/);
+  }
+  const receipt=await applyBulkRepertoireWord(result,authority);
+  const promptVersion=db.prepare('SELECT prompt_version FROM model_invocations WHERE id=?');
+  assert.deepEqual(receipt.invocationIds.slice(0,2).map(id=>promptVersion.get(id)!.prompt_version),['9','1']);
+  assert.equal(getVocabularyWordSenseCoverage('w1').defaultUsefulSenseIds!.length,1);
 });
 
 test('fresh bulk stops after an empty inventory or an empty Decisions recommendation',async()=>{

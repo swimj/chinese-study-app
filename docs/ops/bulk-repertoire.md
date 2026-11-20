@@ -99,8 +99,9 @@ cached before its dependent stage starts.
 
 Resume with the same command and run directory, including `--allow-provider-calls`
 and an available `OPENAI_API_KEY`. Configuration and request hashes must match.
-Completed output is replayed through current prompt builders and validators
-without provider calls; unfinished stages can make new paid calls.
+Resume, verification and offline application rebuild paid inventory and selection
+requests with their retained prompt bytes and verify their version and SHA-256.
+Only unfinished stages can make new paid calls.
 A retained successful attempt can recover a missing stage file. Concurrent runs
 are excluded by `run.lock`. After verifying that its owning local process is dead,
 `--recover-run-lock` permits recovery.

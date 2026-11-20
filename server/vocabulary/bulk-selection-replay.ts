@@ -12,14 +12,25 @@ const chatPromptHashes: Record<string, string> = {
   '7': '8678212c4a0c7c833247ddfdc11ed8e30175bf7254e6fa6795b56bbc804201e0',
 };
 
+const decisionsPromptHashes: Record<string, string> = {
+  '1': 'c921642d51cb210d5ba3d023b0d3b1f1557a675e65243a67d584029e67b09e8b',
+  '2': '0b3e963b3bb17eb0742331a2355817ce9897be2bffd0af541683d269f420e4a5',
+};
+
 /** Historical evidence replays its original editorial contract. New calls always use Decisions. */
 export function bulkUsefulSelectionProvider(options: { environment: NodeJS.ProcessEnv; adapter: ProviderAdapter },
   retainedRequest?: RetainedBulkPrerequisite): UsefulSelectionProvider {
-  if (!retainedRequest || retainedRequest.decisions) return createUsefulSelectionProvider(options);
+  if (!retainedRequest) return createUsefulSelectionProvider(options);
   const promptVersion = retainedRequest.provenance?.promptVersion ?? '';
   const prompt = retainedRequest.systemPrompt;
+  const digest = createHash('sha256').update(prompt).digest('hex');
+  if (retainedRequest.decisions) {
+    if (retainedRequest.outputSchemaName !== 'vocabulary_default_useful_selection_v2' || decisionsPromptHashes[promptVersion] !== digest)
+      throw new Error('Unrecognized retained Decisions prompt');
+    return createUsefulSelectionProvider(options, { version: promptVersion, text: prompt });
+  }
   if (retainedRequest.outputSchemaName !== 'vocabulary_default_useful_selection_v1'
-    || chatPromptHashes[promptVersion] !== createHash('sha256').update(prompt).digest('hex')) {
+    || chatPromptHashes[promptVersion] !== digest) {
     throw new Error('Unrecognized retained bulk selection contract');
   }
   return { isConfigured: () => true, async select(input, context) {
