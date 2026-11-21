@@ -106,7 +106,7 @@ function reflect(input: TurnContext): TutorResult {
   const learner = recentLearnerWords(input);
   if (distraction.test(learner)) {
     return response(
-      'You described getting pulled into a different activity. 我在家容易分心 gives the short version; 做着做着就干别的去了 describes how it happens. Which one sounds closer to what you meant?',
+      'You described getting pulled into a different activity. 我很容易分心 gives the short version; 做着做着就干别的去了 describes how it happens. Which one sounds closer to what you meant?',
     );
   }
   if (freshAir.test(learner))
@@ -148,7 +148,7 @@ function practice(input: TurnContext): TutorResult {
 
 function stash(input: TurnContext): TutorResult {
   const explicitWord = input.message.match(
-    /(?:stash|save|remember|add|收藏|记住)\s*(?:the (?:word|phrase)\s*)?[“"「']?\s*([\p{Script=Han}]{1,8})/iu,
+    /(?:stash|save|keep|remember|add|收藏|记住)\s*(?:the (?:word|phrase)\s*)?[“"「']?\s*([\p{Script=Han}]{1,8})/iu,
   )?.[1];
   const words = input.message + ' ' + input.source;
   const known = ['透透气', '散场', '分心', '内耗', '修复'].find((word) => words.includes(word));
@@ -156,6 +156,7 @@ function stash(input: TurnContext): TutorResult {
   if (!title) return response('Which Chinese word or expression would you like to keep?');
   const glosses: Record<string, string> = {
     透透气: 'Step out for some air or a change of scene.',
+    容易分心: 'Be easily distracted.',
     分心: 'Have your attention drawn away from what you are doing.',
     散场: 'An event ends and its audience starts leaving.',
     内耗: 'Friction within a group or person that uses up energy.',
@@ -214,7 +215,7 @@ export function demoTutor(input: TurnContext): TutorResult {
     if (body)
       return response('I’ve kept your note.', { kind: 'note', title: body, detail: input.source, exercise: null });
   }
-  if (/^(?:please\s+)?(?:stash|save|remember|add|收藏|记住)\b/i.test(text) || /^(?:收藏|记住)/.test(text))
+  if (/^(?:please\s+)?(?:stash|save|keep|remember|add|收藏|记住)\b/i.test(text) || /^(?:收藏|记住)/.test(text))
     return stash(input);
   if (/\b(?:practi[cs]e|exercise|rehearse)\b|练习/i.test(text)) return practice(input);
   if (freshAir.test(described))

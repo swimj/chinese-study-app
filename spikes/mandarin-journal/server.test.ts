@@ -47,7 +47,7 @@ test('stash and past mistakes use this learner’s own actions', async () => {
   const j = openJournal(':memory:', demo);
   try {
     const src = '散场以后 · 我本来只想出去透透气。';
-    await j.act({ id: randomUUID(), type: 'tutor', message: 'stash 分心', surface: 'read', source: src });
+    await j.act({ id: randomUUID(), type: 'tutor', message: 'Please keep 分心 for later.', surface: 'read', source: src });
     assert.equal(j.get().saved[0].title, '分心');
     let s = await j.act({ id: randomUUID(), type: 'practice', mode: 'Past mistakes' });
     assert.equal(s.practice.card, null);
