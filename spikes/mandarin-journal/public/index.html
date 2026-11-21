@@ -1,0 +1,142 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="theme-color" content="#f7f4ea" />
+    <title>Mandarin journal</title>
+    <link rel="stylesheet" href="/style.css" />
+    <script type="module" src="/app.js"></script>
+  </head>
+  <body>
+    <div class="journal">
+      <header class="masthead">
+        <a class="brand" href="#home" aria-label="Mandarin journal home"
+          ><span class="seal" lang="zh" aria-hidden="true">记</span>Mandarin journal</a
+        >
+        <nav aria-label="Journal"><a href="#saved">Saved</a></nav>
+      </header>
+      <div id="notice" class="notice" role="alert" hidden>
+        <span id="error-message"></span><button id="retry">Retry</button>
+      </div>
+      <div id="layout" class="layout">
+        <main id="content">
+          <section data-page="home">
+            <p class="dateline" id="today"></p>
+            <div class="home-spread">
+              <article class="cover">
+                <span class="ribbon" aria-hidden="true"></span>
+                <p class="small">Read · Short essay</p>
+                <h1 lang="zh">散场以后</h1>
+                <p class="excerpt" lang="zh">
+                  演唱会散场了，门口却没人急着走。<br />有人轻轻哼了一句，旁边的人就接上了。
+                </p>
+                <a class="primary" href="#read">Read on <span aria-hidden="true">→</span></a>
+              </article>
+              <nav class="home-actions" aria-label="Activities">
+                <a
+                  href="#chat"
+                  class="activity"
+                  aria-label="Start or resume a conversation in Chinese"
+                  title="Conversation in Chinese"
+                  ><span class="chat-symbol" aria-hidden="true"></span
+                  ><span class="arrow" aria-hidden="true">↗</span></a
+                >
+                <a href="#practice" class="activity"
+                  ><span><strong>Practice</strong><span class="sub" id="home-mode">Daily mix</span></span
+                  ><span class="arrow" aria-hidden="true">→</span></a
+                >
+              </nav>
+            </div>
+            <div id="recent" class="recent" hidden>
+              <span class="small">Last opened</span><a id="recent-link" href="#read"></a>
+            </div>
+          </section>
+          <section data-page="read" hidden class="page article">
+            <a class="back" href="#home">← Journal</a>
+            <p class="small folio">Short essay</p>
+            <h1 lang="zh">散场以后</h1>
+            <div id="passage" class="passage" lang="zh">
+              <p>演唱会散场了，门口却没人急着走。有人轻轻哼了一句，旁边的人就接上了。</p>
+              <p>
+                我本来只想出去<button class="phrase" data-phrase="透透气">透透气</button
+                >，听着听着，也跟着唱了起来。刚才在里面，隔着几排都看不清对方；现在走到街上，倒像是一群认识了很久的朋友。
+              </p>
+            </div>
+            <div class="tools">
+              <button class="primary" id="discuss">Discuss in Chinese</button
+              ><button id="save-reading">Save reading</button
+              ><button id="ask-selection" hidden>Ask about selection</button>
+            </div>
+          </section>
+          <section data-page="chat" hidden class="page">
+            <a class="back" href="#home">← Journal</a>
+            <h1>Conversation</h1>
+            <p id="conversation-context" class="sub" hidden></p>
+            <p id="conversation-opener" class="excerpt" lang="zh"></p>
+            <div id="chat-messages" class="chat-messages" role="log" aria-label="Casual conversation"></div>
+            <form id="chat-form">
+              <label class="sr" for="chat-draft">Your message to your conversation partner</label
+              ><textarea
+                name="message"
+                id="chat-draft"
+                rows="2"
+                required
+                maxlength="1600"
+                placeholder="写点什么……"
+              ></textarea>
+              <div class="tools">
+                <button class="primary">Send</button><button id="reflect" type="button">Reflect with tutor</button>
+              </div>
+            </form>
+          </section>
+          <section data-page="practice" hidden class="page">
+            <a class="back" href="#home">← Journal</a>
+            <h1>Practice</h1>
+            <label class="mode-label" for="practice-mode"
+              >Session
+              <select id="practice-mode">
+                <option>Daily mix</option>
+                <option>Past mistakes</option>
+                <option>Build vocabulary</option>
+              </select></label
+            >
+            <p id="session-notice" class="notice" role="status" hidden></p>
+            <div id="practice-body"></div>
+          </section>
+          <section data-page="saved" hidden class="page">
+            <a class="back" href="#home">← Journal</a>
+            <h1>Saved</h1>
+            <div id="saved-items" class="collection"></div>
+          </section>
+        </main>
+        <aside id="tutor" aria-label="Tutor" hidden>
+          <div class="tutor-head">
+            <span class="avatar" lang="zh" aria-hidden="true">师</span>
+            <h2>Tutor</h2>
+            <button class="icon-close" id="close-tutor" aria-label="Close tutor">×</button>
+          </div>
+          <div id="tutor-messages" role="log" aria-label="Tutor conversation" class="thread"></div>
+          <form id="tutor-form" class="composer">
+            <label for="tutor-draft" class="sr">Message tutor</label
+            ><input
+              id="tutor-draft"
+              name="message"
+              placeholder="Message tutor…"
+              required
+              maxlength="1600"
+              autocomplete="off"
+            /><button aria-label="Send message to tutor">↑</button>
+          </form>
+        </aside>
+      </div>
+      <footer>
+        <span class="runtime" id="runtime" role="status"></span
+        ><button id="open-tutor" class="island" aria-controls="tutor" aria-expanded="false">
+          <span aria-hidden="true">✎</span> Tutor
+        </button>
+      </footer>
+      <p class="sr" id="pending" role="status" aria-live="polite"></p>
+    </div>
+  </body>
+</html>
