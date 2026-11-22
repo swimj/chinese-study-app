@@ -33,17 +33,24 @@ class RequestError extends Error {
 async function body(req: IncomingMessage) {
   let size = 0;
   const chunks: Buffer[] = [];
-  for await (const part of req) {
+  for await (const part of req.iterator({ destroyOnReturn: false })) {
     const chunk = Buffer.from(part);
     size += chunk.length;
-    if (size > 100_000) throw new RequestError(413, 'Message too large.');
+    // Allow a 120,000-character Mandarin article, including JSON escapes and line breaks.
+    if (size > 1024 * 1024) throw new RequestError(413, 'Message too large. Send a shorter selection.');
     chunks.push(chunk);
   }
+  let value: unknown;
   try {
-    return JSON.parse(Buffer.concat(chunks).toString()) as unknown;
+    value = JSON.parse(Buffer.concat(chunks).toString());
   } catch {
     throw new RequestError(400, 'Invalid JSON.');
   }
+  if (size > 100_000 && !(value && typeof value === 'object' &&
+      'type' in value && value.type === 'importReading' && 'pastedText' in value && typeof value.pastedText === 'string')) {
+    throw new RequestError(413, 'Message too large.');
+  }
+  return value;
 }
 const server = createServer(async (req, res) => {
   const json = (status: number, value: unknown) => {
@@ -79,8 +86,12 @@ const server = createServer(async (req, res) => {
     }
     throw new RequestError(404, 'Page not found.');
   } catch (err) {
-    if (err instanceof ImportPreview) json(err.status, { error: err.message, preview: err.preview });
-    else if (err instanceof RequestError || err instanceof ImportError) json(err.status, { error: err.message });
+    if (err instanceof ImportError) json(err.status, {
+      error: err.message,
+      canPaste: err.canPaste,
+      preview: err instanceof ImportPreview ? err.preview : undefined,
+    });
+    else if (err instanceof RequestError) json(err.status, { error: err.message });
     else if (err instanceof JournalConflict || err instanceof ReadingConflict)
       json(409, { error: err.message });
     else if (err instanceof ZodError) json(400, { error: 'Invalid journal action.' });

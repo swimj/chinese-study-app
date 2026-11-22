@@ -2,7 +2,7 @@ import { parse, type DefaultTreeAdapterTypes as Tree } from 'parse5';
 import { createHash } from 'node:crypto';
 import type { ReadingDocument } from './reading.ts';
 
-import { ImportError, inspectReading, rejectionMessage } from './import-validation.ts';
+import { ImportError, inspectReading, rejectedImport } from './import-validation.ts';
 export { ImportError } from './import-validation.ts';
 
 const omitted = new Set(
@@ -121,10 +121,10 @@ export function extractArticle(
       : htmlArticle(input);
   if (!passages.length || !passages.some((p) => !('kind' in p))) {
     const verdict = inspectReading({ title, paragraphs: passages });
-    throw new ImportError(422, rejectionMessage(verdict) ?? 'No readable article text was found on this page.');
+    throw rejectedImport(verdict) ?? new ImportError(422, 'No readable article text was found on this page.');
   }
   if (passages.length > 2000 || passages.reduce((n, p) => n + p.text.length, 0) > 120_000)
-    throw new ImportError(413, 'This reading is too long to import.');
+    throw new ImportError(413, 'Choose up to 2,000 paragraphs and 120,000 characters per reading.');
   const fallback = mediaType === 'text/plain' ? passages[0].text : url.hostname;
   return {
     id: 'article-' + createHash('sha256').update(url.href).digest('hex'),

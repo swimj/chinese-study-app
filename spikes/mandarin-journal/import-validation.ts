@@ -4,9 +4,11 @@ import type { ReadingDocument } from './reading.ts';
 export type Verdict = 'reading' | 'verification' | 'access' | 'unavailable' | 'uncertain';
 export class ImportError extends Error {
   status: number;
-  constructor(status: number, message: string) {
+  canPaste?: true;
+  constructor(status: number, message: string, canPaste?: true) {
     super(message);
     this.status = status;
+    this.canPaste = canPaste;
   }
 }
 
@@ -63,21 +65,22 @@ export function inspectReading(doc: { title: string; sourceUrl?: string; paragra
   return 'reading';
 }
 
-export function rejectionMessage(verdict: Verdict) {
+export function rejectedImport(verdict: Verdict) {
   if (verdict === 'reading' || verdict === 'uncertain') return undefined;
-  return reasons[verdict] + ' No reading was imported.';
+  return new ImportError(422, reasons[verdict] + ' No reading was imported.', verdict === 'verification' ? true : undefined);
 }
 
 export function legacyImportWarning(doc: ReadingDocument) {
-  if (!doc.sourceUrl) return undefined;
+  if (!doc.sourceUrl || doc.importMethod === 'paste') return undefined;
   const verdict = inspectReading(doc);
-  return verdict === 'uncertain' || verdict === 'reading' ? undefined : reasons[verdict];
+  if (verdict === 'uncertain' || verdict === 'reading') return undefined;
+  return verdict === 'verification' ? { importWarning: reasons[verdict], canPaste: true } : { importWarning: reasons[verdict] };
 }
 
 export class ImportPreview extends ImportError {
   preview: { token: string; title: string; excerpt: string };
-  constructor(document: Imported, token: string, message: string) {
-    super(422, message);
+  constructor(document: Imported, token: string, message: string, canPaste?: true) {
+    super(422, message, canPaste);
     const text = document.paragraphs.map(p => p.text).join('\n');
     this.preview = { token, title: document.title, excerpt: text.length > 720 ? text.slice(0, 720) + '…' : text };
   }
@@ -98,8 +101,8 @@ export function createImportReviewer(
     }
     const doc = await download(url);
     const initial = inspectReading(doc);
-    const rejection = rejectionMessage(initial);
-    if (rejection) throw new ImportError(422, rejection);
+    const rejection = rejectedImport(initial);
+    if (rejection) throw rejection;
     if (initial === 'reading') return doc;
 
     let verdict: Verdict = 'uncertain';
@@ -117,6 +120,6 @@ export function createImportReviewer(
       unavailable: 'This looks like a notice that the page is unavailable. Is this the text you wanted?',
     }[verdict];
     pending = { url: url.href, token: randomUUID(), document: doc };
-    throw new ImportPreview(doc, pending.token, message);
+    throw new ImportPreview(doc, pending.token, message, verdict === 'verification' ? true : undefined);
   };
 }

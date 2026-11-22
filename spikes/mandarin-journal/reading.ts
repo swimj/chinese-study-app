@@ -3,6 +3,7 @@ export type ReadingDocument = {
   title: string;
   kind: string;
   sourceUrl?: string;
+  importMethod?: 'paste';
   paragraphs: { id: string; text: string; phrases?: string[]; kind?: 'heading' }[];
 };
 

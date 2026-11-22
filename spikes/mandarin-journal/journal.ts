@@ -2,6 +2,7 @@ import { createHash, randomUUID } from 'node:crypto';
 import { DatabaseSync } from 'node:sqlite';
 import { z } from 'zod';
 import { createImportReviewer, legacyImportWarning } from './import-validation.ts';
+import { extractArticle, ImportError } from './article.ts';
 import { judgeImport } from './import-judge.ts';
 import { articleUrl, importArticle } from './import-reading.ts';
 import {
@@ -58,7 +59,10 @@ export const actionSchema = z.discriminatedUnion('type', [
     source: source.optional(),
   }),
   z.object({ id, type: z.literal('selectThread'), threadId: text }),
-  z.object({ id, type: z.literal('importReading'), url: z.string().trim().min(1).max(4096), acceptPreview: id.optional() }),
+  z.object({
+    id, type: z.literal('importReading'), url: z.string().trim().min(1).max(4096),
+    acceptPreview: id.optional(), pastedText: z.string().optional(),
+  }),
   z.object({ id, type: z.literal('readingPosition'), documentId: text, paragraphId: text }),
   z.object({
     id,
@@ -174,7 +178,7 @@ function publicState(s: State, mode: Backend['mode']) {
       annotations: readingNotes(s.annotationThreads),
       documents: documentsFor(s.reading).map(doc => {
         const importWarning = legacyImportWarning(doc);
-        return importWarning ? { ...doc, importWarning } : doc;
+        return importWarning ? { ...doc, ...importWarning } : doc;
       }),
     },
     annotationThreads: s.annotationThreads,
@@ -559,12 +563,25 @@ async function mutate(s: State, a: Action, backend: Backend, reviewImport: Retur
       return;
     case 'importReading': {
       const url = articleUrl(a.url);
-      let document = s.reading.imports.findLast(entry => entry.sourceUrl === url.href);
-      if (!document || legacyImportWarning(document)) {
-        const previous = document;
+      const previous = s.reading.imports.findLast(entry => entry.sourceUrl === url.href);
+      let document = previous;
+      if (a.pastedText !== undefined) {
+        if (a.acceptPreview) throw new ImportError(400, 'Choose either the fetched preview or pasted article text.');
+        if (!a.pastedText.trim()) throw new ImportError(422, 'Paste the article text before importing.');
+        const pasted = extractArticle(a.pastedText, 'text/plain', url);
+        document = s.reading.imports.findLast(entry =>
+          entry.sourceUrl === url.href && entry.title === pasted.title &&
+          entry.paragraphs.length === pasted.paragraphs.length &&
+          entry.paragraphs.every((p, i) => p.text === pasted.paragraphs[i].text && p.kind === pasted.paragraphs[i].kind) &&
+          !legacyImportWarning(entry)
+        );
+        if (!document) {
+          document = { ...pasted, importMethod: 'paste', id: previous ? randomUUID() : pasted.id };
+          s.reading.imports.push(document);
+        }
+      } else if (!document || legacyImportWarning(document)) {
         document = await reviewImport(url, a.acceptPreview);
-        // Earlier journals could save a verification page with annotations on it.
-        // Give a recovered article its own anchors and preserve the original snapshot.
+        // Keep earlier snapshots intact so their notes retain their original anchors.
         if (previous) document = { ...document, id: randomUUID() };
         s.reading.imports.push(document);
       }
