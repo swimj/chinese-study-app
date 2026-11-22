@@ -6,6 +6,7 @@
     <meta name="theme-color" content="#f7f4ea" />
     <title>Mandarin journal</title>
     <link rel="stylesheet" href="/style.css" />
+    <link rel="stylesheet" href="/reading.css" />
     <script type="module" src="/app.js"></script>
   </head>
   <body>
@@ -26,12 +27,12 @@
             <div class="home-spread">
               <article class="cover">
                 <span class="ribbon" aria-hidden="true"></span>
-                <p class="small">Read · Short essay</p>
-                <h1 lang="zh">散场以后</h1>
+                <p class="small">Featured reading</p>
+                <h1 lang="zh">河边的报刊亭</h1>
                 <p class="excerpt" lang="zh">
-                  演唱会散场了，门口却没人急着走。<br />有人轻轻哼了一句，旁边的人就接上了。
+                  河边那座旧报刊亭关了三年。青绿色的铁皮被雨冲得发白，玻璃上还贴着一张早已过期的订报广告。
                 </p>
-                <a class="primary" href="#read">Read on <span aria-hidden="true">→</span></a>
+                <a class="primary" href="#read/source/riverside-kiosk">Read on <span aria-hidden="true">→</span></a>
               </article>
               <nav class="home-actions" aria-label="Activities">
                 <a
@@ -52,39 +53,25 @@
               <span class="small">Last opened</span><a id="recent-link" href="#read"></a>
             </div>
           </section>
-          <section data-page="read" hidden class="page article">
-            <a class="back" href="#home">← Journal</a>
-            <p class="small folio">Short essay</p>
-            <h1 lang="zh">散场以后</h1>
-            <div id="passage" class="passage" lang="zh">
-              <p>演唱会散场了，门口却没人急着走。有人轻轻哼了一句，旁边的人就接上了。</p>
-              <p>
-                我本来只想出去<button class="phrase" data-phrase="透透气">透透气</button
-                >，听着听着，也跟着唱了起来。刚才在里面，隔着几排都看不清对方；现在走到街上，倒像是一群认识了很久的朋友。
-              </p>
-            </div>
-            <div class="tools">
-              <button class="primary" id="discuss">Discuss in Chinese</button
-              ><button id="save-reading">Save reading</button
-              ><button id="ask-selection" hidden>Ask about selection</button>
-            </div>
-          </section>
+          <section data-page="read" hidden class="page article"></section>
           <section data-page="chat" hidden class="page">
             <a class="back" href="#home">← Journal</a>
             <h1>Conversation</h1>
-            <p id="conversation-context" class="sub" hidden></p>
-            <p id="conversation-opener" class="excerpt" lang="zh"></p>
+            <div class="thread-tools">
+              <label for="thread-picker">Topic</label>
+              <select id="thread-picker" data-mutation></select>
+              <button id="new-thread" data-mutation type="button" aria-expanded="false" aria-controls="thread-form">New conversation</button>
+            </div>
+            <form id="thread-form" class="thread-form" hidden>
+              <label for="thread-title">New topic</label>
+              <input id="thread-title" maxlength="100" required placeholder="周末的打算" />
+              <button class="primary">Start</button><button type="button" id="cancel-thread">Cancel</button>
+            </form>
+            <p id="conversation-opener" class="excerpt" lang="zh">今天有什么想聊的？</p>
             <div id="chat-messages" class="chat-messages" role="log" aria-label="Casual conversation"></div>
             <form id="chat-form">
-              <label class="sr" for="chat-draft">Your message to your conversation partner</label
-              ><textarea
-                name="message"
-                id="chat-draft"
-                rows="2"
-                required
-                maxlength="1600"
-                placeholder="写点什么……"
-              ></textarea>
+              <label class="sr" for="chat-draft">Your message to your conversation partner</label>
+              <textarea name="message" id="chat-draft" rows="2" required maxlength="1600" placeholder="写点什么……"></textarea>
               <div class="tools">
                 <button class="primary">Send</button><button id="reflect" type="button">Reflect with tutor</button>
               </div>
@@ -93,6 +80,8 @@
           <section data-page="practice" hidden class="page">
             <a class="back" href="#home">← Journal</a>
             <h1>Practice</h1>
+            <div id="attempt-detail" hidden></div>
+            <div id="active-practice">
             <label class="mode-label" for="practice-mode"
               >Session
               <select id="practice-mode">
@@ -103,11 +92,16 @@
             >
             <p id="session-notice" class="notice" role="status" hidden></p>
             <div id="practice-body"></div>
+            </div>
           </section>
           <section data-page="saved" hidden class="page">
             <a class="back" href="#home">← Journal</a>
             <h1>Saved</h1>
             <div id="saved-items" class="collection"></div>
+            <details id="activity-disclosure" class="activity-disclosure">
+              <summary>Journal activity</summary>
+              <ol id="activity-list"></ol>
+            </details>
           </section>
         </main>
         <aside id="tutor" aria-label="Tutor" hidden>
@@ -117,6 +111,10 @@
             <button class="icon-close" id="close-tutor" aria-label="Close tutor">×</button>
           </div>
           <div id="tutor-messages" role="log" aria-label="Tutor conversation" class="thread"></div>
+          <div id="tutor-context" class="tutor-context" hidden>
+            <span id="tutor-context-label"></span>
+            <button id="clear-context" type="button" aria-label="Remove source from question">×</button>
+          </div>
           <form id="tutor-form" class="composer">
             <label for="tutor-draft" class="sr">Message tutor</label
             ><input

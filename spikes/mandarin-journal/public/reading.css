@@ -1,0 +1,193 @@
+.reader-picker {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 6px 12px;
+  color: var(--quiet);
+  font-size: 0.9375rem;
+  margin: 12px 0 0;
+}
+
+.reader-picker select {
+  min-width: 0;
+  max-width: 100%;
+  min-height: 44px;
+  color: var(--ink);
+}
+
+.reader-tools {
+  align-items: baseline;
+  column-gap: 20px;
+  margin-bottom: 26px;
+}
+
+.reader-tools button,
+.reader-controls button {
+  text-align: start;
+}
+
+.reader-passage {
+  margin: 28px 0 0;
+  max-width: 35em;
+}
+
+.reader-paragraph {
+  position: relative;
+  padding: 0 0 1.6em;
+}
+
+.reader-paragraph .reader-prose {
+  margin: 0;
+  line-height: 1.95;
+  text-wrap: pretty;
+  overflow-wrap: anywhere;
+}
+
+.reader-prose,
+.reader-note {
+  scroll-margin-block-start: max(1.5rem, 7vh);
+}
+
+.reader-at-place::before {
+  content: '';
+  position: absolute;
+  inset: 0.45em auto auto -0.55em;
+  height: 1.1em;
+  width: 2px;
+  border-radius: 2px;
+  background: var(--clay);
+}
+
+.reader-margin,
+.reader-controls,
+.reader-notes {
+  color: var(--quiet);
+  font: 0.9375rem/1.45 var(--sans);
+}
+
+.reader-margin {
+  margin-top: 8px;
+}
+
+.reader-margin summary,
+.reader-notes summary {
+  width: fit-content;
+  max-width: 100%;
+  padding: 8px 0;
+  cursor: pointer;
+}
+
+.reader-margin summary:hover,
+.reader-notes summary:hover {
+  text-decoration: underline;
+  text-underline-offset: 0.18em;
+}
+
+.reader-place {
+  display: inline-block;
+  margin-inline-start: 10px;
+  color: var(--clay);
+}
+
+.reader-margin[open],
+.reader-notes[open] {
+  border-bottom: 1px solid var(--line);
+  padding-bottom: 12px;
+}
+
+.reader-notes {
+  width: min(100%, 36rem);
+  margin: -9px 0 24px;
+}
+
+.reader-notes ul {
+  margin: 4px 0 0;
+  padding-inline-start: 1.4em;
+}
+
+.reader-notes li + li {
+  margin-top: 7px;
+}
+
+.reader-notes a {
+  overflow-wrap: anywhere;
+  text-decoration: underline;
+  text-underline-offset: 0.18em;
+}
+
+.reader-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 2px 18px;
+}
+
+.reader-selection {
+  color: var(--ink);
+  background: var(--tint);
+  border-radius: 3px;
+  padding: 2px 9px;
+  margin-top: 8px;
+}
+
+.reader-note-form {
+  max-width: 36rem;
+  margin: 6px 0 14px;
+}
+
+.reader-note-form label {
+  display: block;
+  margin-bottom: 9px;
+}
+
+.reader-note-form textarea {
+  margin-top: 6px;
+}
+
+.reader-note {
+  border-inline-start: 2px solid var(--line);
+  padding: 4px 0 4px 14px;
+  margin: 10px 0 3px;
+}
+
+.reader-note p,
+.reader-note blockquote,
+.reader-note-form blockquote {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.reader-note p {
+  color: var(--ink);
+  margin: 2px 0;
+}
+
+.reader-note blockquote,
+.reader-note-form blockquote {
+  margin: 4px 0 10px;
+  font: 1rem/1.7 var(--han);
+}
+
+.reader-note-form blockquote {
+  border-inline-start: 2px solid var(--line);
+  padding-inline-start: 12px;
+}
+
+@media (max-width: 680px) {
+  .reader-picker {
+    justify-content: flex-start;
+  }
+
+  .reader-controls button,
+  .reader-note button,
+  .reader-margin summary,
+  .reader-notes summary {
+    min-height: 44px;
+    padding-block: 10px;
+  }
+
+  .reader-at-place::before {
+    inset-inline-start: -0.42em;
+  }
+}

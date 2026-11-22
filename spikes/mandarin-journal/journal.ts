@@ -1,6 +1,16 @@
 import { createHash, randomUUID } from 'node:crypto';
 import { DatabaseSync } from 'node:sqlite';
 import { z } from 'zod';
+import {
+  initialReading,
+  readingDocuments,
+  applyReadingPosition,
+  addAnnotation,
+  readingLabel,
+  resolveReadingReference,
+  readingSource,
+  type ReadingState,
+} from './reading.ts';
 import { catalogue, demoFriend, demoTutor, type Card } from './practice.ts';
 import { friendTurn, tutorTurn, type TurnContext, type TutorResult } from './tutor.ts';
 
@@ -8,39 +18,95 @@ const text = z.string().trim().min(1).max(8000);
 const source = z.string().max(12000);
 const id = z.string().uuid();
 export const actionSchema = z.discriminatedUnion('type', [
-  z.object({ id, type: z.literal('tutor'), message: text, surface: text, source }),
-  z.object({ id, type: z.literal('chat'), message: text, source }),
-  z.object({ id, type: z.literal('reflect'), source }),
-  z.object({ id, type: z.literal('practice'), mode: z.enum(['Daily mix', 'Past mistakes', 'Build vocabulary']) }),
+  z.object({
+    id,
+    type: z.literal('tutor'),
+    message: text,
+    surface: text,
+    source,
+    referenceId: text.optional(),
+  }),
+  z.object({ id, type: z.literal('chat'), message: text, source, threadId: text.optional() }),
+  z.object({ id, type: z.literal('reflect'), source, threadId: text.optional() }),
+  z.object({
+    id,
+    type: z.literal('practice'),
+    mode: z.enum(['Daily mix', 'Past mistakes', 'Build vocabulary']),
+    continue: z.boolean().optional(),
+  }),
+  z.object({
+    id,
+    type: z.literal('newThread'),
+    title: z.string().trim().min(1).max(120),
+    source: source.optional(),
+  }),
+  z.object({ id, type: z.literal('selectThread'), threadId: text }),
+  z.object({ id, type: z.literal('readingPosition'), documentId: text, paragraphId: text }),
+  z.object({
+    id,
+    type: z.literal('annotate'),
+    documentId: text,
+    paragraphId: text,
+    quote: source,
+    text: z.string().trim().min(1).max(1600),
+  }),
   z.object({ id, type: z.literal('answer'), answer: text, cardId: text }),
   z.object({ id, type: z.literal('next'), cardId: text }),
   z.object({ id, type: z.literal('saveReading'), title: text, detail: text, source }),
 ]);
 type Action = z.infer<typeof actionSchema>;
-type Message = TurnContext['tutorHistory'][number];
-type Item = { id: string; kind: string; title: string; detail: string; source: string };
+type Reference = {
+  kind: 'attempt' | 'reflection' | 'reading';
+  id: string;
+  quote: string;
+  label: string;
+  threadId?: string;
+};
+type Message = TurnContext['tutorHistory'][number] & {
+  id?: string;
+  reference?: Reference;
+  kind?: 'observation';
+};
+type Thread = { id: string; title: string; source?: string; turns: Message[] };
+type Reflection = {
+  id: string;
+  threadId: string;
+  overview: string;
+  takeaways: { messageId: string; quote: string; text: string }[];
+  end: number;
+};
+type Attempt = { id: string; card: Card; answer: string; result: Result };
+type Activity = { id: string; at: string; text: string; source: string; reference?: Reference };
+type QueuedCard = Card & { title?: string; introduction?: string };
+type Item = { id: string; kind: string; title: string; detail: string; source: string; reference?: Reference };
 type Result = { correct: boolean | null; feedback: string };
-type Practice = { started?: boolean; mode: string; cards: Card[]; index: number; result: Result | null };
+type Practice = { started?: boolean; mode: string; cards: QueuedCard[]; index: number; result: Result | null };
 type State = {
   tutor: Message[];
-  chat: Message[];
+  activeThreadId: string;
+  threads: Thread[];
+  reflections: Reflection[];
+  activity: Activity[];
+  reading: ReadingState;
   saved: Item[];
   learning: { text: string; source: string }[];
-  attempts: { card: Card; answer: string; result: Result }[];
-  pending: Card[];
+  attempts: Attempt[];
+  pending: QueuedCard[];
   practice: Practice;
-  lastPracticeContext: string;
   notice: string;
 };
 const initial = (): State => ({
   tutor: [],
-  chat: [],
+  activeThreadId: 'first',
+  threads: [{ id: 'first', title: 'Conversation', turns: [] }],
+  reflections: [],
+  activity: [],
+  reading: initialReading(),
   saved: [],
   learning: [],
   attempts: [],
   pending: [],
   practice: { mode: 'Daily mix', cards: [], index: 0, result: null },
-  lastPracticeContext: '',
   notice: '',
 });
 export class JournalConflict extends Error {}
@@ -60,19 +126,39 @@ function publicState(s: State, mode: Backend['mode']) {
   return {
     mode,
     tutor: s.tutor,
-    chat: s.chat,
+    activeThreadId: s.activeThreadId,
+    threads: s.threads.map(({ turns, ...thread }) => thread),
+    chat: activeThread(s).turns,
+    reflections: s.reflections,
+    attempts: s.attempts,
+    activity: s.activity,
+    reading: { ...s.reading, documents: readingDocuments },
     saved: s.saved,
     learning: s.learning,
     notice: s.notice,
     practice: {
       mode: p.mode,
       card: current
-        ? { id: current.id, kind: current.kind, prompt: current.prompt, choices: current.choices }
+        ? {
+            id: current.id,
+            kind: current.kind,
+            prompt: current.prompt,
+            choices: current.choices,
+            introduction: current.introduction,
+          }
         : null,
       result: p.result,
       done: !!p.started && p.index >= p.cards.length,
     },
   };
+}
+function activeThread(s: State): Thread {
+  const thread = s.threads.find((t) => t.id === s.activeThreadId);
+  if (!thread) throw new Error('Missing active conversation');
+  return thread;
+}
+function logActivity(s: State, text: string, source: string, reference?: Reference) {
+  s.activity.push({ id: randomUUID(), at: new Date().toISOString(), text, source, reference });
 }
 function context(
   s: State,
@@ -87,25 +173,38 @@ function context(
     surface,
     source: src,
     tutorHistory: s.tutor,
-    chatHistory: s.chat,
+    topic: activeThread(s).title,
+    chatHistory: activeThread(s).turns,
+    otherChatHistory: s.threads
+      .filter((t) => t.id !== s.activeThreadId)
+      .flatMap((t) => t.turns.map((m) => ({ ...m, source: t.title }))),
+    practiceStatus: {
+      pending: s.pending.map((c) => ({ title: c.title ?? c.source, prompt: c.prompt })),
+      active: s.practice.cards
+        .slice(s.practice.index + (s.practice.result ? 1 : 0))
+        .map((c) => ({ title: c.title ?? c.source, prompt: c.prompt })),
+    },
     saved: s.saved,
     learning: s.learning,
   };
 }
-function keep(s: State, kind: string, title: string, detail: string, src: string) {
+function keep(s: State, kind: string, title: string, detail: string, src: string, reference?: Reference) {
   if (
     !s.saved.some(
       (item) => item.kind === kind && item.title === title && item.detail === detail && item.source === src,
     )
-  )
-    s.saved.push({ id: randomUUID(), kind, title, detail, source: src });
+  ) {
+    s.saved.push({ id: randomUUID(), kind, title, detail, source: src, reference });
+    logActivity(s, 'Saved ' + kind.toLowerCase() + ' · ' + title, reference?.label ?? src, reference);
+  }
 }
-function apply(s: State, response: TutorResult, ctx: TurnContext) {
-  if (response.reply.trim()) s.tutor.push({ role: 'assistant', text: response.reply, source: ctx.source });
+function apply(s: State, response: TutorResult, ctx: TurnContext, reference?: Reference) {
+  if (response.reply.trim() && ctx.trigger !== 'practice')
+    s.tutor.push({ role: 'assistant', text: response.reply, source: ctx.source, reference });
   const a = response.action;
   if (!a) return;
   if (a.kind === 'stash' || a.kind === 'note') {
-    keep(s, a.kind === 'stash' ? 'Word' : 'Note', a.title, a.detail, ctx.source);
+    keep(s, a.kind === 'stash' ? 'Word' : 'Note', a.title, a.detail, ctx.source, reference);
     return;
   }
   if (!a.exercise) return;
@@ -120,86 +219,250 @@ function apply(s: State, response: TutorResult, ctx: TurnContext) {
   const observation = { text: a.title + ' — ' + a.detail, source: ctx.source };
   if (!s.learning.some((x) => x.text === observation.text && x.source === observation.source))
     s.learning.push(observation);
-  if (!s.pending.some((c) => c.prompt === e.prompt))
-    s.pending.push({ ...e, id: randomUUID(), source: ctx.source });
+  if (
+    !s.pending.some((c) => c.prompt === e.prompt) &&
+    !ctx.practiceStatus?.active.some((c) => c.prompt === e.prompt)
+  ) {
+    s.pending.push({ ...e, id: randomUUID(), title: a.title, source: ctx.source });
+    if (ctx.trigger !== 'practice') logActivity(s, 'Queued practice · ' + a.title, ctx.source, reference);
+  }
 }
-async function startPractice(s: State, mode: string, backend: Backend) {
+function practiceSources(s: State, mode: string): string[] {
+  const words = s.saved
+    .filter((item) => item.kind === 'Word')
+    .slice(-8)
+    .reverse()
+    .map((item) => item.title + ' · ' + item.detail);
+  const turns = [activeThread(s), ...s.threads.filter((t) => t.id !== s.activeThreadId)].flatMap((t) =>
+    t.turns
+      .filter((m) => m.role === 'user')
+      .slice(-5)
+      .reverse()
+      .map((m) => t.title + ' · ' + m.text),
+  );
+  const passages = s.reading.annotations
+    .slice(-5)
+    .reverse()
+    .map((note) => readingSource(s.reading, note.documentId + '/' + note.paragraphId + '/' + note.id));
+  const readings = s.saved
+    .filter((item) => item.kind === 'Reading')
+    .slice(-3)
+    .reverse()
+    .map((item) => (item.title + ' · ' + item.detail).slice(0, 1800));
+  const takeaways = s.reflections
+    .slice(-3)
+    .flatMap((r) => r.takeaways.map((t) => 'Learner said: ' + t.quote + '\nTutor noted: ' + t.text));
+  const places = Object.entries(s.reading.positions).map(
+    ([doc, paragraph]) => 'Encountered in reading: ' + readingSource(s.reading, doc + '/' + paragraph),
+  );
+  const notes = s.learning
+    .slice(-4)
+    .reverse()
+    .map((item) => item.text);
+  return [
+    ...new Set(
+      mode === 'Build vocabulary'
+        ? [...words, ...passages, ...turns, ...takeaways, ...readings, ...places, ...notes]
+        : [...turns, ...passages, ...words, ...takeaways, ...readings, ...places, ...notes],
+    ),
+  ];
+}
+async function startPractice(s: State, mode: string, backend: Backend, continuing = false) {
   const p = s.practice;
   if (p.mode === mode && p.index < p.cards.length) return;
-  const meaningful =
-    s.chat.some((m) => m.role === 'user') || s.saved.some((i) => i.kind === 'Word') || s.learning.length > 0;
-  const fingerprint = JSON.stringify([mode, s.chat.length, s.saved.length, s.learning.length]);
-  if (mode !== 'Past mistakes' && meaningful && !s.pending.length && fingerprint !== s.lastPracticeContext) {
-    const sourceItem = mode === 'Build vocabulary' ? s.saved.filter((i) => i.kind === 'Word').at(-1) : undefined;
-    const src = sourceItem
-      ? sourceItem.title + ' · ' + sourceItem.detail + ' · ' + sourceItem.source
-      : s.chat.filter((m) => m.role === 'user').at(-1)?.text ||
-        s.saved.at(-1)?.title ||
-        s.learning.at(-1)?.source ||
-        'Journal';
-    const ctx = context(
-      s,
-      'practice',
-      mode === 'Build vocabulary'
-        ? 'Teach a useful new word or sense from this learner’s material.'
-        : 'Choose at most one useful follow-up from the learner’s material.',
-      mode,
-      src,
-    );
-    try {
-      apply(s, await backend.tutor(ctx), ctx);
-      s.lastPracticeContext = JSON.stringify([mode, s.chat.length, s.saved.length, s.learning.length]);
-    } catch {
-      s.notice = 'Personalized practice is unavailable for this session. The prepared exercises are ready.';
-    }
+  // Switching modes returns unattempted personal cards to the queue.
+  if (p.mode !== mode && p.mode !== 'Past mistakes') {
+    const remaining = p.cards.slice(p.index + (p.result ? 1 : 0));
+    s.pending.unshift(...remaining.filter((c) => !catalogue.some((seed) => seed.id === c.id)));
   }
-  let cards: Card[];
+  let cards: QueuedCard[] = [];
   if (mode === 'Past mistakes') {
     const latest = new Map(s.attempts.map((a) => [a.card.id, a]));
     cards = [...latest.values()]
       .reverse()
       .filter((a) => a.result.correct === false)
-      .map((a) => a.card)
-      .slice(0, 4);
+      .slice(0, 4)
+      .map((a) => a.card);
   } else {
-    const personal = s.pending.shift();
-    const lastSeen = new Map(s.attempts.map((attempt, i) => [attempt.card.id, i]));
-    const defaults = catalogue
-      .filter((card) => mode !== 'Build vocabulary' || card.source.startsWith('Build vocabulary'))
-      .sort((a, b) => (lastSeen.get(a.id) ?? -1) - (lastSeen.get(b.id) ?? -1));
-    cards = [...(personal ? [personal] : []), ...defaults.filter((c) => c.prompt !== personal?.prompt)].slice(
-      0,
-      3,
-    );
+    cards = s.pending.splice(0, 3);
+    const sources = practiceSources(s, mode);
+    // The first visit opens quickly. Each explicit continuation can draw on more journal material.
+    const budget = continuing ? 3 : cards.length ? 0 : 1;
+    const previousPrompts = s.attempts.slice(-24).map((a) => a.card.prompt);
+    for (let n = 0; n < budget && cards.length < 3 && sources.length; n++) {
+      const index = continuing ? (s.attempts.length + n) % sources.length : 0;
+      const ctx = context(
+        s,
+        'practice',
+        mode === 'Build vocabulary'
+          ? 'Teach one useful word or sense from the supplied material.'
+          : 'Offer a fresh, relevant exercise if this material supports one.',
+        mode,
+        sources[index],
+      );
+      ctx.previousPrompts = [...previousPrompts, ...cards.map((c) => c.prompt)];
+      try {
+        const response = await backend.tutor(ctx);
+        if (!response.action?.exercise || ctx.previousPrompts.includes(response.action.exercise.prompt))
+          continue;
+        apply(s, response, ctx);
+        const fresh = s.pending.shift();
+        if (!fresh) throw new Error('Missing generated card');
+        if (mode === 'Build vocabulary') fresh.introduction = response.reply.trim();
+        cards.push(fresh);
+      } catch {
+        s.notice = 'The tutor could not prepare more practice this time.';
+        break;
+      }
+    }
+    if (!sources.length && !cards.length && !s.notice) {
+      const seen = new Map(s.attempts.map((attempt, i) => [attempt.card.id, i]));
+      cards = catalogue
+        .filter((c) => mode !== 'Build vocabulary' || c.source.startsWith('Build vocabulary'))
+        .sort((a, b) => (seen.get(a.id) ?? -1) - (seen.get(b.id) ?? -1))
+        .slice(0, 3);
+    }
+    if (sources.length && !cards.length && !s.notice) s.notice = 'No fresh follow-up from this material yet.';
   }
   s.practice = { started: true, mode, cards, index: 0, result: null };
+}
+
+function resolveReference(s: State, key: string, supplied: string): { reference: Reference; source: string } {
+  const attempt = s.attempts.find((a) => a.id === key);
+  if (attempt)
+    return {
+      reference: { kind: 'attempt', id: key, label: 'Practice', quote: attempt.answer },
+      source: JSON.stringify({
+        exercise: attempt.card.prompt,
+        learnerAnswer: attempt.answer,
+        feedback: attempt.result.feedback,
+      }),
+    };
+  const reflection = s.reflections.find((r) => r.id === key);
+  if (reflection) {
+    const takeaway = reflection.takeaways.find((t) => supplied.includes(t.quote));
+    const label = s.threads.find((t) => t.id === reflection.threadId)!.title;
+    return {
+      reference: {
+        kind: 'reflection',
+        id: key,
+        label,
+        quote: takeaway?.quote ?? reflection.overview,
+        threadId: reflection.threadId,
+      },
+      source: JSON.stringify({
+        overview: reflection.overview,
+        takeaways: reflection.takeaways,
+        selected: supplied,
+      }),
+    };
+  }
+  if (key.includes('/') || readingDocuments.some((doc) => doc.id === key)) {
+    const { document, paragraph, annotation } = resolveReadingReference(key, s.reading);
+    const selected = supplied.match(/^Selected text: (.+)$/m)?.[1];
+    const quote =
+      selected && paragraph?.text.includes(selected) ? selected : annotation?.quote || paragraph?.text || '';
+    const original = readingSource(s.reading, key);
+    return {
+      reference: { kind: 'reading', id: key, label: document.title, quote: quote.slice(0, 120) },
+      source: selected === quote && !annotation ? original + '\nSelected text: ' + quote : original,
+    };
+  }
+  throw new JournalConflict('This source is no longer available.');
+}
+
+async function reflect(s: State, backend: Backend, source: string) {
+  const thread = activeThread(s);
+  const previous = s.reflections.findLast((r) => r.threadId === thread.id);
+  const stretch = thread.turns.slice(previous?.end ?? 0);
+  if (!stretch.some((m) => m.role === 'user')) return;
+  const ctx = context(s, 'reflect', 'Reflect on this stretch of the conversation.', 'chat', source);
+  ctx.reflectionTurns = stretch.map((m) => ({ id: m.id!, role: m.role, text: m.text }));
+  const { reflection } = await backend.tutor(ctx);
+  if (
+    !reflection?.overview.trim() ||
+    reflection.takeaways.some(
+      (t) =>
+        !t.quote.trim() ||
+        !t.text.trim() ||
+        !stretch.some((m) => m.role === 'user' && m.id === t.messageId && m.text.includes(t.quote)),
+    )
+  ) {
+    throw new Error('The reflection could not be anchored to the learner’s words.');
+  }
+  const entry = { ...reflection, id: randomUUID(), threadId: thread.id, end: thread.turns.length };
+  s.reflections.push(entry);
+  const reference: Reference = {
+    kind: 'reflection',
+    id: entry.id,
+    label: thread.title,
+    quote: entry.takeaways[0]?.quote ?? '',
+    threadId: thread.id,
+  };
+  s.tutor.push({
+    role: 'assistant',
+    kind: 'observation',
+    text: entry.overview,
+    source: thread.title,
+    reference,
+  });
+  logActivity(s, 'Reflected on ' + thread.title, thread.title, reference);
 }
 async function mutate(s: State, a: Action, backend: Backend) {
   s.notice = '';
   switch (a.type) {
-    case 'chat': {
-      const reply = await backend.friend(context(s, 'ask', a.message, 'chat', a.source));
-      s.chat.push(
-        { role: 'user', text: a.message, source: a.source },
-        { role: 'assistant', text: reply, source: a.source },
+    case 'newThread': {
+      s.threads.push({ id: a.id, title: a.title.trim(), source: a.source, turns: [] });
+      s.activeThreadId = a.id;
+      return;
+    }
+    case 'selectThread':
+      if (!s.threads.some((t) => t.id === a.threadId)) throw new JournalConflict('Conversation unavailable.');
+      s.activeThreadId = a.threadId;
+      return;
+    case 'readingPosition':
+      applyReadingPosition(s.reading, a.documentId, a.paragraphId);
+      return;
+    case 'annotate':
+      addAnnotation(s.reading, a.id, a.documentId, a.paragraphId, a.quote, a.text);
+      {
+        const key = [a.documentId, a.paragraphId, a.id].join('/');
+        const label = readingLabel(s.reading, key);
+        logActivity(s, 'Annotated ' + label, label, {
+          kind: 'reading',
+          id: key,
+          quote: a.quote || a.text,
+          label,
+        });
+      }
+      return;
+    case 'chat':
+    case 'reflect': {
+      const thread = activeThread(s);
+      if (a.threadId && a.threadId !== thread.id)
+        throw new JournalConflict('The selected conversation changed.');
+      if (a.type === 'reflect') return reflect(s, backend, a.source);
+      const reply = await backend.friend(context(s, 'ask', a.message, 'chat', thread.source || a.source));
+      thread.turns.push(
+        { id: a.id, role: 'user', text: a.message, source: a.source },
+        { id: randomUUID(), role: 'assistant', text: reply, source: a.source },
       );
       return;
     }
-    case 'tutor':
-    case 'reflect': {
-      const reflecting = a.type === 'reflect',
-        msg = reflecting ? 'Help me reflect on this conversation.' : a.message;
-      const ctx = context(s, reflecting ? 'reflect' : 'ask', msg, reflecting ? 'chat' : a.surface, a.source);
+    case 'tutor': {
+      const anchor = a.referenceId ? resolveReference(s, a.referenceId, a.source) : undefined;
+      const ctx = context(s, 'ask', a.message, a.surface, anchor?.source ?? a.source);
+      if (anchor?.reference.kind === 'reading') ctx.readingContext = anchor.source;
       const response = await backend.tutor(ctx);
-      s.tutor.push({ role: 'user', text: msg, source: ctx.source });
-      apply(s, response, ctx);
+      s.tutor.push({ role: 'user', text: a.message, source: ctx.source, reference: anchor?.reference });
+      apply(s, response, ctx, anchor?.reference);
       return;
     }
     case 'saveReading':
       keep(s, 'Reading', a.title, a.detail, a.source);
       return;
     case 'practice':
-      return startPractice(s, a.mode, backend);
+      return startPractice(s, a.mode, backend, a.continue);
     case 'answer':
     case 'next': {
       const p = s.practice,
@@ -222,18 +485,33 @@ async function mutate(s: State, a: Action, backend: Backend) {
           c.kind === 'open' ? 'answer' : 'miss',
           a.answer,
           'practice',
-          JSON.stringify({ prompt: c.prompt, expected: c.answer, explanation: c.explanation, source: c.source }),
+          JSON.stringify({
+            prompt: c.prompt,
+            expected: c.answer,
+            explanation: c.explanation,
+            source: c.source,
+          }),
         );
         try {
           const response = await backend.tutor(ctx);
-          if (c.kind === 'open' && response.reply.trim()) result.feedback = response.reply;
-          apply(s, response, ctx);
+          if (response.reply.trim()) {
+            result.feedback = c.kind === 'open' ? response.reply : c.explanation + '\n' + response.reply;
+            // Keep the full reaction on the attempt; link the answer in the shared stream.
+            if (response.observation?.trim())
+              s.tutor.push({
+                role: 'assistant',
+                kind: 'observation',
+                text: response.observation,
+                source: c.source,
+                reference: { kind: 'attempt', id: a.id, quote: a.answer, label: 'Practice' },
+              });
+          }
         } catch {
           s.notice = 'Your answer was recorded. Tutor feedback is unavailable for this turn.';
         }
       }
       p.result = result;
-      s.attempts.push({ card: c, answer: a.answer, result });
+      s.attempts.push({ id: a.id, card: c, answer: a.answer, result });
       return;
     }
   }
@@ -247,7 +525,37 @@ export function openJournal(path: string, backend: Backend = engine) {
   db.prepare('INSERT OR IGNORE INTO journal VALUES (1,0,?)').run(JSON.stringify(initial()));
   function read() {
     const row = db.prepare('SELECT revision,body FROM journal WHERE id=1').get()!;
-    return { revision: Number(row.revision), s: JSON.parse(String(row.body)) as State };
+    const parsed = JSON.parse(String(row.body)) as State & { chat?: Message[] };
+    if (!parsed.threads) {
+      const turns = (parsed.chat ?? []).map((turn, i) => ({ ...turn, id: 'legacy-turn-' + i }));
+      const birds = turns.some((m) => /鸟|bird|Audubon/i.test(m.text));
+      parsed.activeThreadId = 'first';
+      parsed.threads = [{ id: 'first', title: birds ? 'Birdwatching' : 'Conversation', turns }];
+      parsed.reflections = [];
+      parsed.activity = [];
+      parsed.reading = initialReading();
+      parsed.attempts.forEach((a, i) => {
+        a.id = 'legacy-attempt-' + i;
+      });
+      // Old open-answer bubbles duplicated the feedback verbatim. Only link exact matches.
+      for (const a of parsed.attempts) {
+        if (a.result.correct !== null) continue;
+        const message = parsed.tutor.find(
+          (m) =>
+            !m.reference &&
+            m.role === 'assistant' &&
+            m.text === a.result.feedback &&
+            m.source?.includes(a.card.prompt),
+        );
+        if (message) {
+          message.kind = 'observation';
+          message.reference = { kind: 'attempt', id: a.id, quote: a.answer, label: 'Practice' };
+          message.text = '';
+        }
+      }
+      delete parsed.chat;
+    }
+    return { revision: Number(row.revision), s: parsed };
   }
   let tail: Promise<unknown> = Promise.resolve();
   async function perform(a: Action) {

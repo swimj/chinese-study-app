@@ -11,22 +11,24 @@ npm ci
 npm start
 ```
 
-Open **http://127.0.0.1:4317**. With no API key the footer says **Demo tutor** and the server uses short scripted examples. The concert reading, 透透气, and talking about getting distracted at the library give the demo useful context.
+Open **http://127.0.0.1:4317**. With no API key the footer says **Demo tutor** and the server uses short scripted examples. The scripted tutor has examples for birdwatching, 只 and 只是, 透透气, and getting distracted at the library.
 
 To use the real agent, supply `OPENAI_API_KEY` in the environment or in a local, ignored `.env`. The default model is `gpt-6-sol`; set `JOURNAL_MODEL` to change it. The footer says **Live tutor** when provider mode is configured. A learner action can send its text, source passage or exercise, and relevant journal history to the model. `JOURNAL_DEMO=1` forces offline mode. `JOURNAL_PORT` sets the loopback port, and `JOURNAL_DB` selects a different database path. The default databases are `.local/live.sqlite` and `.local/demo.sqlite`.
 
 ## Try a learner journey
 
-1. Open **散场以后**, tap **透透气**, then ask the tutor to stash it. Open **Saved** to find the word and return to the passage.
-2. Open the speech bubble and chat in Chinese. Try describing what happens to your attention when you work at home. **Reflect with tutor** brings that conversation to the continuous tutor thread.
-3. Open **Practice**. Daily mix can bring back a thought from the journal in a fresh situation. Build vocabulary favors first encounters. Past mistakes uses your own missed choice exercises and can be empty on first use. Choice answers are checked locally. Open production receives qualitative feedback.
-4. Refresh or restart the server. Saved items, messages, served exercises, submitted answers and the current session persist.
+1. Open Chat and start a thread about birdwatching. Describe putting out seeds or waiting to see the birds. Reflect on the exchange, follow a quoted takeaway to the original message, and ask the tutor about it. Opening the same reflection again retrieves the saved review. More messages in this thread start a new stretch.
+2. Ask the tutor for later practice with 只 and 只是. You can ask whether it is queued or look in the activity view in Saved. Open Practice and answer. Full feedback stays with your attempt. A tutor observation can link back to it later, and you can start a direct discussion from the feedback.
+3. Try **河边的报刊亭** in Read. Mark a passage, add a question or note, and return after visiting Chat. The reader remembers your paragraph for each piece. **散场以后** also remains available.
+4. In Practice, continue for another batch. With learner material available, Daily mix and Build vocabulary request contextual exercises, remembering recent prompts. A fresh journal has a small starter catalogue. Past mistakes replays choice cards whose latest attempt was a miss. Open production gets qualitative feedback.
 
 ## Implementation
 
-One pedagogical agent runs via the official TypeScript Agents SDK. It receives the current situation and bounded recent turns; a read-only tool can look up earlier journal records. A separate casual-conversation role has access to its own history and source passage. The server validates tutor actions and commits the conversation, journal effect, and request receipt together. Practice saves a generated exercise privately as served. Generated feedback can introduce a word, explain a particular use, or suggest a later exercise. A capped starter catalogue keeps a fresh journal usable.
+One pedagogical agent runs via the TypeScript Agents SDK. The server supplies relevant activity, recent turns and recorded practice status. The tutor can retrieve earlier records and link a direct exchange to a reading passage, reflection or particular exercise attempt. A separate conversation partner has the topic and the history of its selected thread. Reflection freezes the new stretch and validates each takeaway against an exact learner quotation. Direct requests can save a word or note or queue a completed exercise. Exercise feedback can yield a short observation for the global stream.
 
-This is a single-user loopback prototype. Its three practice modes illustrate the product and do not implement the main app’s SRS scheduling. The server serializes actions, including model calls, and writes a journal snapshot per action. Local SQLite is sufficient for this trial; concurrent hosted access and long-term storage optimization are outside this prototype.
+Local SQLite stores a single learner’s journal and idempotency receipts. Thread histories, reflections, annotations, queued cards, attempts, tutor observations and action history persist across restarts. Existing prototype journals acquire a first thread and keep their earlier messages and practice records. A request is serialized and its effects commit together. One snapshot per action suits this prototype.
+
+The first personalized round can start with one exercise or previously queued cards. Continuing can generate up to three more at a time. Open responses receive feedback without a correctness grade. The journal has no mastery transitions or timed SRS scheduler.
 
 ```sh
 npm run check

@@ -2,6 +2,7 @@ import { createServer, type IncomingMessage } from 'node:http';
 import { mkdirSync, readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { ReadingConflict } from './reading.ts';
 import { ZodError } from 'zod';
 import { actionSchema, engine, JournalConflict, openJournal } from './journal.ts';
 
@@ -13,6 +14,8 @@ const port = Number(process.env.JOURNAL_PORT || 4317);
 const files = new Map([
   ['/', ['index.html', 'text/html']],
   ['/app.js', ['app.js', 'text/javascript']],
+  ['/reading.js', ['reading.js', 'text/javascript']],
+  ['/reading.css', ['reading.css', 'text/css']],
   ['/style.css', ['style.css', 'text/css']],
 ]);
 class RequestError extends Error {
@@ -72,7 +75,8 @@ const server = createServer(async (req, res) => {
     throw new RequestError(404, 'Page not found.');
   } catch (err) {
     if (err instanceof RequestError) json(err.status, { error: err.message });
-    else if (err instanceof JournalConflict) json(409, { error: err.message });
+    else if (err instanceof JournalConflict || err instanceof ReadingConflict)
+      json(409, { error: err.message });
     else if (err instanceof ZodError) json(400, { error: 'Invalid journal action.' });
     else json(502, { error: 'The journal could not finish this turn. Please retry.' });
   }
