@@ -484,7 +484,10 @@ async function navigate(initial = false) {
     if (!target.kind && !state.practice.card && !state.practice.done && !ui.pending && !busy) startPractice(state.practice.mode);
   }
 }
-window.addEventListener('hashchange', () => navigate());
+window.addEventListener('hashchange', () => {
+  reader.resetImportFeedback();
+  navigate();
+});
 // An already-open bookmark still brings its source back into view.
 document.addEventListener('click', (e) => {
   const a = e.target.closest('a[href^="#"]');
@@ -498,6 +501,7 @@ async function responseJson(response) {
   if (!response.ok) {
     const error = new Error(typeof body.error === 'string' ? body.error : 'Request failed (' + response.status + ').');
     error.status = response.status;
+    if (response.status === 422) error.preview = body.preview;
     throw error;
   }
   return body;
@@ -531,6 +535,7 @@ async function runAction(action) {
   if (busy || !state) return false;
   ++requestRevision;
   const startingHash = location.hash;
+  const currentImport = action.type === 'importReading' && reader.trackImport(action.url);
   ui.pending = action;
   persist();
   markBusy(true);
@@ -551,14 +556,16 @@ async function runAction(action) {
     delete ui.pending;
     persist();
     renderState();
-    if (action.type === 'importReading') reader.imported(action.url, page === 'read' && location.hash === startingHash);
+    if (currentImport && currentImport() && location.hash === startingHash) reader.imported(action.url, page === 'read');
     return true;
   } catch (err) {
     if (action.type === 'importReading' && err.status) {
       delete ui.pending;
       persist();
-      if (page === 'read' && startingHash === location.hash) reader.importError(err.message);
-      else showError(err.message);
+      if (currentImport() && startingHash === location.hash) {
+        if (page === 'read') reader.importError(action.url, err.message, err.preview);
+        else showError(err.message);
+      }
       return false;
     }
     if (err.status === 400 || err.status === 409) {

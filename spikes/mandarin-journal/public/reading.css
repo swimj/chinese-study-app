@@ -109,6 +109,11 @@
 }
 .reader-import label { display: block; margin-bottom: .4rem; }
 .reader-import .notice { margin-bottom: 0; }
+.reader-import-preview {
+  margin-top: .75rem;
+  overflow-wrap: anywhere;
+}
+.reader-import-preview p { white-space: pre-line; }
 .reader-paragraph h2.reader-prose {
   font: 600 1.2em/1.55 var(--han);
 }

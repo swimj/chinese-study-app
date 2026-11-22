@@ -58,6 +58,8 @@ export function createReading({
   let scrollIntent = 0;
   let currentParagraphId;
   let focusImportedId;
+  let importRevision = 0;
+  let preview;
 
   const back = node('a', '← Journal', 'back');
   back.href = '#home';
@@ -81,6 +83,7 @@ export function createReading({
     importForm.hidden = !open;
     importToggle.setAttribute('aria-expanded', String(open));
     if (open) url.focus();
+    else resetImportFeedback();
   }
   const url = node('input');
   url.id = 'reader-url';
@@ -99,15 +102,34 @@ export function createReading({
   importError.setAttribute('role', 'alert');
   importError.id = 'reader-url-error';
   url.setAttribute('aria-describedby', importError.id);
+  const previewBox = node('div', undefined, 'reader-import-preview');
+  previewBox.hidden = true;
+  const previewTitle = node('strong');
+  previewTitle.tabIndex = -1;
+  const previewExcerpt = node('p');
+  previewTitle.lang = previewExcerpt.lang = 'zh';
+  const accept = button('Import this text', () => {
+    if (canSubmit() && preview && url.value.trim() === preview.url) {
+      submit({ type: 'importReading', url: preview.url, acceptPreview: preview.token });
+    }
+  }, 'primary');
+  accept.dataset.mutation = '';
+  previewBox.append(previewTitle, previewExcerpt, accept);
+  function resetImportFeedback() {
+    importRevision++;
+    preview = undefined;
+    previewBox.hidden = true;
+    importError.hidden = true;
+  }
   importLine.append(url, importButton);
-  importForm.append(urlLabel, importLine, importError);
+  importForm.append(urlLabel, importLine, importError, previewBox);
   importForm.onsubmit = event => {
     event.preventDefault();
     if (!canSubmit()) return;
-    importError.hidden = true;
+    resetImportFeedback();
     submit({ type: 'importReading', url: url.value.trim() });
   };
-  url.oninput = () => { importError.hidden = true; };
+  url.oninput = resetImportFeedback;
   pickerGroup.append(pickerLabel, picker, importToggle);
   const header = node('div', undefined, 'reader-header');
   header.append(back, pickerGroup);
@@ -135,7 +157,9 @@ export function createReading({
   const tools = node('div', undefined, 'tools reader-tools');
   tools.append(discuss, save);
   const passage = node('div', undefined, 'passage reader-passage');
-  host.replaceChildren(header, importForm, kind, title, resume, passage, tools);
+  const importWarning = node('p', '', 'notice');
+  importWarning.hidden = true;
+  host.replaceChildren(header, importForm, kind, title, importWarning, resume, passage, tools);
 
   function buildParagraph(documentId, paragraph) {
     const section = node('div', undefined, 'reader-paragraph');
@@ -169,6 +193,8 @@ export function createReading({
     rows = new Map();
     title.textContent = nextDocument.title;
     kind.textContent = nextDocument.kind;
+    importWarning.textContent = nextDocument.importWarning || '';
+    importWarning.hidden = !nextDocument.importWarning;
     picker.value = nextDocument.id;
     passage.replaceChildren(...nextDocument.paragraphs.map((paragraph) => buildParagraph(nextDocument.id, paragraph)));
   }
@@ -184,6 +210,7 @@ export function createReading({
     save.disabled = busy || saved;
     discuss.disabled = busy;
     importButton.disabled = busy;
+    accept.disabled = busy;
     picker.disabled = state.reading.documents.length < 2;
     for (const [id, row] of rows) {
       row.section.classList.toggle('reader-at-place', id === position);
@@ -289,14 +316,28 @@ export function createReading({
     openImport() {
       setImportOpen(true);
     },
-    importError(message) {
+    resetImportFeedback,
+    trackImport(submittedUrl) {
+      const revision = importRevision;
+      return () => revision === importRevision && (!url.value || url.value.trim() === submittedUrl);
+    },
+    importError(submittedUrl, message, candidate) {
+      resetImportFeedback();
+      url.value = submittedUrl;
       importError.textContent = message;
       importError.hidden = false;
       setImportOpen(true);
+      if (candidate) {
+        preview = { url: submittedUrl, token: candidate.token };
+        previewTitle.textContent = candidate.title;
+        previewExcerpt.textContent = candidate.excerpt;
+        previewBox.hidden = false;
+        previewTitle.focus();
+      }
     },
     imported(submittedUrl, follow) {
       if (url.value.trim() === submittedUrl) url.value = '';
-      importError.hidden = true;
+      resetImportFeedback();
       if (follow) {
         setImportOpen(false);
         window.clearTimeout(positionTimer);
