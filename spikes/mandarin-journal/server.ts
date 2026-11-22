@@ -1,6 +1,7 @@
 import { ImportPreview } from './import-validation.ts';
 import { createServer, type IncomingMessage } from 'node:http';
-import { mkdirSync, readFileSync } from 'node:fs';
+import { mkdirSync, readdirSync } from 'node:fs';
+import { readFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { ImportError } from './article.ts';
@@ -19,10 +20,28 @@ const files = new Map([
   ['/words.js', ['words.js', 'text/javascript']],
   ['/annotations.js', ['annotations.js', 'text/javascript']],
   ['/annotations.css', ['annotations.css', 'text/css']],
+  ['/pdf-import.js', ['pdf-import.js', 'text/javascript']],
   ['/reading.js', ['reading.js', 'text/javascript']],
   ['/reading.css', ['reading.css', 'text/css']],
   ['/style.css', ['style.css', 'text/css']],
 ]);
+// Only the PDF.js resources used by text extraction have public URLs.
+const pdfBuild = dirname(fileURLToPath(import.meta.resolve('pdfjs-dist')));
+const pdfAssets = new Map([
+  ['/pdfjs/pdf.mjs', [join(pdfBuild, 'pdf.min.mjs'), 'text/javascript']],
+  ['/pdfjs/pdf.worker.mjs', [join(pdfBuild, 'pdf.worker.min.mjs'), 'text/javascript']],
+]);
+for (const [folder, extensions] of [
+  ['cmaps', /\.bcmap$/],
+  ['standard_fonts', /\.(ttf|pfb)$/],
+] as const) {
+  const root = join(pdfBuild, '..', folder);
+  for (const entry of readdirSync(root, { withFileTypes: true })) {
+    if (entry.isFile() && extensions.test(entry.name))
+      pdfAssets.set('/pdfjs/' + folder + '/' + entry.name, [join(root, entry.name), 'application/octet-stream']);
+  }
+}
+
 class RequestError extends Error {
   status: number;
   constructor(status: number, message: string) {
@@ -46,8 +65,11 @@ async function body(req: IncomingMessage) {
   } catch {
     throw new RequestError(400, 'Invalid JSON.');
   }
-  if (size > 100_000 && !(value && typeof value === 'object' &&
-      'type' in value && value.type === 'importReading' && 'pastedText' in value && typeof value.pastedText === 'string')) {
+  const readingImport = value && typeof value === 'object' && 'type' in value && (
+    (value.type === 'importReading' && 'pastedText' in value && typeof value.pastedText === 'string') ||
+    (value.type === 'importPdf' && 'paragraphs' in value && Array.isArray(value.paragraphs))
+  );
+  if (size > 100_000 && !readingImport) {
     throw new RequestError(413, 'Message too large.');
   }
   return value;
@@ -74,14 +96,17 @@ const server = createServer(async (req, res) => {
       json(200, await journal.act(action));
       return;
     }
-    const asset = files.get(req.url || '');
+    const route = req.url || '';
+    const local = files.get(route);
+    const asset = local ? [join(dir, 'public', local[0]), local[1]] : pdfAssets.get(route);
     if (req.method === 'GET' && asset) {
+      const bytes = await readFile(asset[0]);
       res.writeHead(200, {
-        'Content-Type': asset[1] + '; charset=utf-8',
+        'Content-Type': asset[1].startsWith('text/') ? asset[1] + '; charset=utf-8' : asset[1],
         'Cache-Control': 'no-cache',
         'X-Content-Type-Options': 'nosniff',
       });
-      res.end(readFileSync(join(dir, 'public', asset[0])));
+      res.end(bytes);
       return;
     }
     throw new RequestError(404, 'Page not found.');
