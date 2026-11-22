@@ -1,3 +1,4 @@
+import { createAnnotations } from './annotations.js';
 import { createReading, readingLabel, referenceForSource } from './reading.js';
 
 const get = (id) => document.getElementById(id);
@@ -46,6 +47,10 @@ function href(page, kind, id) {
   return '#' + page + (kind ? '/' + kind + '/' + encodeURIComponent(id) : '');
 }
 function sourceHref(ref) {
+  if (ref.kind === 'annotation') {
+    const annotation = state.annotationThreads.find(item => item.id === ref.id);
+    return annotation && href(annotation.anchor.surface, 'annotation', annotation.id);
+  }
   if (ref.kind === 'attempt') return href('practice', 'attempt', ref.id);
   if (ref.kind === 'reflection') return href('chat', 'reflection', ref.id);
   if (ref.kind === 'reading') return href('read', 'source', ref.id);
@@ -74,40 +79,47 @@ chatDraft.oninput = () => {
   persist();
 };
 
+const annotations = createAnnotations({
+  submit,
+  getState: () => state,
+  canSubmit: () => Boolean(state && !busy && !ui.pending),
+});
 const reader = createReading({
+  openAnnotation: id => annotations.open(id),
+  quoteBlock: (...args) => annotations.openBlock(...args),
+  refreshAnnotations: () => annotations.render(),
   host: document.querySelector('[data-page="read"]'),
   getState: () => state,
   canSubmit: () => Boolean(state && !busy && !ui.pending),
   submit, discussInChinese,
   navigate: (dest, ref) => { location.hash = href(dest, ref ? 'source' : '', ref); },
-  askTutor: ({message, source, referenceId}) => {
-    const label = readingLabel(state, referenceId) || reader.title();
-    primeTutor({ surface: 'read', referenceId, source, label });
-    if (message) return submit({ type: 'tutor', message, surface: 'read', source, referenceId });
-  },
 });
 get('today').textContent = new Intl.DateTimeFormat(undefined, {
   weekday: 'long', month: 'long', day: 'numeric',
 }).format(new Date());
 
-function setTutor(open, focus = false, remember = true) {
+function setTutor(open, focus = false, remember = true, opener = document.activeElement) {
   if (remember) { ui.tutorOpen = open; persist(); }
+  const toggle = get('tutor-toggle');
+  const body = get('tutor-body');
+  const changed = toggle.getAttribute('aria-expanded') !== String(open);
+  if (!open && body.contains(document.activeElement)) toggle.focus({ preventScroll: true });
   get('layout').classList.toggle('with-tutor', open);
-  get('tutor').hidden = !open;
-  get('open-tutor').hidden = open;
-  get('open-tutor').setAttribute('aria-expanded', String(open));
+  toggle.setAttribute('aria-expanded', String(open));
+  toggle.setAttribute('aria-label', open ? 'Tuck tutor away' : 'Expand tutor');
+  body.inert = !open;
+  body.setAttribute('aria-hidden', String(!open));
   if (open) {
-    get('tutor-messages').scrollTop = get('tutor-messages').scrollHeight;
+    if (changed) get('tutor-messages').scrollTop = get('tutor-messages').scrollHeight;
     if (focus) {
-      focusBeforeTutor = document.activeElement;
-      tutorDraft.focus();
+      focusBeforeTutor = opener;
+      tutorDraft.focus({ preventScroll: true });
     }
   } else if (focus) {
-    (focusBeforeTutor?.offsetParent ? focusBeforeTutor : get('open-tutor')).focus();
+    (focusBeforeTutor?.offsetParent && !body.contains(focusBeforeTutor) ? focusBeforeTutor : toggle).focus({ preventScroll: true });
   }
 }
-get('open-tutor').onclick = () => setTutor(true, true);
-get('close-tutor').onclick = () => setTutor(false, true);
+get('tutor-toggle').onclick = event => setTutor(get('tutor-body').inert, true, true, event.currentTarget);
 get('tutor').addEventListener('keydown', (e) => {
   if (e.key === 'Escape') { e.preventDefault(); setTutor(false, true); }
 });
@@ -149,6 +161,7 @@ function markBusy(value) {
   get('reflect').disabled = waiting || !state?.chat.length;
   get('reflect').textContent = lastSnapshot && state.chat.length === lastSnapshot.end ? 'View reflection' : 'Reflect with tutor';
   reader.setBusy(waiting);
+  if (state) annotations.render();
 }
 function messageNode(message, casual = false) {
   const observation = message.kind === 'observation';
@@ -165,7 +178,15 @@ function messageNode(message, casual = false) {
     if (ref.quote) a.append(node('span', ref.quote, 'source-quote'));
     el.append(a);
   }
-  if (message.text) el.append(node('span', message.text, 'message-text'));
+  if (message.text) {
+    const words = node('span', message.text, 'message-text');
+    if (casual) {
+      words.dataset.annotationSurface = 'chat';
+      words.dataset.annotationOwner = state.activeThreadId;
+      words.dataset.annotationBlock = message.id;
+    }
+    el.append(words);
+  }
   return el;
 }
 function renderTutor() {
@@ -183,25 +204,26 @@ function renderTutor() {
   if (atEnd || !existing.length) log.scrollTop = log.scrollHeight;
   renderTutorContext();
 }
-function reflectionCard(reflection) {
-  const el = node('article', undefined, 'reflection');
+function reflectionSummary(reflection) {
+  const el = node('details', undefined, 'reflection-summary');
   el.id = 'reflection-' + reflection.id;
-  el.tabIndex = -1;
-  el.append(node('h2', 'Tutor reflection'), node('p', reflection.overview, 'reflection-overview'));
-  const discuss = (takeaway) => primeTutor({
-    surface: 'chat', referenceId: reflection.id,
-    source: [thread().title, reflection.overview, takeaway?.quote, takeaway?.text].filter(Boolean).join('\n'),
-    label: takeaway ? '“' + takeaway.quote + '”' : 'this reflection',
-  });
+  const count = reflection.takeaways.length;
+  el.append(node('summary', count ? 'Reflection · ' + count + (count === 1 ? ' note' : ' notes') : 'Reflection'));
+  el.append(node('p', reflection.overview));
   for (const takeaway of reflection.takeaways) {
-    const entry = node('div', undefined, 'takeaway');
-    const original = link('“' + takeaway.quote + '”', href('chat', 'line', takeaway.messageId), 'quote-link');
-    original.title = 'Go to the original message';
-    entry.append(original, node('p', takeaway.text), button('Discuss this note', () => discuss(takeaway), 'text-button'));
-    el.append(entry);
+    el.append(link('“' + takeaway.quote + '”', href('chat', 'annotation', takeaway.annotationId), 'reflection-quote'));
   }
-  el.append(button('Ask about this reflection', () => discuss(), 'text-button'));
+  el.append(button('Discuss reflection', () => primeTutor({
+    surface: 'chat', referenceId: reflection.id, source: reflection.overview, label: 'this reflection',
+  }), 'text-button'));
   return el;
+}
+function showReflection(id) {
+  const el = get('reflection-' + id);
+  if (!el) return false;
+  el.open = true;
+  focusTarget(el.querySelector('summary'));
+  return true;
 }
 function renderChat() {
   const picker = get('thread-picker');
@@ -223,7 +245,7 @@ function renderChat() {
   const matches = Array.from(log.children).every((el, i) => el.dataset.entry === entries[i]?.key);
   if (!matches) log.replaceChildren();
   for (const entry of entries.slice(log.childElementCount)) {
-    const el = entry.snapshot ? reflectionCard(entry.snapshot) : messageNode(entry.message, true);
+    const el = entry.snapshot ? reflectionSummary(entry.snapshot) : messageNode(entry.message, true);
     el.dataset.entry = entry.key;
     log.append(el);
   }
@@ -315,22 +337,28 @@ function renderSaved() {
     const row = node('article', undefined, 'saved-row');
     row.append(node('span', item.kind, 'small'), node('h2', item.title));
     if (item.detail) row.append(node('p', item.detail));
-    const id = item.reference?.kind === 'reading' ? item.reference.id :
-      referenceForSource(state, item.source) || referenceForSource(state, item.title);
-    if (id) row.append(link('Open ' + readingLabel(state, id) + ' ↗', href('read', 'source', id), 'text-button'));
-    else if (item.reference && sourceHref(item.reference)) row.append(link(item.reference.label + ' ↗', sourceHref(item.reference), 'text-button'));
+    const target = item.reference && sourceHref(item.reference);
+    const id = referenceForSource(state, item.source) || referenceForSource(state, item.title);
+    if (target) row.append(link(item.reference.label + ' ↗', target, 'text-button'));
+    else if (id) row.append(link('Open ' + readingLabel(state, id) + ' ↗', href('read', 'source', id), 'text-button'));
     else if (item.source) row.append(node('small', item.source, 'sub'));
     list.append(row);
   }
-  for (const note of [...state.reading.annotations].reverse()) {
-    const id = [note.documentId, note.paragraphId, note.id].join('/');
-    const row = node('article', undefined, 'saved-row');
-    row.append(node('span', 'Reading note', 'small'), node('h2', readingLabel(state, id)));
-    if (note.quote) row.append(node('blockquote', note.quote));
-    row.append(node('p', note.text), link('Open note in passage ↗', href('read', 'source', id), 'text-button'));
-    list.append(row);
+  if (!list.childElementCount && !state.annotationThreads.length)
+    list.append(node('p', 'Your saved readings, words, and notes will appear here.', 'sub'));
+  const margin = get('margin-index');
+  margin.hidden = !state.annotationThreads.length;
+  const notes = get('margin-notes');
+  notes.replaceChildren();
+  for (const note of [...state.annotationThreads].reverse()) {
+    const anchor = note.anchor;
+    const title = anchor.surface === 'chat'
+      ? state.threads.find(t => t.id === anchor.ownerId)?.title
+      : readingLabel(state, anchor.ownerId);
+    const row = node('li');
+    row.append(node('small', title, 'sub'), link('“' + anchor.quote + '”', href(anchor.surface, 'annotation', note.id), 'margin-index-link'));
+    notes.append(row);
   }
-  if (!list.childElementCount) list.append(node('p', 'Your saved readings, words, and notes will appear here.', 'sub'));
   const activity = get('activity-list');
   activity.replaceChildren();
   for (const item of [...state.activity].reverse()) {
@@ -360,13 +388,14 @@ function renderState() {
 }
 function focusTarget(el) {
   if (!el) return;
-  el.tabIndex = -1;
+  if (!el.matches('summary, a[href], button, input, textarea, select')) el.tabIndex = -1;
   el.focus({ preventScroll: true });
   el.scrollIntoView({ block: 'center' });
 }
 async function navigate(initial = false) {
   const previous = page;
   const target = route();
+  annotations.close();
   page = target.page;
   if (previous === 'read' && page !== 'read') reader.leave();
   if (previous && previous !== page && ui.tutorContext && !tutorDraft.value.trim()) {
@@ -374,7 +403,7 @@ async function navigate(initial = false) {
     renderTutorContext();
   }
   for (const section of document.querySelectorAll('[data-page]')) section.hidden = section.dataset.page !== page;
-  if (page === 'practice' && ui.tutorOpen === undefined) setTutor(true);
+  if (page === 'practice' && ui.tutorOpen === undefined) setTutor(matchMedia('(min-width: 861px)').matches, false, false);
   else setTutor(Boolean(ui.tutorOpen), false, false);
   if (page !== 'home' && page !== 'saved') ui.recent = page;
   if (Object.hasOwn(labels, ui.recent)) {
@@ -384,16 +413,34 @@ async function navigate(initial = false) {
   }
   document.querySelector('.masthead nav a').setAttribute('aria-current', page === 'saved' ? 'page' : 'false');
   persist();
-  if (!initial) {
+  if (!initial && previous !== page && !target.kind) {
     window.scrollTo(0, 0);
     const heading = document.querySelector('[data-page="' + page + '"] h1');
     if (heading) { heading.tabIndex = -1; heading.focus({ preventScroll: true }); }
   }
   if (!state) return;
+  const note = target.kind === 'annotation' && state.annotationThreads.find(t => t.id === target.id && t.anchor.surface === page);
+  if (target.kind === 'annotation' && !note) {
+    showError('This annotation could not be found.');
+    return;
+  }
   if (page === 'read') {
-    const requested = target.kind === 'source' && target.id ? target.id : state.reading.documentId;
+    const requested = note ? note.anchor.ownerId + '/' + note.anchor.startId
+      : target.kind === 'source' && target.id ? target.id : state.reading.documentId;
     if (!reader.openReference(requested)) showError('This reading location could not be found.');
     reader.enter();
+  }
+  if (note) {
+    if (page === 'chat' && note.anchor.ownerId !== state.activeThreadId) {
+      if (!await submit({ type: 'selectThread', threadId: note.anchor.ownerId })) return;
+      if (location.hash !== href(page, 'annotation', note.id)) return;
+    }
+    const source = [...document.querySelectorAll('[data-annotation-block]')].find(el =>
+      el.dataset.annotationSurface === page && el.dataset.annotationOwner === note.anchor.ownerId &&
+      el.dataset.annotationBlock === note.anchor.startId);
+    source?.scrollIntoView({block:'nearest'});
+    annotations.render();
+    annotations.open(note.id);
   }
   if (page === 'chat' && target.kind === 'reflection') {
     const reflection = state.reflections.find((r) => r.id === target.id);
@@ -401,9 +448,7 @@ async function navigate(initial = false) {
       if (!await submit({ type: 'selectThread', threadId: reflection.threadId })) return;
       if (location.hash !== href('chat', 'reflection', reflection.id)) return;
     }
-    const el = get('reflection-' + target.id);
-    if (el) focusTarget(el);
-    else showError('This reflection could not be found.');
+    if (!showReflection(target.id)) showError('This reflection could not be found.');
   }
   if (page === 'chat' && target.kind === 'line') {
     const reflection = state.reflections.find((r) => r.takeaways.some((note) => note.messageId === target.id));
@@ -415,6 +460,7 @@ async function navigate(initial = false) {
     if (el) focusTarget(el);
     else showError('This message could not be found.');
   }
+  annotations.render();
   if (page === 'practice') {
     renderPractice();
     if (!target.kind && !state.practice.card && !state.practice.done && !ui.pending && !busy) startPractice(state.practice.mode);
@@ -552,12 +598,12 @@ get('chat-form').onsubmit = async (e) => {
 get('reflect').onclick = async () => {
   const latest = threadReflections().at(-1);
   if (latest && latest.end === state.chat.length) {
-    focusTarget(get('reflection-' + latest.id));
+    showReflection(latest.id);
     return;
   }
   if (await submit({ type: 'reflect', threadId: state.activeThreadId, source: thread().title })) {
     const reflection = threadReflections().at(-1);
-    if (reflection && page === 'chat') focusTarget(get('reflection-' + reflection.id));
+    if (reflection && page === 'chat') showReflection(reflection.id);
   }
 };
 get('tutor-form').onsubmit = (e) => {

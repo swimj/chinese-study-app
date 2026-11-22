@@ -3,10 +3,11 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <meta name="theme-color" content="#f7f4ea" />
+    <meta name="theme-color" content="#f7faf5" />
     <title>Mandarin journal</title>
     <link rel="stylesheet" href="/style.css" />
     <link rel="stylesheet" href="/reading.css" />
+    <link rel="stylesheet" href="/annotations.css" />
     <script type="module" src="/app.js"></script>
   </head>
   <body>
@@ -98,18 +99,22 @@
             <a class="back" href="#home">← Journal</a>
             <h1>Saved</h1>
             <div id="saved-items" class="collection"></div>
+            <details id="margin-index" class="activity-disclosure" hidden>
+              <summary>Margin notes</summary>
+              <ul id="margin-notes"></ul>
+            </details>
             <details id="activity-disclosure" class="activity-disclosure">
               <summary>Journal activity</summary>
               <ol id="activity-list"></ol>
             </details>
           </section>
         </main>
-        <aside id="tutor" aria-label="Tutor" hidden>
-          <div class="tutor-head">
+        <aside id="tutor" aria-label="Tutor">
+          <button class="tutor-handle" id="tutor-toggle" type="button" aria-controls="tutor-body" aria-expanded="false" aria-label="Expand tutor">
             <span class="avatar" lang="zh" aria-hidden="true">师</span>
-            <h2>Tutor</h2>
-            <button class="icon-close" id="close-tutor" aria-label="Close tutor">×</button>
-          </div>
+            <span>Tutor</span><span class="tuck-chevron" aria-hidden="true"></span>
+          </button>
+          <div class="tutor-fold"><div id="tutor-body" inert aria-hidden="true">
           <div id="tutor-messages" role="log" aria-label="Tutor conversation" class="thread"></div>
           <div id="tutor-context" class="tutor-context" hidden>
             <span id="tutor-context-label"></span>
@@ -126,13 +131,11 @@
               autocomplete="off"
             /><button aria-label="Send message to tutor">↑</button>
           </form>
+          </div></div>
         </aside>
       </div>
       <footer>
-        <span class="runtime" id="runtime" role="status"></span
-        ><button id="open-tutor" class="island" aria-controls="tutor" aria-expanded="false">
-          <span aria-hidden="true">✎</span> Tutor
-        </button>
+        <span class="runtime" id="runtime" role="status"></span>
       </footer>
       <p class="sr" id="pending" role="status" aria-live="polite"></p>
     </div>

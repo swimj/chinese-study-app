@@ -46,6 +46,7 @@ test('real SDK uses recall, validates the exercise contract and isolates casual 
     readingContext: 'selected paragraph',
     saved: [],
     learning: [{ text: 'sample observation', source: 'from a page' }],
+    annotations: [{ role: 'user', text: 'my margin question', source: 'The river', quote: '河边' }],
   };
   replies = [
     {
@@ -73,6 +74,19 @@ test('real SDK uses recall, validates the exercise contract and isolates casual 
   assert.equal(ask.readingContext, input.readingContext);
   assert.equal(ask.recentChatTurns, undefined);
   assert.equal(ask.previousPrompts, undefined);
+  replies = [
+    {
+      type: 'function_call',
+      call_id: 'call_annotation',
+      id: 'fc_annotation',
+      name: 'recall',
+      arguments: JSON.stringify({ query: '河边', from: 'annotations' }),
+      status: 'completed',
+    },
+    structured({ reply: 'You asked about the river.', action: null }),
+  ];
+  await tutorTurn(input);
+  assert.match(JSON.stringify(requests.at(-1).input), /my margin question/);
   replies = [structured({ reply: 'Inline feedback.', action: null, observation: 'Specific insight.' })];
   assert.equal((await tutorTurn({ ...input, trigger: 'answer' })).observation, 'Specific insight.');
   replies = [structured({ reply: 'Wrong trigger.', action: null, observation: 'Specific insight.' })];
@@ -130,6 +144,7 @@ test('real SDK uses recall, validates the exercise contract and isolates casual 
   replies = [plain('嗯。')];
   assert.equal(await friendTurn(input), '嗯。');
   assert(!JSON.stringify(requests.at(-1)).includes('sample observation'));
+  assert(!JSON.stringify(requests.at(-1)).includes('my margin question'));
   assert(!requests.at(-1).tools?.length);
   const chat = userPayload(requests.at(-1));
   assert.equal(chat.topic, input.topic);

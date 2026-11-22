@@ -10,6 +10,7 @@ export interface TurnContext {
   chatHistory: { role: 'user' | 'assistant'; text: string; source?: string }[];
   saved: { kind: string; title: string; detail: string }[];
   learning: { text: string; source: string }[];
+  annotations?: { role: 'user' | 'assistant'; text: string; source: string; quote: string }[];
   reflectionTurns?: { id: string; role: 'user' | 'assistant'; text: string }[];
   topic?: string;
   otherChatHistory?: TurnContext['chatHistory'];
@@ -57,13 +58,13 @@ const recallInput = z.object({
   query: z
     .string()
     .describe('Exact expression, short phrase, or keyword. Use an empty string for recent records.'),
-  from: z.enum(['learning', 'saved', 'tutor', 'chat']),
+  from: z.enum(['learning', 'saved', 'tutor', 'chat', 'annotations']),
 });
 
 const recall = tool<typeof recallInput, TurnContext>({
   name: 'recall',
   description:
-    'Look up prior exchanges, saved items and learning observations in this learner’s journal. Results include their source or speaker. Inspect before making claims about prior study.',
+    'Look up prior exchanges, annotations on reading passages or chat lines, saved items and learning observations in this learner’s journal. Results include their source or speaker. Inspect before making claims about prior study.',
   parameters: recallInput,
   execute({ query, from }, runContext) {
     if (!runContext) throw new Error('Journal context is required for recall');
@@ -72,7 +73,8 @@ const recall = tool<typeof recallInput, TurnContext>({
     const conversations = needle
       ? [...(state.otherChatHistory ?? []), ...state.chatHistory]
       : state.chatHistory;
-    const records = from === 'tutor' ? state.tutorHistory : from === 'chat' ? conversations : state[from];
+    const records =
+      from === 'tutor' ? state.tutorHistory : from === 'chat' ? conversations : (state[from] ?? []);
     return records
       .filter((record) =>
         Object.values(record).some(

@@ -307,3 +307,265 @@ test('existing journals promote their original conversation and link prior feedb
     rmSync(folder, { recursive: true });
   }
 });
+
+test('the learner can annotate across verbatim chat turns and continue the same discussion after switching conversations', async () => {
+  const inputs: TurnContext[] = [];
+  let unavailable = true;
+  const journal = openJournal(':memory:', {
+    ...demo,
+    friend: async () => '鸟食在阳台上。',
+    tutor: async (ctx) => {
+      inputs.push(ctx);
+      if (unavailable) throw new Error('offline');
+      return demoTutor(ctx);
+    },
+  });
+  try {
+    const learner = '看🐦鸟食！';
+    const chat = await journal.act({
+      id: randomUUID(),
+      type: 'chat',
+      message: learner,
+      source: 'Birdwatching',
+    });
+    const [user, friend] = chat.chat;
+    const anchor = {
+      surface: 'chat' as const,
+      ownerId: 'first',
+      startId: user.id,
+      endId: friend.id,
+      startOffset: 1,
+      endOffset: 2,
+      quote: '🐦鸟食！\n鸟食',
+    };
+    const make = {
+      id: randomUUID(),
+      type: 'annotationPost' as const,
+      anchor,
+      message: 'Both speakers used 鸟食.',
+      askTutor: false,
+    };
+    for (const invalid of [
+      { ...anchor, quote: '🐦鸟食！鸟食' },
+      { ...anchor, startOffset: 2, quote: learner.slice(2) + '\n鸟食' },
+      { ...anchor, startId: friend.id, endId: user.id },
+      { ...anchor, ownerId: 'missing' },
+      { ...anchor, endOffset: 2000 },
+      { ...anchor, endId: 'missing' },
+    ]) {
+      await assert.rejects(journal.act({ ...make, anchor: invalid }), /source/);
+    }
+    await journal.act(make);
+    const ask = {
+      id: randomUUID(),
+      type: 'annotationPost' as const,
+      annotationId: make.id,
+      message: 'Save 鸟食 for study.',
+      askTutor: true,
+    };
+    await journal.act({ id: randomUUID(), type: 'newThread', title: 'Films' });
+    assert.equal(inputs.length, 0);
+    await assert.rejects(journal.act(ask), /offline/);
+    assert.equal(journal.get().annotationThreads[0].messages.length, 1);
+    unavailable = false;
+    await Promise.all([journal.act(ask), journal.act(ask)]);
+    const ctx = inputs.at(-1)!;
+    assert.equal(ctx.topic, 'Conversation');
+    assert.equal(ctx.chatHistory[1].text, friend.text);
+    assert.match(ctx.source, /Conversation partner: 鸟食在阳台上/);
+    assert.match(ctx.source, /Both speakers used 鸟食/);
+    assert.equal(ctx.annotations?.[0].quote, anchor.quote);
+    const state = journal.get();
+    assert.deepEqual(
+      state.annotationThreads.map((t) => t.anchor),
+      [anchor],
+    );
+    assert.deepEqual(
+      state.annotationThreads[0].messages.map((m) => m.role),
+      ['user', 'user', 'assistant'],
+    );
+    assert.equal(state.saved[0].reference?.id, make.id);
+    assert.equal(state.activity.filter((a) => a.reference?.id === make.id).length, 3);
+    assert.deepEqual(state.tutor, []);
+    assert.equal(state.chat.length, 0);
+    assert.equal(inputs.length, 2);
+    const other = await journal.act({ id: randomUUID(), type: 'chat', message: '电影', source: '' });
+    await assert.rejects(
+      journal.act({ ...make, id: randomUUID(), anchor: { ...anchor, endId: other.chat[0].id } }),
+      /source/,
+    );
+  } finally {
+    journal.close();
+  }
+});
+
+test('reading ranges preserve paragraph boundaries and the source of a repeated occurrence', async () => {
+  const journal = openJournal(':memory:', demo);
+  try {
+    const doc = journal.get().reading.documents[0];
+    const [a, b, c] = doc.paragraphs;
+    const anchor = {
+      surface: 'read' as const,
+      ownerId: doc.id,
+      startId: a.id,
+      endId: c.id,
+      startOffset: a.text.length - 5,
+      endOffset: 6,
+      quote: [a.text.slice(-5), b.text, c.text.slice(0, 6)].join('\n'),
+    };
+    const post = {
+      id: randomUUID(),
+      type: 'annotationPost' as const,
+      askTutor: false,
+      message: 'New paragraph',
+      anchor,
+    };
+    const state = await journal.act(post);
+    assert.deepEqual(state.annotationThreads[0].anchor, anchor);
+    const second = b.text.lastIndexOf('我');
+    assert.ok(second > b.text.indexOf('我'));
+    const repeated = {
+      ...anchor,
+      startId: b.id,
+      endId: b.id,
+      startOffset: second,
+      endOffset: second + 1,
+      quote: '我',
+    };
+    await journal.act({ ...post, id: randomUUID(), anchor: repeated });
+    assert.deepEqual(journal.get().annotationThreads[1].anchor, repeated);
+    await assert.rejects(
+      journal.act({
+        ...post,
+        id: randomUUID(),
+        anchor: { ...anchor, quote: anchor.quote.replace(b.text, '') },
+      }),
+      /match/,
+    );
+    await assert.rejects(
+      journal.act({ ...post, id: randomUUID(), annotationId: post.id }),
+      /existing annotation/,
+    );
+    await assert.rejects(
+      journal.act({ ...post, id: randomUUID(), anchor: undefined, annotationId: 'gone' }),
+      /unavailable/,
+    );
+  } finally {
+    journal.close();
+  }
+});
+
+test('old reading notes and reflection takeaways become stable, replyable threads without replaying history', async () => {
+  const { DatabaseSync } = await import('node:sqlite');
+  const folder = mkdtempSync(join(tmpdir(), 'journal-annotations-'));
+  const path = join(folder, 'journal.db');
+  let journal = openJournal(path, demo);
+  try {
+    await journal.act({ id: randomUUID(), type: 'chat', source: '', message: '我等着鸟来喂。' });
+    const reflected = await journal.act({ id: randomUUID(), type: 'reflect', source: '' });
+    const ref = reflected.reflections[0];
+    const original = reflected.annotationThreads.find((t) => t.id === ref.takeaways[0].annotationId)!;
+    assert.equal(original.messages[0].role, 'assistant');
+    assert.equal(original.anchor.quote, ref.takeaways[0].quote);
+    journal.close();
+    const db = new DatabaseSync(path);
+    const snapshot = JSON.parse(String(db.prepare('SELECT body FROM journal WHERE id=1').get()!.body));
+    delete snapshot.annotationThreads;
+    delete snapshot.reflections[0].takeaways[0].annotationId;
+    snapshot.reading.annotations = [
+      {
+        id: 'old-note',
+        documentId: 'after-the-show',
+        paragraphId: 'street',
+        quote: '',
+        text: 'Whole paragraph note.',
+      },
+    ];
+    const oldActivity = {
+      id: 'historic',
+      at: '2026-10-01T00:00:00Z',
+      text: 'Annotated 散场以后',
+      source: '散场以后',
+      reference: {
+        kind: 'reading',
+        id: 'after-the-show/street/old-note',
+        label: '散场以后',
+        quote: 'Whole paragraph note.',
+      },
+    };
+    snapshot.activity.push(oldActivity);
+    db.prepare('UPDATE journal SET body=?').run(JSON.stringify(snapshot));
+    db.close();
+
+    journal = openJournal(path, demo);
+    const loaded = journal.get();
+    assert.deepEqual(journal.get().annotationThreads, loaded.annotationThreads);
+    assert.deepEqual(
+      loaded.annotationThreads.find((t) => t.id === original.id),
+      original,
+    );
+    assert.equal(
+      loaded.annotationThreads.find((t) => t.id === 'old-note')?.anchor.quote,
+      loaded.reading.documents[1].paragraphs[1].text,
+    );
+    assert.deepEqual(loaded.activity.at(-1), oldActivity);
+    assert.equal(loaded.activity.length, reflected.activity.length + 1);
+    for (const thread of loaded.annotationThreads) {
+      await journal.act({
+        id: randomUUID(),
+        type: 'annotationPost',
+        annotationId: thread.id,
+        message: 'Following up.',
+        askTutor: false,
+      });
+    }
+    journal.close();
+    journal = openJournal(path, demo);
+    const after = journal.get();
+    assert.equal(after.reflections[0].takeaways[0].annotationId, original.id);
+    assert.deepEqual(
+      after.annotationThreads.map((t) => t.messages.length),
+      [2, 2],
+    );
+    assert.equal(after.reading.annotations.length, 1);
+    assert.equal(after.tutor.length, reflected.tutor.length);
+    assert.deepEqual(
+      (await journal.act({ id: randomUUID(), type: 'reflect', source: '' })).annotationThreads,
+      after.annotationThreads,
+    );
+  } finally {
+    journal.close();
+    rmSync(folder, { recursive: true });
+  }
+});
+
+test('a reflection with an invalid takeaway leaves the previous stretch available for a clean retry', async () => {
+  let invalid = true;
+  const journal = openJournal(':memory:', {
+    ...demo,
+    tutor: async (ctx) => {
+      const [learner, friend] = ctx.reflectionTurns!;
+      const takeaways = [{ messageId: learner.id, quote: learner.text, text: 'First observation.' }];
+      if (invalid)
+        takeaways.push({ messageId: friend.id, quote: friend.text, text: 'Misattributed observation.' });
+      return { reply: 'Summary.', action: null, reflection: { overview: 'Summary.', takeaways } };
+    },
+  });
+  try {
+    await journal.act({ id: randomUUID(), type: 'chat', source: '', message: '图书馆' });
+    const request = { id: randomUUID(), type: 'reflect' as const, source: '' };
+    await assert.rejects(journal.act(request), /anchored/);
+    const initial = journal.get();
+    assert.deepEqual(
+      [initial.annotationThreads, initial.reflections, initial.activity, initial.tutor],
+      [[], [], [], []],
+    );
+    invalid = false;
+    await journal.act(request);
+    const result = await journal.act(request);
+    assert.equal(result.annotationThreads.length, 1);
+    assert.equal(result.annotationThreads[0].id, result.reflections[0].takeaways[0].annotationId);
+  } finally {
+    journal.close();
+  }
+});
