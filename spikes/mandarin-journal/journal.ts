@@ -591,8 +591,15 @@ async function mutate(s: State, a: Action, backend: Backend) {
     }
     case 'saveReading': {
       const imported = s.reading.imports.find(entry => entry.id === a.source);
-      const detail = imported?.paragraphs.map((p) => p.text).join('\n') ?? a.detail;
-      keep(s, 'Reading', imported?.title ?? a.title, detail, a.source);
+      if (imported) {
+        const excerpt = Array.from(imported.paragraphs.map(p => p.text).join(' '));
+        const detail = excerpt.length > 220 ? excerpt.slice(0, 220).join('') + '…' : excerpt.join('');
+        keep(s, 'Reading', imported.title, detail, imported.id, {
+          kind: 'reading', id: imported.id, label: imported.title, quote: '',
+        });
+      } else {
+        keep(s, 'Reading', a.title, a.detail, a.source);
+      }
       return;
     }
     case 'practice':
