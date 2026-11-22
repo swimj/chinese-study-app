@@ -1,3 +1,4 @@
+import { createWordInbox } from './words.js';
 import { createAnnotations } from './annotations.js';
 import { createReading, readingLabel, referenceForSource } from './reading.js';
 
@@ -64,6 +65,7 @@ function threadReflections() {
 let state;
 let page;
 let busy = false;
+let requestRevision = 0;
 let loadFailed = false;
 let focusBeforeTutor;
 let renderedThread;
@@ -83,6 +85,20 @@ const annotations = createAnnotations({
   submit,
   getState: () => state,
   canSubmit: () => Boolean(state && !busy && !ui.pending),
+});
+const wordInbox = createWordInbox({
+  get, node, button, submit, ui, persist,
+  canSubmit: () => Boolean(state && !busy && !ui.pending),
+  refresh: async () => {
+    const revision = requestRevision;
+    const updated = await responseJson(await fetch('/api/state', { cache: 'no-store' }));
+    if (revision !== requestRevision || busy || ui.pending) return;
+    if (JSON.stringify(state.wordIntakes) === JSON.stringify(updated.wordIntakes)) return;
+    state.wordIntakes = updated.wordIntakes;
+    state.saved = updated.saved;
+    state.activity = updated.activity;
+    if (page === 'saved') renderSaved();
+  },
 });
 const reader = createReading({
   openAnnotation: id => annotations.open(id),
@@ -148,7 +164,7 @@ function markBusy(value) {
   busy = value;
   const waiting = value || !state;
   const action = ui.pending?.type;
-  const label = action === 'chat' ? 'Waiting for a reply…' : action === 'reflect' ? 'Reflecting…' : 'Working…';
+  const label = action === 'importReading' ? 'Importing reading…' : action === 'addWord' ? 'Adding word…' : action === 'chat' ? 'Waiting for a reply…' : action === 'reflect' ? 'Reflecting…' : 'Working…';
   get('pending').textContent = value ? label : '';
   document.body.dataset.waiting = String(value);
   get('runtime').textContent = [
@@ -249,12 +265,6 @@ function renderChat() {
     el.dataset.entry = entry.key;
     log.append(el);
   }
-  const opener = get('conversation-opener');
-  opener.hidden = Boolean(state.chat.length);
-  const conversation = thread();
-  const readingDocument = state.reading.documents.find((doc) =>
-    doc.title === conversation.title && conversation.source?.startsWith(doc.title + '\n'));
-  opener.textContent = readingDocument?.opener || '今天有什么想聊的？';
   chatDraft.value = ui.chatDrafts?.[state.activeThreadId] || '';
 }
 function attemptContent(attempt, card, result) {
@@ -383,6 +393,7 @@ function renderState() {
   renderChat();
   renderPractice();
   renderSaved();
+  wordInbox.render(state);
   reader.render(state);
   markBusy(busy);
 }
@@ -411,7 +422,8 @@ async function navigate(initial = false) {
     get('recent-link').textContent = labels[ui.recent] + ' ↗';
     get('recent-link').href = '#' + ui.recent;
   }
-  document.querySelector('.masthead nav a').setAttribute('aria-current', page === 'saved' ? 'page' : 'false');
+  wordInbox.updateAttention();
+  get('saved-link').setAttribute('aria-current', page === 'saved' ? 'page' : 'false');
   persist();
   if (!initial && previous !== page && !target.kind) {
     window.scrollTo(0, 0);
@@ -419,16 +431,22 @@ async function navigate(initial = false) {
     if (heading) { heading.tabIndex = -1; heading.focus({ preventScroll: true }); }
   }
   if (!state) return;
+  if (page === 'home' && target.kind === 'words') {
+    const first = get('word-items').querySelector('[data-status="clarify"] strong');
+    focusTarget(first || get('word-heading'));
+  }
   const note = target.kind === 'annotation' && state.annotationThreads.find(t => t.id === target.id && t.anchor.surface === page);
   if (target.kind === 'annotation' && !note) {
     showError('This annotation could not be found.');
     return;
   }
+  if (page === 'saved') renderSaved();
   if (page === 'read') {
     const requested = note ? note.anchor.ownerId + '/' + note.anchor.startId
       : target.kind === 'source' && target.id ? target.id : state.reading.documentId;
     if (!reader.openReference(requested)) showError('This reading location could not be found.');
     reader.enter();
+    if (target.kind === 'import') reader.openImport();
   }
   if (note) {
     if (page === 'chat' && note.anchor.ownerId !== state.activeThreadId) {
@@ -485,6 +503,7 @@ async function responseJson(response) {
   return body;
 }
 async function load() {
+  ++requestRevision;
   loadFailed = false;
   markBusy(true);
   showError('');
@@ -510,6 +529,8 @@ async function load() {
 }
 async function runAction(action) {
   if (busy || !state) return false;
+  ++requestRevision;
+  const startingHash = location.hash;
   ui.pending = action;
   persist();
   markBusy(true);
@@ -530,8 +551,16 @@ async function runAction(action) {
     delete ui.pending;
     persist();
     renderState();
+    if (action.type === 'importReading') reader.imported(action.url, page === 'read' && location.hash === startingHash);
     return true;
   } catch (err) {
+    if (action.type === 'importReading' && err.status) {
+      delete ui.pending;
+      persist();
+      if (page === 'read' && startingHash === location.hash) reader.importError(err.message);
+      else showError(err.message);
+      return false;
+    }
     if (err.status === 400 || err.status === 409) {
       delete ui.pending;
       persist();

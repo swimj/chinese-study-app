@@ -756,3 +756,75 @@ footer {
   outline-offset: 1px;
 }
 .composer input:focus-visible { outline: none; }
+
+.word-inbox {
+  display: grid;
+  grid-template-columns: minmax(12rem, .7fr) minmax(0, 1.3fr);
+  align-items: start;
+  gap: .5rem 2rem;
+  margin-bottom: clamp(1.25rem, 3vw, 2.25rem);
+  padding: clamp(1rem, 2.1vw, 1.8rem);
+  border: 1px solid var(--line);
+  border-block-start: 3px solid var(--clay);
+  background: var(--panel);
+}
+.word-inbox h2 {
+  margin: 0;
+  font: 500 clamp(1.75rem, 3vw, 2.55rem)/1.15 var(--serif);
+  letter-spacing: -.035em;
+}
+.intake-line {
+  display: flex;
+  gap: .5rem;
+  flex-wrap: wrap;
+  align-items: stretch;
+}
+.intake-line input {
+  flex: 1 1 8rem;
+  min-width: 0;
+}
+.intake-line button { min-height: 2.75rem; }
+.word-context, .word-result { color: var(--quiet); font-size: .92rem; }
+.word-context { margin-top: .45rem; }
+.word-context summary, .word-result summary { width: fit-content; cursor: pointer; }
+.word-context textarea { margin-top: .5rem; }
+.word-items {
+  grid-column: 1 / -1;
+  margin: .4rem 0 0;
+  padding: 0;
+  list-style: none;
+}
+.word-items:empty { display: none; }
+.word-items li {
+  border-block-start: 1px solid var(--line);
+  padding: .7rem 0;
+  overflow-wrap: anywhere;
+}
+.word-items li:last-of-type { padding-bottom: 0; }
+.word-row-heading {
+  display: flex;
+  justify-content: space-between;
+  gap: .3em 1em;
+  align-items: baseline;
+  flex-wrap: wrap;
+}
+.word-row-heading strong { font: 600 1.15rem/1.5 var(--serif); }
+.word-status { color: var(--quiet); font-size: .88rem; }
+[data-status="clarify"] .word-status, [data-status="failed"] .word-status { color: var(--clay); }
+.word-items p { margin: .4rem 0; white-space: pre-wrap; }
+.word-result { margin-top: .2rem; }
+.word-result[open] { color: var(--ink); }
+.word-choices { margin-block: .6rem; gap: .4rem; }
+.word-choices button, .secondary { padding: .35rem .75rem; border: 1px solid var(--line); border-radius: 4px; }
+.word-choices button { background: var(--tint); }
+.word-items .intake-line { max-width: 38rem; margin-top: .5rem; }
+#word-more, #word-refresh-error { grid-column: 1/-1; justify-self: start; }
+.cover-links { display: flex; flex-wrap: wrap; align-items: baseline; gap: .5rem 1.4rem; }
+@container (max-width: 36rem) {
+  .word-inbox { grid-template-columns: minmax(0, 1fr); gap: .75rem; }
+}
+[data-page="home"] { container-type: inline-size; }
+
+.masthead { flex-wrap: wrap; gap: .2rem 1.2rem; }
+.masthead nav { display: flex; align-items: baseline; gap: .4rem 1.2rem; flex-wrap: wrap; }
+#word-attention { color: var(--clay); font-size: .88rem; }

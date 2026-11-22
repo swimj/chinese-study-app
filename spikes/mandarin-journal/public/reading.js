@@ -57,6 +57,7 @@ export function createReading({
   let positionTimer;
   let scrollIntent = 0;
   let currentParagraphId;
+  let focusImportedId;
 
   const back = node('a', '← Journal', 'back');
   back.href = '#home';
@@ -70,7 +71,44 @@ export function createReading({
   const pickerLabel = node('label', 'Reading');
   pickerLabel.htmlFor = picker.id;
   const pickerGroup = node('div', undefined, 'reader-picker');
-  pickerGroup.append(pickerLabel, picker);
+  const importForm = node('form', undefined, 'reader-import');
+  importForm.id = 'reader-import-form';
+  importForm.hidden = true;
+  const importToggle = button('Import URL', () => setImportOpen(importForm.hidden), 'text-button');
+  importToggle.setAttribute('aria-expanded', 'false');
+  importToggle.setAttribute('aria-controls', importForm.id);
+  function setImportOpen(open) {
+    importForm.hidden = !open;
+    importToggle.setAttribute('aria-expanded', String(open));
+    if (open) url.focus();
+  }
+  const url = node('input');
+  url.id = 'reader-url';
+  url.type = 'url';
+  url.required = true;
+  url.maxLength = 2048;
+  url.placeholder = 'https://…';
+  url.autocomplete = 'url';
+  const urlLabel = node('label', 'Reading URL');
+  urlLabel.htmlFor = url.id;
+  const importLine = node('div', undefined, 'intake-line');
+  const importButton = node('button', 'Import reading', 'primary');
+  importButton.dataset.mutation = '';
+  const importError = node('p', '', 'notice');
+  importError.hidden = true;
+  importError.setAttribute('role', 'alert');
+  importError.id = 'reader-url-error';
+  url.setAttribute('aria-describedby', importError.id);
+  importLine.append(url, importButton);
+  importForm.append(urlLabel, importLine, importError);
+  importForm.onsubmit = event => {
+    event.preventDefault();
+    if (!canSubmit()) return;
+    importError.hidden = true;
+    submit({ type: 'importReading', url: url.value.trim() });
+  };
+  url.oninput = () => { importError.hidden = true; };
+  pickerGroup.append(pickerLabel, picker, importToggle);
   const header = node('div', undefined, 'reader-header');
   header.append(back, pickerGroup);
 
@@ -79,7 +117,7 @@ export function createReading({
     submit({
       type: 'saveReading',
       title: documentView.title,
-      detail: documentView.paragraphs.map((entry) => entry.text).join('\n'),
+      detail: documentView.sourceUrl ? documentView.title : documentView.paragraphs.map((entry) => entry.text).join('\n'),
       source: documentView.id,
     });
   });
@@ -87,9 +125,7 @@ export function createReading({
     if (!documentView) return;
     discussInChinese({
       title: documentView.title,
-      source: sourceFor(documentView),
-      referenceId: documentView.id,
-      opener: documentView.opener,
+      source: documentView.sourceUrl ? documentView.id : sourceFor(documentView),
     });
   });
   const resume = button('Go to saved place', () => {
@@ -99,11 +135,11 @@ export function createReading({
   const tools = node('div', undefined, 'tools reader-tools');
   tools.append(discuss, save);
   const passage = node('div', undefined, 'passage reader-passage');
-  host.replaceChildren(header, kind, title, resume, passage, tools);
+  host.replaceChildren(header, importForm, kind, title, resume, passage, tools);
 
   function buildParagraph(documentId, paragraph) {
     const section = node('div', undefined, 'reader-paragraph');
-    const prose = node('p', undefined, 'reader-prose');
+    const prose = node(paragraph.kind === 'heading' ? 'h2' : 'p', undefined, 'reader-prose');
     prose.lang = 'zh';
     prose.tabIndex = -1;
     const source = node('span', paragraph.text, 'reader-text');
@@ -141,9 +177,13 @@ export function createReading({
     if (!state?.reading || !documentView) return;
     const position = state.reading.positions[documentView.id];
     resume.hidden = !position || position === documentView.paragraphs[0].id;
-    const saved = state.saved.some((item) => item.kind === 'Reading' && item.title === documentView.title);
+    const saved = state.saved.some(item => item.kind === 'Reading' && (
+      item.source === documentView.id || (!documentView.sourceUrl && item.title === documentView.title && !lookup(state, item.source))
+    ));
     save.textContent = saved ? 'Reading saved' : 'Save reading';
     save.disabled = busy || saved;
+    discuss.disabled = busy;
+    importButton.disabled = busy;
     picker.disabled = state.reading.documents.length < 2;
     for (const [id, row] of rows) {
       row.section.classList.toggle('reader-at-place', id === position);
@@ -174,6 +214,10 @@ export function createReading({
     const paragraphId = source.paragraph?.id || position || firstParagraphId;
     currentParagraphId = paragraphId;
     if (source.paragraph || paragraphId !== firstParagraphId) focusPassage(paragraphId);
+    if (focusImportedId === documentView.id) {
+      focusImportedId = undefined;
+      title.focus();
+    }
     if (source.annotation) openAnnotation(source.annotation.id);
     if (documentView.id !== reading.documentId) queuePosition(position || firstParagraphId, 0);
   }
@@ -228,23 +272,49 @@ export function createReading({
     render(nextState) {
       state = nextState;
       if (!state.reading) return;
-      if (!picker.options.length) {
+      if (picker.options.length !== state.reading.documents.length) {
+        picker.replaceChildren();
         for (const entry of state.reading.documents) {
           const option = node('option', entry.title);
           option.value = entry.id;
           option.lang = 'zh';
           picker.append(option);
         }
+        if (documentView) picker.value = documentView.id;
       }
       if (!documentView) mount(lookup(state, state.reading.documentId).document);
       applyEntry();
       update();
     },
+    openImport() {
+      setImportOpen(true);
+    },
+    importError(message) {
+      importError.textContent = message;
+      importError.hidden = false;
+      setImportOpen(true);
+    },
+    imported(submittedUrl, follow) {
+      if (url.value.trim() === submittedUrl) url.value = '';
+      importError.hidden = true;
+      if (follow) {
+        setImportOpen(false);
+        window.clearTimeout(positionTimer);
+        positionTimer = undefined;
+        pendingPosition = undefined;
+        focusImportedId = state.reading.documentId;
+        if (documentView.id === focusImportedId) {
+          focusImportedId = undefined;
+          title.focus();
+        }
+        navigate('read', state.reading.documentId);
+      }
+    },
     title: () => documentView?.title || 'Reading',
     currentReference: () => documentView ? documentView.id + '/' + currentParagraphId : '',
     source: () => {
       const current = documentView && lookup(state, documentView.id + '/' + currentParagraphId);
-      return current ? sourceFor(current.document, current.paragraph) : 'Reading';
+      return current ? sourceFor(current.document, current.paragraph).slice(0, 12000) : 'Reading';
     },
     openReference(ref) {
       const available = !state || Boolean(lookup(state, ref));

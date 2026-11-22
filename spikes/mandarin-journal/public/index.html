@@ -16,7 +16,10 @@
         <a class="brand" href="#home" aria-label="Mandarin journal home"
           ><span class="seal" lang="zh" aria-hidden="true">记</span>Mandarin journal</a
         >
-        <nav aria-label="Journal"><a href="#saved">Saved</a></nav>
+        <nav aria-label="Journal">
+          <a href="#home/words" id="word-attention" hidden></a>
+          <a href="#saved" id="saved-link">Saved</a>
+        </nav>
       </header>
       <div id="notice" class="notice" role="alert" hidden>
         <span id="error-message"></span><button id="retry">Retry</button>
@@ -25,6 +28,25 @@
         <main id="content">
           <section data-page="home">
             <p class="dateline" id="today"></p>
+            <section class="word-inbox" aria-labelledby="word-heading">
+              <h2 id="word-heading">Words to learn</h2>
+              <form id="word-form">
+                <div class="intake-line">
+                  <label for="word-text" class="sr">Word or phrase to learn</label>
+                  <input id="word-text" maxlength="320" required placeholder="Word or phrase" autocomplete="off" />
+                  <button class="primary" data-mutation>Add word</button>
+                </div>
+                <details id="word-context-toggle" class="word-context">
+                  <summary>Add context</summary>
+                  <label for="word-context" class="sr">Where you saw or heard it</label>
+                  <textarea id="word-context" maxlength="2000" rows="2" placeholder="Where did you see or hear it?"></textarea>
+                </details>
+              </form>
+              <p id="word-status" class="sr" role="status"></p>
+              <p id="word-refresh-error" class="sub" hidden></p>
+              <ul id="word-items" class="word-items"></ul>
+              <button id="word-more" class="text-button" type="button" aria-expanded="false" aria-controls="word-items" hidden></button>
+            </section>
             <div class="home-spread">
               <article class="cover">
                 <span class="ribbon" aria-hidden="true"></span>
@@ -33,7 +55,10 @@
                 <p class="excerpt" lang="zh">
                   河边那座旧报刊亭关了三年。青绿色的铁皮被雨冲得发白，玻璃上还贴着一张早已过期的订报广告。
                 </p>
-                <a class="primary" href="#read/source/riverside-kiosk">Read on <span aria-hidden="true">→</span></a>
+                <div class="cover-links">
+                  <a class="primary" href="#read/source/riverside-kiosk">Read on <span aria-hidden="true">→</span></a>
+                  <a href="#read/import" class="text-button">Import a reading</a>
+                </div>
               </article>
               <nav class="home-actions" aria-label="Activities">
                 <a
@@ -68,7 +93,6 @@
               <input id="thread-title" maxlength="100" required placeholder="周末的打算" />
               <button class="primary">Start</button><button type="button" id="cancel-thread">Cancel</button>
             </form>
-            <p id="conversation-opener" class="excerpt" lang="zh">今天有什么想聊的？</p>
             <div id="chat-messages" class="chat-messages" role="log" aria-label="Casual conversation"></div>
             <form id="chat-form">
               <label class="sr" for="chat-draft">Your message to your conversation partner</label>

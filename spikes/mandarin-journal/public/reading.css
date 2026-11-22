@@ -99,3 +99,17 @@
     inset-inline-start: -0.42em;
   }
 }
+
+.reader-import {
+  max-width: 40rem;
+  margin: 1rem 0;
+  padding: 1rem;
+  border-inline-start: 3px solid var(--clay);
+  background: var(--panel);
+}
+.reader-import label { display: block; margin-bottom: .4rem; }
+.reader-import .notice { margin-bottom: 0; }
+.reader-paragraph h2.reader-prose {
+  font: 600 1.2em/1.55 var(--han);
+}
+.reader-text { white-space: pre-line; }
