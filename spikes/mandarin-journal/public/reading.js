@@ -38,6 +38,10 @@ export function referenceForSource(state, source) {
   return state?.reading?.documents.find((entry) => source.includes(entry.title))?.id || '';
 }
 
+function importedDocument(document) {
+  return Boolean(document.sourceUrl) || document.importMethod === 'pdf';
+}
+
 function sourceFor(document, paragraph) {
   const paragraphs = paragraph ? [paragraph] : document.paragraphs;
   return [document.title, ...paragraphs.map((entry) => entry.text)].join('\n');
@@ -61,6 +65,7 @@ export function createReading({
   let importRevision = 0;
   let preview;
   let pasteUrl;
+  let extractingPdf = false;
 
   const back = node('a', '← Journal', 'back');
   back.href = '#home';
@@ -74,6 +79,46 @@ export function createReading({
   const pickerLabel = node('label', 'Reading');
   pickerLabel.htmlFor = picker.id;
   const pickerGroup = node('div', undefined, 'reader-picker');
+  const pdfFile = node('input');
+  pdfFile.type = 'file';
+  pdfFile.accept = 'application/pdf,.pdf';
+  pdfFile.hidden = true;
+  const uploadPdf = button('Upload PDF', () => pdfFile.click(), 'text-button');
+  const pdfStatus = node('p', '', 'notice');
+  pdfStatus.setAttribute('role', 'status');
+  pdfStatus.hidden = true;
+  function pdfMessage(message) {
+    pdfStatus.textContent = message;
+    pdfStatus.hidden = !message;
+  }
+  pdfFile.onchange = async () => {
+    const file = pdfFile.files[0];
+    pdfFile.value = '';
+    if (!file || !canSubmit()) return;
+    setImportOpen(false);
+    const revision = importRevision;
+    extractingPdf = true;
+    uploadPdf.disabled = true;
+    pdfMessage('Reading PDF…');
+    try {
+      const { readPdf } = await import('./pdf-import.js');
+      const document = await readPdf(file);
+      if (revision !== importRevision) return;
+      if (!canSubmit()) {
+        pdfMessage('Finish the current action, then choose the PDF again.');
+        return;
+      }
+      pdfMessage('');
+      await submit({ type: 'importPdf', ...document });
+    } catch (err) {
+      if (revision === importRevision) pdfMessage(err.message || 'Could not read this PDF.');
+    } finally {
+      if (revision === importRevision) {
+        extractingPdf = false;
+        uploadPdf.disabled = busy;
+      }
+    }
+  };
   const importForm = node('form', undefined, 'reader-import');
   importForm.id = 'reader-import-form';
   importForm.hidden = true;
@@ -144,6 +189,9 @@ export function createReading({
   }
   function resetImportFeedback() {
     importRevision++;
+    extractingPdf = false;
+    uploadPdf.disabled = busy;
+    pdfMessage('');
     preview = undefined;
     pasteUrl = undefined;
     pasteBox.hidden = true;
@@ -175,7 +223,7 @@ export function createReading({
   };
   pastedText.oninput = () => pastedText.setCustomValidity('');
   url.oninput = resetImportFeedback;
-  pickerGroup.append(pickerLabel, picker, importToggle);
+  pickerGroup.append(pickerLabel, picker, importToggle, uploadPdf, pdfFile);
   const header = node('div', undefined, 'reader-header');
   header.append(back, pickerGroup);
 
@@ -184,7 +232,7 @@ export function createReading({
     submit({
       type: 'saveReading',
       title: documentView.title,
-      detail: documentView.sourceUrl ? documentView.title : documentView.paragraphs.map((entry) => entry.text).join('\n'),
+      detail: importedDocument(documentView) ? documentView.title : documentView.paragraphs.map((entry) => entry.text).join('\n'),
       source: documentView.id,
     });
   });
@@ -192,7 +240,7 @@ export function createReading({
     if (!documentView) return;
     discussInChinese({
       title: documentView.title,
-      source: documentView.sourceUrl ? documentView.id : sourceFor(documentView),
+      source: importedDocument(documentView) ? documentView.id : sourceFor(documentView),
     });
   });
   const resume = button('Go to saved place', () => {
@@ -208,7 +256,7 @@ export function createReading({
     if (documentView.canPaste) openPaste(documentView.sourceUrl);
   }, 'secondary');
   pasteHistorical.hidden = true;
-  host.replaceChildren(header, importForm, kind, title, importWarning, pasteHistorical, resume, passage, tools);
+  host.replaceChildren(header, pdfStatus, importForm, kind, title, importWarning, pasteHistorical, resume, passage, tools);
 
   function buildParagraph(documentId, paragraph) {
     const section = node('div', undefined, 'reader-paragraph');
@@ -254,12 +302,13 @@ export function createReading({
     const position = state.reading.positions[documentView.id];
     resume.hidden = !position || position === documentView.paragraphs[0].id;
     const saved = state.saved.some(item => item.kind === 'Reading' && (
-      item.source === documentView.id || (!documentView.sourceUrl && item.title === documentView.title && !lookup(state, item.source))
+      item.source === documentView.id || (!importedDocument(documentView) && item.title === documentView.title && !lookup(state, item.source))
     ));
     save.textContent = saved ? 'Reading saved' : 'Save reading';
     save.disabled = busy || saved;
     discuss.disabled = busy;
     importButton.disabled = busy;
+    uploadPdf.disabled = busy || extractingPdf;
     accept.disabled = busy;
     pasteToggle.disabled = pasteHistorical.disabled = busy;
     pastedText.readOnly = busy;
@@ -370,6 +419,7 @@ export function createReading({
       setImportOpen(true);
     },
     resetImportFeedback,
+    pdfMessage,
     trackImport(submittedUrl) {
       const revision = importRevision;
       return () => revision === importRevision && (!url.value || url.value.trim() === submittedUrl);

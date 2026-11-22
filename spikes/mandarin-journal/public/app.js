@@ -164,7 +164,7 @@ function markBusy(value) {
   busy = value;
   const waiting = value || !state;
   const action = ui.pending?.type;
-  const label = action === 'importReading' ? 'Importing reading…' : action === 'addWord' ? 'Adding word…' : action === 'chat' ? 'Waiting for a reply…' : action === 'reflect' ? 'Reflecting…' : 'Working…';
+  const label = (action === 'importReading' || action === 'importPdf') ? 'Importing reading…' : action === 'addWord' ? 'Adding word…' : action === 'chat' ? 'Waiting for a reply…' : action === 'reflect' ? 'Reflecting…' : 'Working…';
   get('pending').textContent = value ? label : '';
   document.body.dataset.waiting = String(value);
   get('runtime').textContent = [
@@ -559,9 +559,17 @@ async function runAction(action) {
     delete ui.pending;
     persist();
     renderState();
+    if (action.type === 'importPdf' && page === 'read' && location.hash === startingHash) reader.imported(undefined, true);
     if (currentImport && currentImport() && location.hash === startingHash) reader.imported(action.url, page === 'read');
     return true;
   } catch (err) {
+    if (action.type === 'importPdf' && err.status) {
+      delete ui.pending;
+      persist();
+      if (page === 'read' && location.hash === startingHash) reader.pdfMessage(err.message);
+      else showError(err.message);
+      return false;
+    }
     if (action.type === 'importReading' && err.status) {
       delete ui.pending;
       persist();
