@@ -1,7 +1,7 @@
 import { createHash, randomUUID } from 'node:crypto';
 import { DatabaseSync } from 'node:sqlite';
 import { z } from 'zod';
-import { createImportReviewer, legacyImportWarning } from './import-validation.ts';
+import { checkReadingSize, createImportReviewer, legacyImportWarning } from './import-validation.ts';
 import { extractArticle, ImportError } from './article.ts';
 import { judgeImport } from './import-judge.ts';
 import { articleUrl, importArticle } from './import-reading.ts';
@@ -62,6 +62,10 @@ export const actionSchema = z.discriminatedUnion('type', [
   z.object({
     id, type: z.literal('importReading'), url: z.string().trim().min(1).max(4096),
     acceptPreview: id.optional(), pastedText: z.string().optional(),
+  }),
+  z.object({
+    id, type: z.literal('importPdf'), title: z.string().trim().min(1).max(120),
+    fingerprint: z.string().regex(/^[a-f0-9]{64}$/), paragraphs: z.array(z.string()),
   }),
   z.object({ id, type: z.literal('readingPosition'), documentId: text, paragraphId: text }),
   z.object({
@@ -586,6 +590,21 @@ async function mutate(s: State, a: Action, backend: Backend, reviewImport: Retur
         s.reading.imports.push(document);
       }
       s.reading.documentId = document.id;
+      return;
+    }
+    case 'importPdf': {
+      const paragraphs = a.paragraphs.map(p => p.trim()).filter(Boolean);
+      checkReadingSize(paragraphs);
+      if (!paragraphs.some(p => /[\p{L}\p{N}]/u.test(p)))
+        throw new ImportError(422, 'No readable text was found in this PDF.');
+      const documentId = 'pdf-' + a.fingerprint;
+      if (!s.reading.imports.some(doc => doc.id === documentId)) {
+        s.reading.imports.push({
+          id: documentId, kind: 'PDF', importMethod: 'pdf', title: a.title,
+          paragraphs: paragraphs.map((text, i) => ({ id: 'p' + (i + 1), text })),
+        });
+      }
+      s.reading.documentId = documentId;
       return;
     }
     case 'readingPosition':

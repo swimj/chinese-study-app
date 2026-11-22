@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import type { ReadingDocument } from './reading.ts';
+import type { ReadingDocument, WebReading } from './reading.ts';
 
 export type Verdict = 'reading' | 'verification' | 'access' | 'unavailable' | 'uncertain';
 export class ImportError extends Error {
@@ -13,7 +13,10 @@ export class ImportError extends Error {
 }
 
 type Sample = { title: string; paragraphs: string[] };
-type Imported = ReadingDocument & { sourceUrl: string };
+export function checkReadingSize(paragraphs: string[]) {
+  if (paragraphs.length > 2000 || paragraphs.reduce((n, text) => n + text.length, 0) > 120_000)
+    throw new ImportError(413, 'Choose up to 2,000 paragraphs and 120,000 characters per reading.');
+}
 const reasons = {
   verification: 'The source returned a verification page.',
   access: 'The source returned an access or sign-in notice.',
@@ -79,7 +82,7 @@ export function legacyImportWarning(doc: ReadingDocument) {
 
 export class ImportPreview extends ImportError {
   preview: { token: string; title: string; excerpt: string };
-  constructor(document: Imported, token: string, message: string, canPaste?: true) {
+  constructor(document: WebReading, token: string, message: string, canPaste?: true) {
     super(422, message, canPaste);
     const text = document.paragraphs.map(p => p.text).join('\n');
     this.preview = { token, title: document.title, excerpt: text.length > 720 ? text.slice(0, 720) + '…' : text };
@@ -87,12 +90,12 @@ export class ImportPreview extends ImportError {
 }
 
 export function createImportReviewer(
-  download: (url: URL) => Promise<Imported>,
+  download: (url: URL) => Promise<WebReading>,
   judge?: (sample: Sample) => Promise<Verdict>,
 ) {
   // Only the single learner's latest review is outstanding. Confirmation saves
   // exactly what was previewed, even when the source changes between clicks.
-  let pending: { url: string; token: string; document: Imported } | undefined;
+  let pending: { url: string; token: string; document: WebReading } | undefined;
   return async (url: URL, acceptPreview?: string) => {
     if (acceptPreview) {
       if (!pending || pending.token !== acceptPreview || pending.url !== url.href)

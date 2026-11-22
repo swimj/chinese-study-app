@@ -1,11 +1,13 @@
-export type ReadingDocument = {
+type ReadingContent = {
   id: string;
   title: string;
   kind: string;
-  sourceUrl?: string;
-  importMethod?: 'paste';
   paragraphs: { id: string; text: string; phrases?: string[]; kind?: 'heading' }[];
 };
+
+export type WebReading = ReadingContent & { sourceUrl: string; importMethod?: 'paste' };
+type ImportedReading = WebReading | (ReadingContent & { sourceUrl?: never; importMethod: 'pdf' });
+export type ReadingDocument = ImportedReading | (ReadingContent & { sourceUrl?: never; importMethod?: never });
 
 export const readingDocuments: ReadingDocument[] = [
   {
@@ -76,7 +78,7 @@ export type Annotation = {
 export type ReadingState = {
   documentId: string;
   positions: Record<string, string>;
-  imports: (ReadingDocument & { sourceUrl: string })[];
+  imports: ImportedReading[];
   annotations: Annotation[];
 };
 
@@ -150,8 +152,8 @@ function discussionSource(document: ReadingDocument, position?: string) {
 
 export function readingSource(state: ReadingState, referenceId: string) {
   const { document, paragraph, annotation } = resolveReadingReference(referenceId, state);
-  if (!paragraph && document.sourceUrl) return discussionSource(document, state.positions[document.id]);
-  const source = [document.title, ...(paragraph ? [paragraph.text] : document.paragraphs.map((entry) => entry.text))];
+  if (!paragraph) return discussionSource(document, state.positions[document.id]);
+  const source = [document.title, paragraph.text];
   if (annotation?.quote) source.push('Selected text: ' + annotation.quote);
   if (annotation) source.push('Learner’s note: ' + annotation.text);
   return source.join('\n');
