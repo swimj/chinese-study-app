@@ -2,8 +2,8 @@ export type ReadingDocument = {
   id: string;
   title: string;
   kind: string;
-  opener: string;
-  paragraphs: { id: string; text: string; phrases?: string[] }[];
+  sourceUrl?: string;
+  paragraphs: { id: string; text: string; phrases?: string[]; kind?: 'heading' }[];
 };
 
 export const readingDocuments: ReadingDocument[] = [
@@ -11,7 +11,6 @@ export const readingDocuments: ReadingDocument[] = [
     id: 'riverside-kiosk',
     title: '河边的报刊亭',
     kind: 'Story',
-    opener: '你住的地方，有没有一个像这座报刊亭一样、让人舍不得的地方？',
     paragraphs: [
       {
         id: 'opening',
@@ -51,7 +50,6 @@ export const readingDocuments: ReadingDocument[] = [
     id: 'after-the-show',
     title: '散场以后',
     kind: 'Short essay',
-    opener: '散场以后，你一般会马上回家吗？',
     paragraphs: [
       {
         id: 'opening',
@@ -77,18 +75,23 @@ export type Annotation = {
 export type ReadingState = {
   documentId: string;
   positions: Record<string, string>;
+  imports: (ReadingDocument & { sourceUrl: string })[];
   annotations: Annotation[];
 };
 
 export function initialReading(): ReadingState {
-  return { documentId: readingDocuments[0].id, positions: {}, annotations: [] };
+  return { documentId: readingDocuments[0].id, positions: {}, annotations: [], imports: [] };
+}
+
+export function documentsFor(reading: ReadingState) {
+  return [...readingDocuments, ...reading.imports];
 }
 
 export class ReadingConflict extends Error {}
 
-export function resolveReadingReference(referenceId: string, state?: ReadingState) {
+export function resolveReadingReference(referenceId: string, state: ReadingState) {
   const [documentId, paragraphId, annotationId, ...rest] = referenceId.split('/');
-  const document = readingDocuments.find((entry) => entry.id === documentId);
+  const document = documentsFor(state).find((entry) => entry.id === documentId);
   if (!document || rest.length) throw new ReadingConflict('This reading is unavailable.');
 
   const paragraph =
@@ -98,7 +101,7 @@ export function resolveReadingReference(referenceId: string, state?: ReadingStat
   const annotation =
     annotationId === undefined
       ? undefined
-      : state?.annotations.find(
+      : state.annotations.find(
           (entry) => entry.documentId === documentId && entry.paragraphId === paragraphId && entry.id === annotationId,
         );
   if (annotationId !== undefined && !annotation) throw new ReadingConflict('This reading note is unavailable.');
@@ -106,7 +109,7 @@ export function resolveReadingReference(referenceId: string, state?: ReadingStat
 }
 
 export function applyReadingPosition(state: ReadingState, documentId: string, paragraphId: string) {
-  const { document, paragraph } = resolveReadingReference(documentId + '/' + paragraphId);
+  const { document, paragraph } = resolveReadingReference(documentId + '/' + paragraphId, state);
   if (!paragraph || document.id !== documentId || paragraph.id !== paragraphId) {
     throw new ReadingConflict('This passage is unavailable.');
   }
@@ -122,7 +125,7 @@ export function addAnnotation(
   quote: string,
   text: string,
 ) {
-  const { document, paragraph } = resolveReadingReference(documentId + '/' + paragraphId);
+  const { document, paragraph } = resolveReadingReference(documentId + '/' + paragraphId, state);
   if (!paragraph || document.id !== documentId || paragraph.id !== paragraphId) {
     throw new ReadingConflict('This passage is unavailable.');
   }
@@ -130,8 +133,23 @@ export function addAnnotation(
   state.annotations.push({ id, documentId, paragraphId, quote, text });
 }
 
+// Whole-article discussions use the learner’s saved place, including when it is near the end of a long work.
+function discussionSource(document: ReadingDocument, position?: string) {
+  const paragraphs = document.paragraphs.map(p => p.text);
+  const body = paragraphs.join('\n');
+  const budget = 6000;
+  if (body.length <= budget) return document.title + '\n' + body;
+  const index = Math.max(0, document.paragraphs.findIndex(p => p.id === position));
+  const offset = paragraphs.slice(0, index).reduce((total, text) => total + text.length + 1, 0);
+  const start = Math.max(0, Math.min(offset - 1500, body.length - budget));
+  const end = start + budget;
+  const excerpt = body.slice(start, end).replace(/^[\uDC00-\uDFFF]|[\uD800-\uDBFF]$/g, '');
+  return document.title + '\n' + (start ? '…' : '') + excerpt + (end < body.length ? '…' : '');
+}
+
 export function readingSource(state: ReadingState, referenceId: string) {
   const { document, paragraph, annotation } = resolveReadingReference(referenceId, state);
+  if (!paragraph && document.sourceUrl) return discussionSource(document, state.positions[document.id]);
   const source = [document.title, ...(paragraph ? [paragraph.text] : document.paragraphs.map((entry) => entry.text))];
   if (annotation?.quote) source.push('Selected text: ' + annotation.quote);
   if (annotation) source.push('Learner’s note: ' + annotation.text);

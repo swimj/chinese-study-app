@@ -1,9 +1,10 @@
 import { createHash, randomUUID } from 'node:crypto';
 import { DatabaseSync } from 'node:sqlite';
 import { z } from 'zod';
+import { articleUrl, importArticle } from './import-reading.ts';
 import {
   initialReading,
-  readingDocuments,
+  documentsFor,
   applyReadingPosition,
   resolveReadingReference,
   readingSource,
@@ -49,6 +50,7 @@ export const actionSchema = z.discriminatedUnion('type', [
     source: source.optional(),
   }),
   z.object({ id, type: z.literal('selectThread'), threadId: text }),
+  z.object({ id, type: z.literal('importReading'), url: z.string().trim().min(1).max(4096) }),
   z.object({ id, type: z.literal('readingPosition'), documentId: text, paragraphId: text }),
   z.object({
     id,
@@ -134,6 +136,7 @@ const initial = (): State => ({
 });
 export const live = !!process.env.OPENAI_API_KEY && process.env.JOURNAL_DEMO !== '1';
 type Backend = {
+  importReading?: (url: URL) => ReturnType<typeof importArticle>;
   tutor: (ctx: TurnContext) => Promise<TutorResult>;
   friend: (ctx: TurnContext) => Promise<string>;
   mode: 'live' | 'demo';
@@ -154,7 +157,12 @@ function publicState(s: State, mode: Backend['mode']) {
     reflections: s.reflections,
     attempts: s.attempts,
     activity: s.activity,
-    reading: { ...s.reading, annotations: readingNotes(s.annotationThreads), documents: readingDocuments },
+    reading: {
+      documentId: s.reading.documentId,
+      positions: s.reading.positions,
+      annotations: readingNotes(s.annotationThreads),
+      documents: documentsFor(s.reading),
+    },
     annotationThreads: s.annotationThreads,
     saved: s.saved,
     learning: s.learning,
@@ -200,7 +208,7 @@ function context(
     topic: chat.title,
     chatHistory: chat.turns,
     annotations: s.annotationThreads.flatMap((t) => {
-      const { title } = resolveAnchor(s.threads, t.anchor);
+      const { title } = resolveAnchor(s, t.anchor);
       return t.messages.map((m) => ({ role: m.role, text: m.text, source: title, quote: t.anchor.quote }));
     }),
     otherChatHistory: s.threads
@@ -269,7 +277,7 @@ function practiceSources(s: State, mode: string): string[] {
   const discussions = s.annotationThreads
     .slice(-8)
     .reverse()
-    .map((t) => describeAnnotation(s.threads, t));
+    .map((t) => describeAnnotation(s, t));
   const readings = s.saved
     .filter((item) => item.kind === 'Reading')
     .slice(-3)
@@ -355,7 +363,7 @@ function resolveReference(s: State, key: string, supplied: string): { reference:
   if (annotation)
     return {
       reference: annotationReference(s, annotation),
-      source: describeAnnotation(s.threads, annotation),
+      source: describeAnnotation(s, annotation),
     };
   const attempt = s.attempts.find((a) => a.id === key);
   if (attempt)
@@ -386,14 +394,14 @@ function resolveReference(s: State, key: string, supplied: string): { reference:
       }),
     };
   }
-  if (key.includes('/') || readingDocuments.some((doc) => doc.id === key)) {
+  if (key.includes('/') || documentsFor(s.reading).some((doc) => doc.id === key)) {
     const reading = { ...s.reading, annotations: readingNotes(s.annotationThreads) };
     const { document, paragraph, annotation } = resolveReadingReference(key, reading);
     const selected = supplied.match(/^Selected text: (.+)$/m)?.[1];
     const quote =
       selected && paragraph?.text.includes(selected) ? selected : annotation?.quote || paragraph?.text || '';
     const original = annotation
-      ? describeAnnotation(s.threads, s.annotationThreads.find((t) => t.id === annotation.id)!)
+      ? describeAnnotation(s, s.annotationThreads.find((t) => t.id === annotation.id)!)
       : readingSource(reading, key);
     return {
       reference: { kind: 'reading', id: key, label: document.title, quote: quote.slice(0, 120) },
@@ -408,7 +416,7 @@ function annotationReference(s: State, thread: AnnotationThread): Reference {
   return {
     kind: 'annotation',
     id,
-    label: resolveAnchor(s.threads, anchor).title,
+    label: resolveAnchor(s, anchor).title,
     quote: anchor.quote,
     threadId: anchor.surface === 'chat' ? anchor.ownerId : undefined,
   };
@@ -422,7 +430,7 @@ function attachTakeaways(
 ): Reflection['takeaways'] {
   return takeaways.map((takeaway, index) => {
     const id = reflectionId + '-takeaway-' + index;
-    const anchor = anchorForQuote(s.threads, 'chat', chatId, takeaway.messageId, takeaway.quote);
+    const anchor = anchorForQuote(s, 'chat', chatId, takeaway.messageId, takeaway.quote);
     s.annotationThreads.push({ id, anchor, messages: [{ role: 'assistant', text: takeaway.text }] });
     return { ...takeaway, annotationId: id };
   });
@@ -445,7 +453,7 @@ async function postAnnotation(
   const reference = annotationReference(s, thread);
   const at = new Date().toISOString();
   if (askTutor) {
-    const source = describeAnnotation(s.threads, thread);
+    const source = describeAnnotation(s, thread);
     const selectedChat =
       thread.anchor.surface === 'chat' ? s.threads.find((t) => t.id === thread.anchor.ownerId) : undefined;
     const ctx = context(s, 'ask', message, thread.anchor.surface, source, selectedChat);
@@ -526,11 +534,21 @@ async function mutate(s: State, a: Action, backend: Backend) {
       if (!s.threads.some((t) => t.id === a.threadId)) throw new JournalConflict('Conversation unavailable.');
       s.activeThreadId = a.threadId;
       return;
+    case 'importReading': {
+      const url = articleUrl(a.url);
+      let document = s.reading.imports.find(entry => entry.sourceUrl === url.href);
+      if (!document) {
+        document = await (backend.importReading ?? importArticle)(url);
+        s.reading.imports.push(document);
+      }
+      s.reading.documentId = document.id;
+      return;
+    }
     case 'readingPosition':
       applyReadingPosition(s.reading, a.documentId, a.paragraphId);
       return;
     case 'annotate': {
-      const anchor = anchorForQuote(s.threads, 'read', a.documentId, a.paragraphId, a.quote);
+      const anchor = anchorForQuote(s, 'read', a.documentId, a.paragraphId, a.quote);
       return postAnnotation(
         s,
         { ...a, type: 'annotationPost', anchor, message: a.text, askTutor: false },
@@ -544,8 +562,11 @@ async function mutate(s: State, a: Action, backend: Backend) {
       const thread = activeThread(s);
       if (a.threadId && a.threadId !== thread.id)
         throw new JournalConflict('The selected conversation changed.');
-      if (a.type === 'reflect') return reflect(s, backend, a.source);
-      const reply = await backend.friend(context(s, 'ask', a.message, 'chat', thread.source || a.source));
+      const source = thread.source || a.source;
+      const imported = s.reading.imports.find(entry => entry.id === source);
+      const discussion = imported ? readingSource(s.reading, imported.id) : undefined;
+      if (a.type === 'reflect') return reflect(s, backend, discussion ?? a.source);
+      const reply = await backend.friend(context(s, 'ask', a.message, 'chat', discussion ?? source));
       thread.turns.push(
         { id: a.id, role: 'user', text: a.message, source: a.source },
         { id: randomUUID(), role: 'assistant', text: reply, source: a.source },
@@ -568,9 +589,12 @@ async function mutate(s: State, a: Action, backend: Backend) {
       applyAction(s, response, ctx, anchor?.reference);
       return;
     }
-    case 'saveReading':
-      keep(s, 'Reading', a.title, a.detail, a.source);
+    case 'saveReading': {
+      const imported = s.reading.imports.find(entry => entry.id === a.source);
+      const detail = imported?.paragraphs.map((p) => p.text).join('\n') ?? a.detail;
+      keep(s, 'Reading', imported?.title ?? a.title, detail, a.source);
       return;
+    }
     case 'practice':
       return startPractice(s, a.mode, backend, a.continue);
     case 'answer':
@@ -665,10 +689,11 @@ export function openJournal(path: string, backend: Backend = engine) {
       }
       delete parsed.chat;
     }
+    parsed.reading.imports ??= [];
     if (!parsed.annotationThreads) {
       parsed.annotationThreads = parsed.reading.annotations.map((note) => ({
         id: note.id,
-        anchor: anchorForQuote(parsed.threads, 'read', note.documentId, note.paragraphId, note.quote),
+        anchor: anchorForQuote(parsed, 'read', note.documentId, note.paragraphId, note.quote),
         messages: [{ role: 'user', text: note.text }],
       }));
       parsed.reading.annotations = [];

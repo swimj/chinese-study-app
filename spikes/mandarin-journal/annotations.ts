@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { readingDocuments, type Annotation } from './reading.ts';
+import { documentsFor, type ReadingState, type Annotation } from './reading.ts';
 
 export class JournalConflict extends Error {}
 
@@ -19,16 +19,18 @@ export type AnnotationThread = { id: string; anchor: Anchor; messages: Annotatio
 type Block = { id: string; text: string; role?: AnnotationMessage['role'] };
 type Conversation = { id: string; title: string; turns: Block[] };
 
+type Sources = { threads: Conversation[]; reading: ReadingState };
+
 function owner(
-  conversations: Conversation[],
+  sources: Sources,
   surface: Anchor['surface'],
   ownerId: string,
 ): { title: string; blocks: Block[] } {
   if (surface === 'read') {
-    const doc = readingDocuments.find((d) => d.id === ownerId);
+    const doc = documentsFor(sources.reading).find((d) => d.id === ownerId);
     if (doc) return { title: doc.title, blocks: doc.paragraphs };
   } else {
-    const chat = conversations.find((c) => c.id === ownerId);
+    const chat = sources.threads.find((c) => c.id === ownerId);
     if (chat) return { title: chat.title, blocks: chat.turns };
   }
   throw new JournalConflict('This annotation source is unavailable.');
@@ -41,8 +43,8 @@ function validOffset(text: string, offset: number) {
   return offset === 0 || text.codePointAt(offset - 1)! <= 0xffff;
 }
 
-export function resolveAnchor(conversations: Conversation[], anchor: Anchor) {
-  const { title, blocks } = owner(conversations, anchor.surface, anchor.ownerId);
+export function resolveAnchor(sources: Sources, anchor: Anchor) {
+  const { title, blocks } = owner(sources, anchor.surface, anchor.ownerId);
   const first = blocks.findIndex((block) => block.id === anchor.startId);
   const last = blocks.findIndex((block) => block.id === anchor.endId);
   if (
@@ -69,13 +71,13 @@ export function resolveAnchor(conversations: Conversation[], anchor: Anchor) {
 
 // Older bookmarks and reflection results identify one block and a quote, without offsets.
 export function anchorForQuote(
-  conversations: Conversation[],
+  sources: Sources,
   surface: Anchor['surface'],
   ownerId: string,
   blockId: string,
   selected: string,
 ): Anchor {
-  const block = owner(conversations, surface, ownerId).blocks.find((entry) => entry.id === blockId);
+  const block = owner(sources, surface, ownerId).blocks.find((entry) => entry.id === blockId);
   if (!block) throw new JournalConflict('This annotation source is unavailable.');
   const quote = selected || block.text;
   const startOffset = block.text.indexOf(quote);
@@ -91,8 +93,8 @@ export function anchorForQuote(
   };
 }
 
-export function describeAnnotation(conversations: Conversation[], { anchor, messages }: AnnotationThread) {
-  const { title, blocks } = resolveAnchor(conversations, anchor);
+export function describeAnnotation(sources: Sources, { anchor, messages }: AnnotationThread) {
+  const { title, blocks } = resolveAnchor(sources, anchor);
   return [
     title,
     ...blocks.map((b) =>
