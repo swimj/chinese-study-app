@@ -501,7 +501,10 @@ async function responseJson(response) {
   if (!response.ok) {
     const error = new Error(typeof body.error === 'string' ? body.error : 'Request failed (' + response.status + ').');
     error.status = response.status;
-    if (response.status === 422) error.preview = body.preview;
+    if (response.status === 422) {
+      error.preview = body.preview;
+      error.canPaste = body.canPaste === true;
+    }
     throw error;
   }
   return body;
@@ -563,7 +566,7 @@ async function runAction(action) {
       delete ui.pending;
       persist();
       if (currentImport() && startingHash === location.hash) {
-        if (page === 'read') reader.importError(action.url, err.message, err.preview);
+        if (page === 'read') reader.importError(action.url, err.message, err.preview, err.canPaste, action.pastedText);
         else showError(err.message);
       }
       return false;

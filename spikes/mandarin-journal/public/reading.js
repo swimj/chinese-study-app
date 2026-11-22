@@ -60,6 +60,7 @@ export function createReading({
   let focusImportedId;
   let importRevision = 0;
   let preview;
+  let pasteUrl;
 
   const back = node('a', '← Journal', 'back');
   back.href = '#home';
@@ -115,20 +116,59 @@ export function createReading({
   }, 'primary');
   accept.dataset.mutation = '';
   previewBox.append(previewTitle, previewExcerpt, accept);
+  const pasteToggle = button('Paste article text', () => openPaste(url.value.trim()), 'secondary');
+  pasteToggle.hidden = true;
+  const pasteBox = node('div', undefined, 'reader-import-paste');
+  pasteBox.hidden = true;
+  const pasteLabel = node('label', 'Article text');
+  const pastedText = node('textarea');
+  pastedText.id = pasteLabel.htmlFor = 'reader-pasted-text';
+  pastedText.rows = 8;
+  pastedText.maxLength = 120000;
+  const pasteSave = node('button', 'Import pasted text', 'primary');
+  pasteSave.type = 'submit';
+  pasteSave.dataset.mutation = '';
+  pasteBox.append(pasteLabel, pastedText, pasteSave);
+  function openPaste(source) {
+    if (pasteUrl !== source) pastedText.value = '';
+    pasteUrl = source;
+    url.value = source;
+    setImportOpen(true);
+    pasteBox.hidden = false;
+    importButton.hidden = pasteToggle.hidden = previewBox.hidden = true;
+    pastedText.required = true;
+    pastedText.focus();
+  }
   function resetImportFeedback() {
     importRevision++;
     preview = undefined;
+    pasteUrl = undefined;
+    pasteBox.hidden = pasteToggle.hidden = true;
+    pastedText.value = '';
+    pastedText.required = false;
+    pastedText.setCustomValidity('');
+    importButton.hidden = false;
     previewBox.hidden = true;
     importError.hidden = true;
   }
   importLine.append(url, importButton);
-  importForm.append(urlLabel, importLine, importError, previewBox);
+  importForm.append(urlLabel, importLine, importError, pasteToggle, previewBox, pasteBox);
   importForm.onsubmit = event => {
     event.preventDefault();
     if (!canSubmit()) return;
+    if (!pasteBox.hidden && pasteUrl === url.value.trim()) {
+      if (!pastedText.value.trim()) {
+        pastedText.setCustomValidity('Paste the article text first.');
+        pastedText.reportValidity();
+        return;
+      }
+      submit({ type: 'importReading', url: pasteUrl, pastedText: pastedText.value });
+      return;
+    }
     resetImportFeedback();
     submit({ type: 'importReading', url: url.value.trim() });
   };
+  pastedText.oninput = () => pastedText.setCustomValidity('');
   url.oninput = resetImportFeedback;
   pickerGroup.append(pickerLabel, picker, importToggle);
   const header = node('div', undefined, 'reader-header');
@@ -159,7 +199,11 @@ export function createReading({
   const passage = node('div', undefined, 'passage reader-passage');
   const importWarning = node('p', '', 'notice');
   importWarning.hidden = true;
-  host.replaceChildren(header, importForm, kind, title, importWarning, resume, passage, tools);
+  const pasteHistorical = button('Paste article text', () => {
+    if (documentView.canPaste) openPaste(documentView.sourceUrl);
+  }, 'secondary');
+  pasteHistorical.hidden = true;
+  host.replaceChildren(header, importForm, kind, title, importWarning, pasteHistorical, resume, passage, tools);
 
   function buildParagraph(documentId, paragraph) {
     const section = node('div', undefined, 'reader-paragraph');
@@ -195,6 +239,7 @@ export function createReading({
     kind.textContent = nextDocument.kind;
     importWarning.textContent = nextDocument.importWarning || '';
     importWarning.hidden = !nextDocument.importWarning;
+    pasteHistorical.hidden = !nextDocument.canPaste;
     picker.value = nextDocument.id;
     passage.replaceChildren(...nextDocument.paragraphs.map((paragraph) => buildParagraph(nextDocument.id, paragraph)));
   }
@@ -211,6 +256,8 @@ export function createReading({
     discuss.disabled = busy;
     importButton.disabled = busy;
     accept.disabled = busy;
+    pasteToggle.disabled = pasteHistorical.disabled = pastedText.readOnly = busy;
+    pasteSave.disabled = busy;
     picker.disabled = state.reading.documents.length < 2;
     for (const [id, row] of rows) {
       row.section.classList.toggle('reader-at-place', id === position);
@@ -321,8 +368,16 @@ export function createReading({
       const revision = importRevision;
       return () => revision === importRevision && (!url.value || url.value.trim() === submittedUrl);
     },
-    importError(submittedUrl, message, candidate) {
+    importError(submittedUrl, message, candidate, canPaste, submittedText) {
+      if (submittedText !== undefined) {
+        openPaste(submittedUrl);
+        pastedText.value = submittedText;
+        importError.textContent = message;
+        importError.hidden = false;
+        return;
+      }
       resetImportFeedback();
+      pasteToggle.hidden = !canPaste;
       url.value = submittedUrl;
       importError.textContent = message;
       importError.hidden = false;

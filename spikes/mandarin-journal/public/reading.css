@@ -109,6 +109,7 @@
 }
 .reader-import label { display: block; margin-bottom: .4rem; }
 .reader-import .notice { margin-bottom: 0; }
+.reader-import-paste, .reader-import .notice + button, .reader-import-paste button { margin-top: .75rem; }
 .reader-import-preview {
   margin-top: .75rem;
   overflow-wrap: anywhere;
