@@ -5,7 +5,7 @@ const verdict = z.enum(['reading', 'verification', 'access', 'unavailable', 'unc
 const outputType = z.object({ verdict, quote: z.string() });
 const runner = new Runner({ tracingDisabled: true });
 
-const model = process.env.JOURNAL_IMPORT_MODEL || 'gpt-5.4-nano';
+const model = process.env.JOURNAL_IMPORT_MODEL || 'gpt-5.4-mini';
 const judge = new Agent({
   name: 'Reading import judge',
   model,

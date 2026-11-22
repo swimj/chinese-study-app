@@ -1,3 +1,4 @@
+import { ImportPreview } from './import-validation.ts';
 import { createServer, type IncomingMessage } from 'node:http';
 import { mkdirSync, readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
@@ -78,7 +79,8 @@ const server = createServer(async (req, res) => {
     }
     throw new RequestError(404, 'Page not found.');
   } catch (err) {
-    if (err instanceof RequestError || err instanceof ImportError) json(err.status, { error: err.message });
+    if (err instanceof ImportPreview) json(err.status, { error: err.message, preview: err.preview });
+    else if (err instanceof RequestError || err instanceof ImportError) json(err.status, { error: err.message });
     else if (err instanceof JournalConflict || err instanceof ReadingConflict)
       json(409, { error: err.message });
     else if (err instanceof ZodError) json(400, { error: 'Invalid journal action.' });

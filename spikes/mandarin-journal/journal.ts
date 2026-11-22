@@ -1,6 +1,8 @@
 import { createHash, randomUUID } from 'node:crypto';
 import { DatabaseSync } from 'node:sqlite';
 import { z } from 'zod';
+import { createImportReviewer, legacyImportWarning } from './import-validation.ts';
+import { judgeImport } from './import-judge.ts';
 import { articleUrl, importArticle } from './import-reading.ts';
 import {
   initialReading,
@@ -56,7 +58,7 @@ export const actionSchema = z.discriminatedUnion('type', [
     source: source.optional(),
   }),
   z.object({ id, type: z.literal('selectThread'), threadId: text }),
-  z.object({ id, type: z.literal('importReading'), url: z.string().trim().min(1).max(4096) }),
+  z.object({ id, type: z.literal('importReading'), url: z.string().trim().min(1).max(4096), acceptPreview: id.optional() }),
   z.object({ id, type: z.literal('readingPosition'), documentId: text, paragraphId: text }),
   z.object({
     id,
@@ -170,7 +172,10 @@ function publicState(s: State, mode: Backend['mode']) {
       documentId: s.reading.documentId,
       positions: s.reading.positions,
       annotations: readingNotes(s.annotationThreads),
-      documents: documentsFor(s.reading),
+      documents: documentsFor(s.reading).map(doc => {
+        const importWarning = legacyImportWarning(doc);
+        return importWarning ? { ...doc, importWarning } : doc;
+      }),
     },
     annotationThreads: s.annotationThreads,
     saved: s.saved,
@@ -535,7 +540,7 @@ async function reflect(s: State, backend: Backend, source: string) {
   });
   logActivity(s, 'Reflected on ' + thread.title, thread.title, reference);
 }
-async function mutate(s: State, a: Action, backend: Backend) {
+async function mutate(s: State, a: Action, backend: Backend, reviewImport: ReturnType<typeof createImportReviewer>) {
   s.notice = '';
   switch (a.type) {
     case 'addWord':
@@ -554,9 +559,13 @@ async function mutate(s: State, a: Action, backend: Backend) {
       return;
     case 'importReading': {
       const url = articleUrl(a.url);
-      let document = s.reading.imports.find(entry => entry.sourceUrl === url.href);
-      if (!document) {
-        document = await (backend.importReading ?? importArticle)(url);
+      let document = s.reading.imports.findLast(entry => entry.sourceUrl === url.href);
+      if (!document || legacyImportWarning(document)) {
+        const previous = document;
+        document = await reviewImport(url, a.acceptPreview);
+        // Earlier journals could save a verification page with annotations on it.
+        // Give a recovered article its own anchors and preserve the original snapshot.
+        if (previous) document = { ...document, id: randomUUID() };
         s.reading.imports.push(document);
       }
       s.reading.documentId = document.id;
@@ -677,6 +686,7 @@ async function mutate(s: State, a: Action, backend: Backend) {
 }
 
 export function openJournal(path: string, backend: Backend = engine) {
+  const reviewImport = createImportReviewer(backend.importReading ?? importArticle, backend.mode === 'live' ? judgeImport : undefined);
   const db = new DatabaseSync(path);
   db.exec(`PRAGMA busy_timeout=5000;
     CREATE TABLE IF NOT EXISTS journal(id INTEGER PRIMARY KEY CHECK (id=1),revision INTEGER NOT NULL,body TEXT NOT NULL);
@@ -831,7 +841,7 @@ export function openJournal(path: string, backend: Backend = engine) {
         throw new JournalConflict('This action ID already identifies a different request.');
       return publicState(s, backend.mode);
     }
-    await mutate(s, a, backend);
+    await mutate(s, a, backend, reviewImport);
     db.exec('BEGIN IMMEDIATE');
     try {
       if (

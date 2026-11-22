@@ -2,13 +2,8 @@ import { parse, type DefaultTreeAdapterTypes as Tree } from 'parse5';
 import { createHash } from 'node:crypto';
 import type { ReadingDocument } from './reading.ts';
 
-export class ImportError extends Error {
-  status: number;
-  constructor(status: number, message: string) {
-    super(message);
-    this.status = status;
-  }
-}
+import { ImportError, inspectReading, rejectionMessage } from './import-validation.ts';
+export { ImportError } from './import-validation.ts';
 
 const omitted = new Set(
   'script style noscript template nav aside footer form button iframe object embed canvas svg math audio video picture select textarea dialog'.split(
@@ -124,8 +119,10 @@ export function extractArticle(
             .map((text) => ({ text })),
         }
       : htmlArticle(input);
-  if (!passages.length || !passages.some((p) => !('kind' in p)))
-    throw new ImportError(422, 'No readable article text was found on this page.');
+  if (!passages.length || !passages.some((p) => !('kind' in p))) {
+    const verdict = inspectReading({ title, paragraphs: passages });
+    throw new ImportError(422, rejectionMessage(verdict) ?? 'No readable article text was found on this page.');
+  }
   if (passages.length > 2000 || passages.reduce((n, p) => n + p.text.length, 0) > 120_000)
     throw new ImportError(413, 'This reading is too long to import.');
   const fallback = mediaType === 'text/plain' ? passages[0].text : url.hostname;
