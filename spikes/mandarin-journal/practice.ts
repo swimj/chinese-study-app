@@ -1,3 +1,4 @@
+import { demoIntake, demoStashGlosses } from './word-intake-demo.ts';
 import type { TurnContext, TutorResult } from './tutor.ts';
 
 export type Card = {
@@ -329,6 +330,23 @@ function recentEvidence(input: TurnContext): string[] {
 }
 
 function practice(input: TurnContext): TutorResult {
+  if (input.practiceWord) {
+    const w = input.practiceWord;
+    const prompt = 'How would you say this in Mandarin? “' + w.translation + '”';
+    if (input.previousPrompts?.includes(prompt)) return response('');
+    return response(w.title + ' (' + w.pinyin + ') · ' + w.meaning, {
+      kind: 'practice',
+      title: w.title,
+      detail: w.meaning,
+      exercise: {
+        kind: 'open',
+        prompt,
+        choices: [],
+        answer: w.example,
+        explanation: 'One natural phrasing is ' + w.example + ' ' + w.meaning,
+      },
+    });
+  }
   const evidence = [input.message, input.source, ...recentEvidence(input)];
   for (const sample of evidence) {
     const candidates = series.filter((item) => item.match.test(sample));
@@ -368,21 +386,11 @@ function stash(input: TurnContext): TutorResult {
     .find(Boolean);
   const title = explicitWord ?? known;
   if (!title) return response('Which Chinese word or expression would you like to keep?');
-  const glosses: Record<string, string> = {
-    透透气: 'Step out for some air or a change of scene.',
-    容易分心: 'Be easily distracted.',
-    分心: 'Have your attention drawn away from what you are doing.',
-    散场: 'An event ends and its audience starts leaving.',
-    内耗: 'Friction within a group or person that uses up energy.',
-    只是: 'Simply or merely, as in 我只是在等。',
-    鸟食: 'Food meant for birds.',
-    喂鸟: 'Feed the birds.',
-    修复: 'Restore something that has been damaged, such as data.',
-  };
+
   return response('I’ve kept ' + title + ' for study.', {
     kind: 'stash',
     title,
-    detail: glosses[title] ?? input.message,
+    detail: demoStashGlosses[title] ?? input.message,
     exercise: null,
   });
 }
@@ -391,6 +399,9 @@ export function demoTutor(input: TurnContext): TutorResult {
   const text = input.message.trim();
   const described = text + '\n' + input.source;
   switch (input.trigger) {
+    case 'wordIntake':
+      if (!input.wordIntake) throw new Error('Missing word intake');
+      return { reply: '', action: null, wordDecision: demoIntake(input.wordIntake) };
     case 'reflect':
       return reflect(input);
     case 'practice':

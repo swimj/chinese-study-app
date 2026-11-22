@@ -1,8 +1,11 @@
 import { Agent, Runner, tool } from '@openai/agents';
 import { z } from 'zod';
+import { wordDecisionSchema, type WordRequest, type WordContent } from './word-intake.ts';
 
 export interface TurnContext {
-  trigger: 'ask' | 'miss' | 'practice' | 'reflect' | 'answer';
+  trigger: 'ask' | 'miss' | 'practice' | 'reflect' | 'answer' | 'wordIntake';
+  wordIntake?: WordRequest;
+  practiceWord?: { title: string } & WordContent;
   message: string;
   surface: string;
   source: string;
@@ -36,6 +39,7 @@ const reflectionSchema = z.object({
 });
 
 const resultSchema = z.object({
+  wordDecision: wordDecisionSchema.nullable().optional(),
   reflection: reflectionSchema.nullable().optional(),
   observation: z.string().nullable().optional(),
   reply: z.string(),
@@ -99,6 +103,14 @@ The application supplies the trigger, current surface, its source, recent tutor 
 
 On ask, first answer what the learner wanted. A bare word in a reading or a question about its sense is an invitation to explain. Save a stash item only on an explicit request to keep the word for study. For it, identify the expression and the meaning intended here, with a brief example when useful. A detail inside a larger fixed expression is not automatically a sense of its component: 过时不候 as a whole says latecomers won't be waited for; do not teach that as an extra sense of 过时. If the requested target or sense genuinely remains unclear, ask one short question and emit no action. A confirmed request to keep a personal thought can yield a note. A request to explain, a hypothetical, a typo, and a switch to English do not authorize adding a study item. Use one action at most; leave it null for ordinary conversation. Never claim a database effect that isn't in the result.
 
+On wordIntake the learner explicitly submitted the wordIntake.text for study, with optional wording about where they met it. Work from that submission and its own history. A fragmentary reply to a clarification answers the previous question, not a new bare-word request. Read the suggestions alongside that reply (including “both” or “the second one”). localWords are existing entries in this journal. When an entry teaches the same reading and intended use, return its reuseId; never invent IDs. There is no external dictionary lookup. A missing local entry says nothing about the validity of the expression.
+
+Decide which learnable Mandarin expression and use the learner meant. Judge what the exact expression contributes. A different setting or object need not be a different sense: 树枝垂到水面 and 垂着头 both illustrate hanging or lowering. A word in a construction can be a good learning target: 有所 in 有所改善 contributes an unspecified degree. A shortened noun like 泡沫 in 包裹底下垫着泡沫 itself names the padding material. Technical and literary uses can be worthwhile, including 双误 for a double fault and 石沉大海 for a message that gets no reply. Do not split an established idiom into its characters. A meaning belonging only to a compound or fixed expression must stay with the whole: 蜘 is a component of 蜘蛛, and the deadline warning in 过时不候 does not establish a deadline sense of 过时. Bound-form evidence is a reason to offer useful compounds, never to manufacture a standalone meaning.
+
+For a clear exact word, quietly return wordDecision.kind=ready with one word. Give its pinyin, a short English gloss specific to this use, a natural Simplified Mandarin example containing the exact title, and a faithful contextual English translation. These examples support teaching and are not claimed to uniquely elicit the word as a cloze. Keep register or tone when it changes practical use: 报备 can be a considerate heads-up or sound controlling depending on the situation. A single everyday foothold suffices. No diagnostic quiz, approval ritual or generic greeting.
+
+If spelling, reading, intended meaning or word boundary changes the target materially, return wordDecision.kind=clarify. Ask one focused question that explains the choice. Offer a few directly usable replies (a compound, labeled reading, or smaller expression); for a piece better studied in parts, offer its useful units and a combined selection when appropriate. The learner can answer in their own words. Ask for the source sentence when no honest candidate is available. Do not substitute, split or accumulate alternatives without their choice. A learner may confirm several proposed expressions in one reply; return one contextual word for each. Keep questions and glosses in English by default with Chinese examples. Set action, reflection and observation to null, reply to an empty string. For all other triggers set wordDecision=null.
+
 The practiceStatus lists the exercises waiting for a future session (pending) and those already in the current session (active). If asked whether an exercise exists, answer from that state and leave action null. If asked to queue one, check whether that intention is already covered. Describe an existing relevant exercise, or return a practice action with a concrete exercise. When a later exercise is explicitly requested, briefly confirm where the learner can find it in Practice. Leave the actual prompt for the practice screen. Saving a word preserves a word and its contextual sense; saving a note preserves the learner's thought. Resolve “that” from the exchange and ask for clarification if it is still ambiguous. Do not turn a request for an explanation or status into an enrollment.
 
 On reflect, miss and answer, set action=null. On reflect, read the complete reflectionTurns for this conversation in order. Consider what the learner tried to communicate across the whole exchange. Return one reflection object. In overview, summarize the actual conversation and communicative progress in a sentence or two. Use that overview as reply. Pick roughly three or four distinct takeaways for a rich conversation and fewer for a brief exchange; zero is fine if you have no evidence. Each takeaway should anchor one observation, idiomatic alternative or fresh possibility to the learner's line via its messageId and an EXACT, contiguous nonempty quote from that learner message. Your text should explain what that specific phrase did or how it could better express the intended meaning. Read both speakers to catch clarifications and avoid reviving misunderstandings the learner has already corrected. If they wrote 等着鸟来喂 and later explained that the birds come to eat seeds, 等着鸟来吃鸟食 makes the birds the eaters; 等着喂鸟 describes waiting to feed them. Where English “only” is involved, distinguish what is limited: 我只在早上等 singles out mornings, whereas 我只是在等 means “I’m just waiting.” Offer such a contrast only when grounded in their intent. For other triggers set reflection=null. If the library learner writes "get distracted", the offered 分心 and 做着做着就干别的去了 are options. Repeating the second after a tutor is evidence of immediate uptake only. The first might be new, familiar, or simply hard to retrieve. An initial explanation can teach an expression through one recognizable situation, as in 我在家容易分心, without putting the learner through a diagnostic drill. If prompted to revisit an unclear phrase, invite a correction before drawing conclusions.
@@ -125,9 +137,11 @@ export async function tutorTurn(input: TurnContext): Promise<TutorResult> {
     tutor,
     JSON.stringify({
       trigger: input.trigger,
+      wordIntake: input.trigger === 'wordIntake' ? input.wordIntake : undefined,
+      practiceWord: input.trigger === 'practice' ? input.practiceWord : undefined,
       surface: input.surface,
       source: input.source,
-      recentTutorTurns: input.tutorHistory.slice(-8),
+      recentTutorTurns: input.trigger === 'wordIntake' ? undefined : input.tutorHistory.slice(-8),
       recentChatTurns:
         input.trigger !== 'reflect' && (input.surface.toLowerCase() === 'chat' || input.trigger === 'practice')
           ? input.chatHistory.slice(-6)
@@ -143,6 +157,12 @@ export async function tutorTurn(input: TurnContext): Promise<TutorResult> {
   );
   const output = result.finalOutput;
   if (!output) throw new Error('Tutor returned no completed turn');
+  if (input.trigger === 'wordIntake') {
+    if (!output.wordDecision || output.action || output.reflection || output.observation)
+      throw new Error('Expected one word intake decision');
+    return { reply: '', action: null, wordDecision: output.wordDecision };
+  }
+  if (output.wordDecision) throw new Error('Unexpected word intake decision');
   if (!output.reply.trim() && !['miss', 'practice'].includes(input.trigger)) {
     throw new Error('Tutor returned no reply');
   }

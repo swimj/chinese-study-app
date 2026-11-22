@@ -66,6 +66,7 @@ test('real SDK uses recall, validates the exercise contract and isolates casual 
     'observation',
     'reflection',
     'reply',
+    'wordDecision',
   ]);
   assert.match(JSON.stringify(requests[1].input), /sample observation/);
   const userPayload = (req) => JSON.parse(req.input.find((item) => item.role === 'user').content);
@@ -141,6 +142,14 @@ test('real SDK uses recall, validates the exercise contract and isolates casual 
   };
   replies = [structured({ reply: '', action: silentCard, reflection: null, observation: null })];
   assert.deepEqual((await tutorTurn({ ...input, trigger: 'practice' })).action, silentCard);
+  const wordIntake = { text: '蜘', context: '蜘蛛', history: [], localWords: [] };
+  const wordDecision = { kind: 'clarify', question: 'Study the whole word 蜘蛛?', suggestions: ['蜘蛛'] };
+  replies = [structured({ reply: '', action: null, wordDecision })];
+  assert.deepEqual((await tutorTurn({ ...input, trigger: 'wordIntake', wordIntake })).wordDecision, wordDecision);
+  assert.deepEqual(userPayload(requests.at(-1)).wordIntake, wordIntake);
+  assert.doesNotMatch(JSON.stringify(requests.at(-1).text.format.schema), /"oneOf"/);
+  replies = [structured({ reply: 'Wrong trigger.', action: null, wordDecision })];
+  await assert.rejects(tutorTurn(input), /Unexpected word intake/);
   replies = [plain('嗯。')];
   assert.equal(await friendTurn(input), '嗯。');
   assert(!JSON.stringify(requests.at(-1)).includes('sample observation'));

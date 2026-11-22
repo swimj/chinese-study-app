@@ -23,10 +23,16 @@ export { JournalConflict } from './annotations.ts';
 import { catalogue, demoFriend, demoTutor, type Card } from './practice.ts';
 import { friendTurn, tutorTurn, type TurnContext, type TutorResult } from './tutor.ts';
 
+import {
+  addWord, addWordAction, clarifyWordAction, retryWordAction, resumeWord, reusableWord, finishWord, wordRequest,
+  OfflineWordUnavailable, type WordIntake, type WordContent, type WordDecision,
+} from './word-intake.ts';
+
 const text = z.string().trim().min(1).max(8000);
 const source = z.string().max(12000);
 const id = z.string().uuid();
 export const actionSchema = z.discriminatedUnion('type', [
+  addWordAction, clarifyWordAction, retryWordAction,
   z.object({
     id,
     type: z.literal('tutor'),
@@ -101,10 +107,11 @@ type Reflection = {
 type Attempt = { id: string; card: Card; answer: string; result: Result };
 type Activity = { id: string; at: string; text: string; source: string; reference?: Reference };
 type QueuedCard = Card & { title?: string; introduction?: string };
-type Item = { id: string; kind: string; title: string; detail: string; source: string; reference?: Reference };
+type Item = { word?: WordContent; id: string; kind: string; title: string; detail: string; source: string; reference?: Reference };
 type Result = { correct: boolean | null; feedback: string };
 type Practice = { started?: boolean; mode: string; cards: QueuedCard[]; index: number; result: Result | null };
 type State = {
+  wordIntakes: WordIntake[];
   tutor: Message[];
   activeThreadId: string;
   threads: Thread[];
@@ -120,6 +127,7 @@ type State = {
   notice: string;
 };
 const initial = (): State => ({
+  wordIntakes: [],
   tutor: [],
   activeThreadId: 'first',
   threads: [{ id: 'first', title: 'Conversation', turns: [] }],
@@ -150,6 +158,7 @@ function publicState(s: State, mode: Backend['mode']) {
     current = p.cards[p.index];
   return {
     mode,
+    wordIntakes: s.wordIntakes.map(({ requestId, ...item }) => item),
     tutor: s.tutor,
     activeThreadId: s.activeThreadId,
     threads: s.threads.map(({ turns, ...thread }) => thread),
@@ -331,6 +340,10 @@ async function startPractice(s: State, mode: string, backend: Backend, continuin
         mode,
         sources[index],
       );
+      const savedWord = s.saved.find(
+        (item) => item.kind === 'Word' && item.title + ' · ' + item.detail === ctx.source,
+      );
+      if (savedWord?.word) ctx.practiceWord = { title: savedWord.title, ...savedWord.word };
       ctx.previousPrompts = [...previousPrompts, ...cards.map((c) => c.prompt)];
       try {
         const response = await backend.tutor(ctx);
@@ -525,6 +538,11 @@ async function reflect(s: State, backend: Backend, source: string) {
 async function mutate(s: State, a: Action, backend: Backend) {
   s.notice = '';
   switch (a.type) {
+    case 'addWord':
+      return addWord(s.wordIntakes, s.saved, a);
+    case 'clarifyWord':
+    case 'retryWord':
+      return resumeWord(s.wordIntakes, a);
     case 'newThread': {
       s.threads.push({ id: a.id, title: a.title.trim(), source: a.source, turns: [] });
       s.activeThreadId = a.id;
@@ -667,6 +685,7 @@ export function openJournal(path: string, backend: Backend = engine) {
   function read() {
     const row = db.prepare('SELECT revision,body FROM journal WHERE id=1').get()!;
     const parsed = JSON.parse(String(row.body)) as State & { chat?: Message[] };
+    parsed.wordIntakes ??= [];
     if (!parsed.threads) {
       const turns = (parsed.chat ?? []).map((turn, i) => ({ ...turn, id: 'legacy-turn-' + i }));
       const birds = turns.some((m) => /鸟|bird|Audubon/i.test(m.text));
@@ -716,6 +735,93 @@ export function openJournal(path: string, backend: Backend = engine) {
     return { revision: Number(row.revision), s: parsed };
   }
   let tail: Promise<unknown> = Promise.resolve();
+  function enqueue<T>(operation: () => T | Promise<T>): Promise<T> {
+    const result = tail.then(operation);
+    tail = result.catch(() => {});
+    return result;
+  }
+
+  let closed = false;
+  let working = false;
+  let wakeRequested = false;
+  // Model work runs outside the user action queue. Only its short commit joins
+  // the queue, so it sees intervening actions and cannot overwrite a user turn.
+  async function prepareWords() {
+    while (!closed) {
+      const { s } = read();
+      const job = s.wordIntakes.find((item) => item.status === 'pending');
+      if (!job) return;
+      const ctx = context(s, 'wordIntake', job.text, 'Add word', job.context || '');
+      ctx.wordIntake = wordRequest(job, s.saved);
+      let decision: WordDecision | undefined;
+      let failure: string | undefined;
+      const reuse = !job.history.length && reusableWord(s.saved, job.text, job.context);
+      try {
+        if (!reuse) {
+          const result = await backend.tutor(ctx);
+          if (!result.wordDecision || result.action) throw new Error('Expected a word intake decision');
+          decision = result.wordDecision;
+        }
+      } catch (error) {
+        failure =
+          error instanceof OfflineWordUnavailable
+            ? error.message
+            : 'The tutor could not prepare this word. Try again.';
+      }
+      await enqueue(() => {
+        if (closed) return;
+        db.exec('BEGIN IMMEDIATE');
+        try {
+          const { s: latest } = read();
+          const intake = latest.wordIntakes.find((item) => item.id === job.id);
+          if (intake?.status === 'pending' && intake.requestId === job.requestId) {
+            if (reuse) {
+              intake.status = 'ready';
+              intake.savedIds = [reuse.id];
+            } else if (decision) {
+              try {
+                finishWord(intake, latest.saved, decision);
+              } catch {
+                failure = 'The tutor returned an incomplete word. Try again.';
+              }
+            }
+            if (failure) {
+              intake.status = 'failed';
+              intake.error = failure;
+            }
+            db.prepare('UPDATE journal SET body=?,revision=revision+1 WHERE id=1').run(
+              JSON.stringify(latest),
+            );
+          }
+          db.exec('COMMIT');
+        } catch (error) {
+          db.exec('ROLLBACK');
+          throw error;
+        }
+      });
+    }
+  }
+  function wakeWords() {
+    if (closed) return;
+    wakeRequested = true;
+    if (working) return;
+    working = true;
+    setImmediate(async () => {
+      try {
+        do {
+          wakeRequested = false;
+          await prepareWords();
+        } while (wakeRequested && !closed);
+      } catch {
+        // A storage failure leaves the pending request durable. Retry after a
+        // short delay without logging learner input or trapping the request loop.
+        setTimeout(wakeWords, 1000).unref();
+      } finally {
+        working = false;
+      }
+    });
+  }
+
   async function perform(a: Action) {
     const hash = createHash('sha256').update(JSON.stringify(a)).digest('hex');
     const old = db.prepare('SELECT fingerprint FROM receipts WHERE id=?').get(a.id);
@@ -740,15 +846,18 @@ export function openJournal(path: string, backend: Backend = engine) {
       db.exec('ROLLBACK');
       throw error;
     }
+    if (a.type === 'addWord' || a.type === 'clarifyWord' || a.type === 'retryWord') wakeWords();
     return publicState(s, backend.mode);
   }
+  wakeWords();
   return {
     get: () => publicState(read().s, backend.mode),
     act(a: Action) {
-      const result = tail.then(() => perform(a));
-      tail = result.catch(() => {});
-      return result;
+      return enqueue(() => perform(a));
     },
-    close: () => db.close(),
+    close() {
+      closed = true;
+      db.close();
+    },
   };
 }
