@@ -1,0 +1,245 @@
+.an-host {
+  position: relative;
+}
+.an-rail {
+  position: absolute;
+  inset-block-start: -.1rem;
+  inset-inline-start: calc(100% + 3px);
+  color: var(--clay);
+  font: 500 .75rem/1 var(--sans);
+  white-space: normal;
+  user-select: none;
+}
+.out > .an-rail {
+  inset-inline-start: auto;
+  inset-inline-end: calc(100% + 3px);
+}
+.an-marker {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  min-width: 1.75rem;
+  min-height: 2rem;
+  padding: 3px;
+  color: var(--clay);
+  border-radius: 5px;
+}
+.an-marker:hover,
+.an-marker[aria-expanded=true],
+.an-marker:focus-visible {
+  background: var(--tint);
+}
+.an-glyph {
+  position: relative;
+  display: inline-block;
+  width: 15px;
+  height: 12px;
+  border: 1.4px solid currentColor;
+  border-radius: 4px 4px 4px 1px;
+  transform: rotate(-5deg);
+}
+.an-glyph::before {
+  content: '';
+  position: absolute;
+  inset: 3px 3px auto;
+  border-block-start: 1px solid;
+}
+.an-glyph::after {
+  content: '';
+  position: absolute;
+  inset: 6px 6px auto 3px;
+  border-block-start: 1px solid;
+}
+.an-count:empty {
+  display: none;
+}
+.an-shortcut:not(:focus-visible) {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  clip-path: inset(50%);
+  overflow: hidden;
+  padding: 0;
+}
+.an-shortcut:focus-visible {
+  position: absolute;
+  inset-inline-end: 0;
+  z-index: 3;
+  width: max-content;
+  padding: .55rem .7rem;
+  background: var(--panel);
+  color: var(--ink);
+  border-radius: 4px;
+}
+.an-quote-action,
+.an-panel {
+  position: fixed;
+  z-index: 100;
+  color: var(--ink);
+  font: 400 .9375rem/1.45 var(--sans);
+}
+.an-quote-action {
+  background: var(--ink);
+  color: var(--bg);
+  border: 1px solid transparent;
+  border-radius: 6px;
+  padding: .35rem .7rem;
+  box-shadow: 0 2px 8px #172a221e;
+}
+.an-quote-action::before {
+  content: '“';
+  display: inline-block;
+  vertical-align: -.12em;
+  margin-inline-end: .34em;
+  font: 600 1.25em/.65 var(--serif);
+}
+.an-panel {
+  width: min(22rem, calc(100vw - 16px));
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+  padding: 12px 14px 10px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  box-shadow: 0 7px 30px #19271f20, 0 1px 6px #19271f0b;
+}
+.an-head {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+}
+.an-quote {
+  flex: 1;
+  min-width: 0;
+  max-height: 5.2em;
+  overflow: auto;
+  margin: 2px 0;
+  border-inline-start: 2px solid var(--clay);
+  padding-inline-start: .65em;
+  font: 400 1rem/1.6 var(--serif);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  scrollbar-width: thin;
+}
+.an-close {
+  flex: none;
+  display: grid;
+  place-items: center;
+  margin: -5px -7px 0 0;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border-radius: 50%;
+  color: var(--quiet);
+  font-size: 21px;
+}
+.an-close:hover {
+  background: var(--tint);
+}
+.an-chooser {
+  max-width: 100%;
+  margin-block-start: 7px;
+  padding: .25em .4em;
+}
+.an-messages {
+  max-height: min(30dvh, 19rem);
+  overflow: auto;
+  scrollbar-width: thin;
+  margin: 10px 0 0;
+  border-block-start: 1px solid var(--line);
+}
+.an-entry {
+  margin: .7em 0;
+}
+.an-author {
+  font-weight: 600;
+  color: var(--quiet);
+  font-size: .8rem;
+}
+.an-text {
+  margin: 1px 0 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.an-input {
+  margin-top: 8px;
+  min-height: 3.4em;
+  padding: 6px 0;
+  border: 0;
+  border-radius: 0;
+  resize: vertical;
+  background: transparent;
+  color: var(--ink);
+}
+.an-input:focus-visible {
+  outline-offset: 2px;
+}
+.an-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 4px 8px;
+  margin-top: 6px;
+}
+.an-actions button {
+  min-height: 34px;
+  padding: 5px 10px;
+  border-radius: 5px;
+  font-weight: 500;
+  font-size: .875rem;
+}
+.an-save {
+  background: var(--solid);
+  color: var(--on);
+}
+.an-ask {
+  color: var(--solid);
+}
+::highlight(journal-note) {
+  text-decoration: underline dotted var(--clay);
+}
+::highlight(journal-open-note) {
+  background-color: color-mix(in srgb, var(--clay) 24%, transparent);
+}
+@media (max-width: 700px) {
+  .reader-prose.an-host {
+    margin-inline-end: 1.75rem;
+  }
+  .an-rail {
+    inset-inline-start: 100%;
+  }
+  .out > .an-rail {
+    inset-inline-end: 100%;
+  }
+}
+@media (pointer: coarse) {
+  .an-marker {
+    min-height: 44px;
+    min-width: 28px;
+  }
+  .an-close,
+  .an-actions button,
+  .an-quote-action {
+    min-height: 44px;
+  }
+  .an-close {
+    min-width: 44px;
+  }
+  .an-input {
+    font-size: 1rem;
+  }
+}
+.out .an-shortcut:focus-visible {
+  inset-inline: 0 auto;
+}
+
+.message.out ::highlight(journal-note) {
+  text-decoration: underline dotted #fcdfac;
+}
+.message.out ::highlight(journal-open-note) {
+  background-color: #fbebbf;
+  color: #213e36;
+}

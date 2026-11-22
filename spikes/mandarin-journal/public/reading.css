@@ -1,0 +1,121 @@
+.reader-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 4px 16px;
+}
+
+.reader-picker {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 4px 10px;
+  min-width: 0;
+  max-width: 100%;
+  color: var(--quiet);
+  font-size: 0.9375rem;
+}
+
+.reader-picker select {
+  min-width: 0;
+  max-width: 100%;
+  min-height: 44px;
+  color: var(--ink);
+}
+
+[data-page='read'] h1 {
+  overflow-wrap: anywhere;
+}
+
+.reader-resume,
+.reader-phrase {
+  color: var(--quiet);
+  font: 0.9375rem/1.5 var(--sans);
+  text-align: start;
+}
+
+.reader-phrase span {
+  color: var(--ink);
+  font-family: var(--han);
+  text-decoration: underline;
+  text-underline-offset: 0.2em;
+  text-decoration-color: var(--clay);
+}
+
+.reader-passage {
+  margin: 28px 0;
+  max-width: 35em;
+}
+
+.reader-paragraph {
+  position: relative;
+}
+
+.reader-paragraph + .reader-paragraph {
+  margin-block-start: 1.45em;
+}
+
+.reader-paragraph .reader-prose {
+  margin: 0;
+  line-height: 1.95;
+  overflow-wrap: anywhere;
+  scroll-margin-block-start: max(1.5rem, 7vh);
+}
+
+.reader-at-place::before {
+  content: '';
+  position: absolute;
+  inset: 0.45em auto auto -0.55em;
+  height: 1.1em;
+  width: 2px;
+  border-radius: 2px;
+  background: var(--clay);
+  pointer-events: none;
+}
+
+.reader-tools {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 2px 20px;
+  max-width: 36rem;
+  border-block-start: 1px solid var(--line);
+  padding-block-start: 10px;
+}
+
+.reader-tools button {
+  text-align: start;
+}
+
+@media (max-width: 680px) {
+  .reader-phrase,
+  .reader-resume,
+  .reader-tools button {
+    min-height: 44px;
+  }
+
+  .reader-at-place::before {
+    inset-inline-start: -0.42em;
+  }
+}
+
+.reader-import {
+  max-width: 40rem;
+  margin: 1rem 0;
+  padding: 1rem;
+  border-inline-start: 3px solid var(--clay);
+  background: var(--panel);
+}
+.reader-import label { display: block; margin-bottom: .4rem; }
+.reader-import .notice { margin-bottom: 0; }
+.reader-import-paste, .reader-import .notice + button, .reader-import-paste button { margin-top: .75rem; }
+.reader-import-preview {
+  margin-top: .75rem;
+  overflow-wrap: anywhere;
+}
+.reader-import-preview p { white-space: pre-line; }
+.reader-paragraph h2.reader-prose {
+  font: 600 1.2em/1.55 var(--han);
+}
+.reader-text { white-space: pre-line; }

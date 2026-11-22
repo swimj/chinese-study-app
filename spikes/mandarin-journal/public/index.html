@@ -1,0 +1,167 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="theme-color" content="#f7faf5" />
+    <title>Mandarin journal</title>
+    <link rel="stylesheet" href="/style.css" />
+    <link rel="stylesheet" href="/reading.css" />
+    <link rel="stylesheet" href="/annotations.css" />
+    <script type="module" src="/app.js"></script>
+  </head>
+  <body>
+    <div class="journal">
+      <header class="masthead">
+        <a class="brand" href="#home" aria-label="Mandarin journal home"
+          ><span class="seal" lang="zh" aria-hidden="true">记</span>Mandarin journal</a
+        >
+        <nav aria-label="Journal">
+          <a href="#home/words" id="word-attention" hidden></a>
+          <a href="#saved" id="saved-link">Saved</a>
+        </nav>
+      </header>
+      <div id="notice" class="notice" role="alert" hidden>
+        <span id="error-message"></span><button id="retry">Retry</button>
+      </div>
+      <div id="layout" class="layout">
+        <main id="content">
+          <section data-page="home">
+            <p class="dateline" id="today"></p>
+            <section class="word-inbox" aria-labelledby="word-heading">
+              <h2 id="word-heading">Words to learn</h2>
+              <form id="word-form">
+                <div class="intake-line">
+                  <label for="word-text" class="sr">Word or phrase to learn</label>
+                  <input id="word-text" maxlength="320" required placeholder="Word or phrase" autocomplete="off" />
+                  <button class="primary" data-mutation>Add word</button>
+                </div>
+                <details id="word-context-toggle" class="word-context">
+                  <summary>Add context</summary>
+                  <label for="word-context" class="sr">Where you saw or heard it</label>
+                  <textarea id="word-context" maxlength="2000" rows="2" placeholder="Where did you see or hear it?"></textarea>
+                </details>
+              </form>
+              <p id="word-status" class="sr" role="status"></p>
+              <p id="word-refresh-error" class="sub" hidden></p>
+              <ul id="word-items" class="word-items"></ul>
+              <button id="word-more" class="text-button" type="button" aria-expanded="false" aria-controls="word-items" hidden></button>
+            </section>
+            <div class="home-spread">
+              <article class="cover">
+                <span class="ribbon" aria-hidden="true"></span>
+                <p class="small">Featured reading</p>
+                <h1 lang="zh">河边的报刊亭</h1>
+                <p class="excerpt" lang="zh">
+                  河边那座旧报刊亭关了三年。青绿色的铁皮被雨冲得发白，玻璃上还贴着一张早已过期的订报广告。
+                </p>
+                <div class="cover-links">
+                  <a class="primary" href="#read/source/riverside-kiosk">Read on <span aria-hidden="true">→</span></a>
+                  <a href="#read/import" class="text-button">Import a reading</a>
+                </div>
+              </article>
+              <nav class="home-actions" aria-label="Activities">
+                <a
+                  href="#chat"
+                  class="activity"
+                  aria-label="Start or resume a conversation in Chinese"
+                  title="Conversation in Chinese"
+                  ><span class="chat-symbol" aria-hidden="true"></span
+                  ><span class="arrow" aria-hidden="true">↗</span></a
+                >
+                <a href="#practice" class="activity"
+                  ><span><strong>Practice</strong><span class="sub" id="home-mode">Daily mix</span></span
+                  ><span class="arrow" aria-hidden="true">→</span></a
+                >
+              </nav>
+            </div>
+            <div id="recent" class="recent" hidden>
+              <span class="small">Last opened</span><a id="recent-link" href="#read"></a>
+            </div>
+          </section>
+          <section data-page="read" hidden class="page article"></section>
+          <section data-page="chat" hidden class="page">
+            <a class="back" href="#home">← Journal</a>
+            <h1>Conversation</h1>
+            <div class="thread-tools">
+              <label for="thread-picker">Topic</label>
+              <select id="thread-picker" data-mutation></select>
+              <button id="new-thread" data-mutation type="button" aria-expanded="false" aria-controls="thread-form">New conversation</button>
+            </div>
+            <form id="thread-form" class="thread-form" hidden>
+              <label for="thread-title">New topic</label>
+              <input id="thread-title" maxlength="100" required placeholder="周末的打算" />
+              <button class="primary">Start</button><button type="button" id="cancel-thread">Cancel</button>
+            </form>
+            <div id="chat-messages" class="chat-messages" role="log" aria-label="Casual conversation"></div>
+            <form id="chat-form">
+              <label class="sr" for="chat-draft">Your message to your conversation partner</label>
+              <textarea name="message" id="chat-draft" rows="2" required maxlength="1600" placeholder="写点什么……"></textarea>
+              <div class="tools">
+                <button class="primary">Send</button><button id="reflect" type="button">Reflect with tutor</button>
+              </div>
+            </form>
+          </section>
+          <section data-page="practice" hidden class="page">
+            <a class="back" href="#home">← Journal</a>
+            <h1>Practice</h1>
+            <div id="attempt-detail" hidden></div>
+            <div id="active-practice">
+            <label class="mode-label" for="practice-mode"
+              >Session
+              <select id="practice-mode">
+                <option>Daily mix</option>
+                <option>Past mistakes</option>
+                <option>Build vocabulary</option>
+              </select></label
+            >
+            <p id="session-notice" class="notice" role="status" hidden></p>
+            <div id="practice-body"></div>
+            </div>
+          </section>
+          <section data-page="saved" hidden class="page">
+            <a class="back" href="#home">← Journal</a>
+            <h1>Saved</h1>
+            <div id="saved-items" class="collection"></div>
+            <details id="margin-index" class="activity-disclosure" hidden>
+              <summary>Margin notes</summary>
+              <ul id="margin-notes"></ul>
+            </details>
+            <details id="activity-disclosure" class="activity-disclosure">
+              <summary>Journal activity</summary>
+              <ol id="activity-list"></ol>
+            </details>
+          </section>
+        </main>
+        <aside id="tutor" aria-label="Tutor">
+          <button class="tutor-handle" id="tutor-toggle" type="button" aria-controls="tutor-body" aria-expanded="false" aria-label="Expand tutor">
+            <span class="avatar" lang="zh" aria-hidden="true">师</span>
+            <span>Tutor</span><span class="tuck-chevron" aria-hidden="true"></span>
+          </button>
+          <div class="tutor-fold"><div id="tutor-body" inert aria-hidden="true">
+          <div id="tutor-messages" role="log" aria-label="Tutor conversation" class="thread"></div>
+          <div id="tutor-context" class="tutor-context" hidden>
+            <span id="tutor-context-label"></span>
+            <button id="clear-context" type="button" aria-label="Remove source from question">×</button>
+          </div>
+          <form id="tutor-form" class="composer">
+            <label for="tutor-draft" class="sr">Message tutor</label
+            ><input
+              id="tutor-draft"
+              name="message"
+              placeholder="Message tutor…"
+              required
+              maxlength="1600"
+              autocomplete="off"
+            /><button aria-label="Send message to tutor">↑</button>
+          </form>
+          </div></div>
+        </aside>
+      </div>
+      <footer>
+        <span class="runtime" id="runtime" role="status"></span>
+      </footer>
+      <p class="sr" id="pending" role="status" aria-live="polite"></p>
+    </div>
+  </body>
+</html>

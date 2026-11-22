@@ -1,0 +1,24 @@
+{
+  "name": "mandarin-journal-prototype",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=24.13"
+  },
+  "scripts": {
+    "start": "node --env-file-if-exists=.env server.ts",
+    "check": "tsc --noEmit",
+    "test": "node --test *.test.ts *.test.mjs"
+  },
+  "dependencies": {
+    "@openai/agents": "0.22.0",
+    "ipaddr.js": "^2.5.0",
+    "parse5": "^8.1.1",
+    "pdfjs-dist": "6.5.438",
+    "zod": "^4.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "typescript": "^5.9.3"
+  }
+}
