@@ -8,7 +8,7 @@
   "scripts": {
     "start": "node --env-file-if-exists=.env server.ts",
     "check": "tsc --noEmit",
-    "test": "node --test server.test.ts sdk.test.mjs"
+    "test": "node --test *.test.ts *.test.mjs"
   },
   "dependencies": {
     "@openai/agents": "0.22.0",

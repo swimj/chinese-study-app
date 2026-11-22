@@ -14,6 +14,7 @@ const port = Number(process.env.JOURNAL_PORT || 4317);
 const files = new Map([
   ['/', ['index.html', 'text/html']],
   ['/app.js', ['app.js', 'text/javascript']],
+  ['/words.js', ['words.js', 'text/javascript']],
   ['/annotations.js', ['annotations.js', 'text/javascript']],
   ['/annotations.css', ['annotations.css', 'text/css']],
   ['/reading.js', ['reading.js', 'text/javascript']],
