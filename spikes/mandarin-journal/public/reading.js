@@ -82,6 +82,7 @@ export function createReading({
   importToggle.setAttribute('aria-controls', importForm.id);
   function setImportOpen(open) {
     importForm.hidden = !open;
+    pasteHistorical.hidden = open || !documentView?.canPaste;
     importToggle.setAttribute('aria-expanded', String(open));
     if (open) url.focus();
     else resetImportFeedback();
@@ -122,9 +123,9 @@ export function createReading({
   pasteBox.hidden = true;
   const pasteLabel = node('label', 'Article text');
   const pastedText = node('textarea');
-  pastedText.id = pasteLabel.htmlFor = 'reader-pasted-text';
+  pastedText.id = 'reader-pasted-text';
+  pasteLabel.htmlFor = pastedText.id;
   pastedText.rows = 8;
-  pastedText.maxLength = 120000;
   const pasteSave = node('button', 'Import pasted text', 'primary');
   pasteSave.type = 'submit';
   pasteSave.dataset.mutation = '';
@@ -135,7 +136,9 @@ export function createReading({
     url.value = source;
     setImportOpen(true);
     pasteBox.hidden = false;
-    importButton.hidden = pasteToggle.hidden = previewBox.hidden = true;
+    importButton.hidden = true;
+    pasteToggle.hidden = true;
+    previewBox.hidden = true;
     pastedText.required = true;
     pastedText.focus();
   }
@@ -143,7 +146,8 @@ export function createReading({
     importRevision++;
     preview = undefined;
     pasteUrl = undefined;
-    pasteBox.hidden = pasteToggle.hidden = true;
+    pasteBox.hidden = true;
+    pasteToggle.hidden = true;
     pastedText.value = '';
     pastedText.required = false;
     pastedText.setCustomValidity('');
@@ -157,12 +161,13 @@ export function createReading({
     event.preventDefault();
     if (!canSubmit()) return;
     if (!pasteBox.hidden && pasteUrl === url.value.trim()) {
-      if (!pastedText.value.trim()) {
-        pastedText.setCustomValidity('Paste the article text first.');
+      const text = pastedText.value.trim();
+      if (!text || text.length > 120000) {
+        pastedText.setCustomValidity(text ? 'Choose up to 120,000 characters to import.' : 'Paste the article text first.');
         pastedText.reportValidity();
         return;
       }
-      submit({ type: 'importReading', url: pasteUrl, pastedText: pastedText.value });
+      submit({ type: 'importReading', url: pasteUrl, pastedText: text });
       return;
     }
     resetImportFeedback();
@@ -239,7 +244,7 @@ export function createReading({
     kind.textContent = nextDocument.kind;
     importWarning.textContent = nextDocument.importWarning || '';
     importWarning.hidden = !nextDocument.importWarning;
-    pasteHistorical.hidden = !nextDocument.canPaste;
+    pasteHistorical.hidden = !importForm.hidden || !nextDocument.canPaste;
     picker.value = nextDocument.id;
     passage.replaceChildren(...nextDocument.paragraphs.map((paragraph) => buildParagraph(nextDocument.id, paragraph)));
   }
@@ -256,7 +261,8 @@ export function createReading({
     discuss.disabled = busy;
     importButton.disabled = busy;
     accept.disabled = busy;
-    pasteToggle.disabled = pasteHistorical.disabled = pastedText.readOnly = busy;
+    pasteToggle.disabled = pasteHistorical.disabled = busy;
+    pastedText.readOnly = busy;
     pasteSave.disabled = busy;
     picker.disabled = state.reading.documents.length < 2;
     for (const [id, row] of rows) {
