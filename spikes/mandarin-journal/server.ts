@@ -8,12 +8,23 @@ import { ImportError } from './article.ts';
 import { ReadingConflict } from './reading.ts';
 import { ZodError } from 'zod';
 import { actionSchema, engine, JournalConflict, openJournal } from './journal.ts';
+import { buildFixture } from './fixture.ts';
+import { resolveStorage } from './storage.ts';
 
 const dir = dirname(fileURLToPath(import.meta.url));
-const storage = process.env.JOURNAL_DB || join(dir, '.local', engine.mode + '.sqlite');
+let resolved;
+try {
+  resolved = await resolveStorage({ checkout: dir });
+} catch (err) {
+  console.error((err as Error).message);
+  process.exit(1);
+}
+const storage = resolved.path;
 mkdirSync(dirname(storage), { recursive: true });
+if (resolved.profile === 'fixture' && resolved.fresh) await buildFixture(storage);
 const journal = openJournal(storage);
-const port = Number(process.env.JOURNAL_PORT || 4317);
+const defaultPorts = { live: 4317, copy: 4319, fixture: 4320, custom: 4320 } as const;
+const port = Number(process.env.JOURNAL_PORT || defaultPorts[resolved.profile]);
 const files = new Map([
   ['/', ['index.html', 'text/html']],
   ['/app.js', ['app.js', 'text/javascript']],
@@ -124,5 +135,8 @@ const server = createServer(async (req, res) => {
   }
 });
 server.listen(port, '127.0.0.1', () =>
-  console.log('Mandarin Journal · ' + engine.mode + ' · http://127.0.0.1:' + port),
+  console.log(
+    'Mandarin Journal · ' + resolved.profile + ' journal · ' + engine.mode + ' tutor · http://127.0.0.1:' + port +
+      '\n  ' + storage + (resolved.snapshot ? '\n  snapshot ' + resolved.snapshot : ''),
+  ),
 );
