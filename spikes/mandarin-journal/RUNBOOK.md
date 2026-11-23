@@ -56,6 +56,11 @@ overrides that refusal. Use it only on purpose, and never from an agent.
   of the live journal and leaves the original untouched; it is safe while the
   live server runs. Then run `npm run start:copy`. Everything written there
   stays in the copy. To refresh the copy, pass `--force`.
+- `npm run journal:media-report` lists what the picture job decided and what
+  the board shows, with reasons. It reads the fixture by default;
+  `-- --copy` or `-- --live` reads the copy or the live journal without
+  opening it for work, and `-- --json` prints the data. Its output quotes the
+  journal, so treat a report on real data like a copy.
 - Set `JOURNAL_PORT` when several checkouts run at once. `JOURNAL_DB=<path>`
   opens an arbitrary file for one-off investigations.
 - Treat copies as personal data. Don't commit them or paste them into issues,

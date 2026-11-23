@@ -1,9 +1,9 @@
 # Media on the board
 
-**Status: being built.** The data model, both policies, `find_image`, the
-`mediaConsider` situation, the media job and the learner surface are
-implemented (`media/`, `situations/media.ts`, `public/media-policy.js`,
-`public/scrapbook.js`).
+**Status: first cut implemented** (`media/`, `situations/media.ts`,
+`public/media-policy.js`, `public/scrapbook.js`, `media-report.ts`). The
+notes in each section record where the implementation settled something the
+proposal left open.
 
 This document is for anyone deciding how pictures, and later other media,
 appear in the scrapbook without the learner asking for them. It explains the
@@ -261,3 +261,9 @@ A Graphite stack, each branch reviewable alone:
   large?
 - When generated illustrations arrive, they get their own `truthfulness`
   value and kind, and their own mix target. Which house style?
+- A Wikidata item's own image (P18) for a generic concept is often a Western
+  example. In the first live check, 报刊亭 resolved to a Paris newsagent's
+  shop and 鸟食 to a blue tit at a feeder, and the model rejected both as the
+  wrong sense or no help. Placed cultural pictures may need another source of
+  candidates, such as a Commons category for the Chinese variant, before the
+  worked examples above happen in practice.
