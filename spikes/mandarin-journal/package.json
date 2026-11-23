@@ -15,7 +15,8 @@
     "journal:fixture": "node journal-cli.ts fixture",
     "journal:media-report": "node media-report.ts",
     "check": "tsc --noEmit",
-    "test": "node --test *.test.ts *.test.mjs"
+    "test": "node --test *.test.ts *.test.mjs lookup-experiment/*.test.ts",
+    "lookup:eval": "node lookup-experiment/run.ts"
   },
   "dependencies": {
     "@openai/agents": "0.22.0",
