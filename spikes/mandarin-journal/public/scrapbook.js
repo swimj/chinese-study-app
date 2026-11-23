@@ -234,6 +234,7 @@ export function createScrapbook({ host, viewport, world, node, link, getState, r
     const tag = scrap.href ? 'a' : 'article';
     const el = node(tag, undefined, 'scrap scrap-' + scrap.kind);
     if (scrap.href) el.href = scrap.href;
+    else if (!list) el.tabIndex = 0;
     if (!list) el.style.setProperty('--tilt', tilt(scrap.id, 1.6).toFixed(2) + 'deg');
     if (scrap.kind === 'line') {
       el.append(node('q', scrap.quote, 'yours zh-line'));
@@ -333,6 +334,43 @@ export function createScrapbook({ host, viewport, world, node, link, getState, r
   new ResizeObserver(() => layout()).observe(viewport);
   narrow.addEventListener('change', () => { positioned = false; layout(); });
 
+  // Picking: point at a piece to talk about it. No per-piece controls are drawn.
+  let picking;
+  function describe(piece) {
+    const cluster = piece.closest('.cluster');
+    const title = cluster?.querySelector('.cluster-title')?.textContent || '';
+    const lead = (piece.querySelector('q, mark, strong, .cluster-title') || piece).textContent.trim();
+    const text = piece.innerText.replace(/\s+/g, ' ').trim();
+    return { label: lead.length > 24 ? lead.slice(0, 23) + '…' : lead, source: [title, text].filter(Boolean).join('\n') };
+  }
+  function stopPicking() {
+    if (!picking) return;
+    host.classList.remove('picking');
+    document.body.classList.remove('picking-piece');
+    const done = picking.done;
+    picking = undefined;
+    done?.();
+  }
+  function clearAsked() {
+    for (const el of world.querySelectorAll('.asked')) el.classList.remove('asked');
+  }
+  world.addEventListener('click', (e) => {
+    if (!picking) return;
+    const piece = e.target.closest('.scrap, .cluster-head');
+    if (!piece) return;
+    e.preventDefault();
+    e.stopPropagation();
+    clearAsked();
+    piece.classList.add('asked');
+    const onPick = picking.onPick;
+    stopPicking();
+    onPick(describe(piece));
+  }, true);
+  world.addEventListener('keydown', (e) => {
+    if (picking && e.key === 'Enter' && e.target.matches('.scrap')) { e.preventDefault(); e.target.click(); }
+  });
+  document.addEventListener('keydown', (e) => { if (picking && e.key === 'Escape') { e.preventDefault(); stopPicking(); } });
+
   function clusterNode(c, state, list) {
     const section = node('section', undefined, 'cluster cluster-' + c.kind);
     section.dataset.key = c.key;
@@ -360,5 +398,14 @@ export function createScrapbook({ host, viewport, world, node, link, getState, r
       container.replaceChildren(...clusters.map((c) => clusterNode(c, state, true)));
     },
     fit,
+    pick(onPick, done) {
+      stopPicking();
+      picking = { onPick, done };
+      host.classList.add('picking');
+      document.body.classList.add('picking-piece');
+      world.querySelector('.scrap')?.focus({ preventScroll: true });
+    },
+    stopPicking,
+    clearAsked,
   };
 }
