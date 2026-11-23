@@ -11,9 +11,11 @@ npm ci
 npm start
 ```
 
-Open **http://127.0.0.1:4317**. With no API key the footer says **Demo tutor** and the server uses short scripted examples. The scripted tutor has examples for birdwatching, 只 and 只是, 透透气, and getting distracted at the library.
+Open the address printed at startup (**http://127.0.0.1:4320** for the default fixture). With no API key the footer says **Demo tutor** and the server uses short scripted examples. The scripted tutor has examples for birdwatching, 只 and 只是, 透透气, and getting distracted at the library.
 
-To use the real agent, supply `OPENAI_API_KEY` in the environment or in a local, ignored `.env`. The default model is `gpt-6-sol`; set `JOURNAL_MODEL` to change it. The footer says **Live tutor** when provider mode is configured. A learner action can send its text, source passage or exercise, and relevant journal history to the model. `JOURNAL_DEMO=1` forces offline mode. `JOURNAL_PORT` sets the loopback port, and `JOURNAL_DB` selects a different database path. The default databases are `.local/live.sqlite` and `.local/demo.sqlite`.
+To use the real agent, supply `OPENAI_API_KEY` in the environment or in a local, ignored `.env`. The default model is `gpt-6-sol`; set `JOURNAL_MODEL` to change it. The footer says **Live tutor** when provider mode is configured. A learner action can send its text, source passage or exercise, and relevant journal history to the model. `JOURNAL_DEMO=1` forces offline mode.
+
+Which journal opens is separate from the tutor mode. `npm start` opens this checkout's fixture, a realistic demo week built on first start. `npm run start:live` opens the real journal, which lives outside every checkout and only opens from the primary checkout. `npm run start:copy` opens a copy of it made with `npm run journal:copy-live`. The [runbook](RUNBOOK.md) covers paths, ports, updates, backups and restore.
 
 ## Try a learner journey
 
