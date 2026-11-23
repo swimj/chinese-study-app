@@ -120,30 +120,6 @@ main {
 .dateline {
   margin: 28px 0 16px;
 }
-.home-spread {
-  display: grid;
-  grid-template-columns: minmax(0, 1.55fr) minmax(0, 1fr);
-  gap: clamp(24px, 4vw, 54px);
-}
-.cover {
-  position: relative;
-  border-left: 4px solid var(--solid);
-  background: var(--tint);
-  padding: clamp(24px, 4vw, 48px);
-}
-.cover .small {
-  margin: 0;
-}
-.ribbon {
-  position: absolute;
-  top: 0;
-  right: 8%;
-  width: 14px;
-  height: 32px;
-  background: var(--clay);
-  clip-path: polygon(0 0, 100% 0, 100% 100%, 50% 78%, 0 100%);
-}
-.cover h1,
 .article h1 {
   font: 500 clamp(44px, 6.4vw, 82px) / 1.2 var(--han);
   letter-spacing: -0.045em;
@@ -165,58 +141,11 @@ main {
   border-radius: 4px;
   padding: 9px 16px;
 }
-.cover .primary {
-  margin: 9px 0 1px;
-}
-.home-actions {
-  display: grid;
-  align-content: center;
-}
-.activity {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  min-height: 87px;
-  padding: 18px 0;
-  border-top: 1px solid var(--line);
-}
-.activity:last-child {
-  border-bottom: 1px solid var(--line);
-}
-.activity strong {
-  font: normal clamp(30px, 3.7vw, 48px) / 1.1 var(--serif);
-  letter-spacing: -0.035em;
-}
 .sub {
   display: block;
   margin: 6px 0 0;
   color: var(--quiet);
   font-size: 0.9rem;
-}
-.arrow {
-  color: var(--clay);
-  font-size: 24px;
-  padding: 0 2px;
-}
-.chat-symbol {
-  position: relative;
-  display: block;
-  width: 43px;
-  height: 30px;
-  border: 2px solid var(--ink);
-  border-radius: 14px 14px 14px 5px;
-}
-.chat-symbol:after {
-  position: absolute;
-  content: '';
-  left: 5px;
-  bottom: -6px;
-  width: 8px;
-  height: 8px;
-  transform: skewY(-30deg);
-  background: var(--bg);
-  border-left: 2px solid var(--ink);
-  border-bottom: 2px solid var(--ink);
 }
 .recent,
 .tools,
@@ -372,7 +301,7 @@ textarea {
   transition: grid-template-rows var(--tutor-duration) var(--tutor-ease), opacity 200ms;
 }
 .with-tutor .tutor-fold { grid-template-rows: 1fr; opacity: 1; }
-#tutor-body { min-height: 0; overflow: hidden; }
+#tutor-body { position: relative; min-height: 0; overflow: hidden; }
 .avatar {
   border-radius: 50%;
   background: var(--tint);
@@ -472,12 +401,6 @@ footer {
   height: 1px;
   overflow: hidden;
 }
-.with-tutor .home-spread {
-  display: block;
-}
-.with-tutor .home-actions {
-  margin-top: 12px;
-}
 @media (max-width: 860px) {
   .layout, .layout.with-tutor { display: block; }
   .journal { padding-bottom: calc(4.5rem + env(safe-area-inset-bottom)); }
@@ -498,16 +421,6 @@ footer {
   .layout, #tutor, .tutor-fold, .tuck-chevron { transition: none; }
 }
 @media (max-width: 600px) {
-  .home-spread {
-    display: block;
-  }
-  .home-actions {
-    margin-top: 20px;
-  }
-  .activity {
-    padding: 13px 0;
-    min-height: 66px;
-  }
   .brand {
     font-size: 23px;
   }
@@ -518,12 +431,6 @@ footer {
   }
   .dateline {
     margin: 18px 0 11px;
-  }
-  .cover h1 {
-    margin-top: 15px;
-  }
-  .cover {
-    padding: 22px;
   }
   .excerpt {
     font-size: 20px;
@@ -757,22 +664,6 @@ footer {
 }
 .composer input:focus-visible { outline: none; }
 
-.word-inbox {
-  display: grid;
-  grid-template-columns: minmax(12rem, .7fr) minmax(0, 1.3fr);
-  align-items: start;
-  gap: .5rem 2rem;
-  margin-bottom: clamp(1.25rem, 3vw, 2.25rem);
-  padding: clamp(1rem, 2.1vw, 1.8rem);
-  border: 1px solid var(--line);
-  border-block-start: 3px solid var(--clay);
-  background: var(--panel);
-}
-.word-inbox h2 {
-  margin: 0;
-  font: 500 clamp(1.75rem, 3vw, 2.55rem)/1.15 var(--serif);
-  letter-spacing: -.035em;
-}
 .intake-line {
   display: flex;
   gap: .5rem;
@@ -819,11 +710,6 @@ footer {
 .word-choices button { background: var(--tint); }
 .word-items .intake-line { max-width: 38rem; margin-top: .5rem; }
 #word-more, #word-refresh-error { grid-column: 1/-1; justify-self: start; }
-.cover-links { display: flex; flex-wrap: wrap; align-items: baseline; gap: .5rem 1.4rem; }
-@container (max-width: 36rem) {
-  .word-inbox { grid-template-columns: minmax(0, 1fr); gap: .75rem; }
-}
-[data-page="home"] { container-type: inline-size; }
 
 .masthead { flex-wrap: wrap; gap: .2rem 1.2rem; }
 .masthead nav { display: flex; align-items: baseline; gap: .4rem 1.2rem; flex-wrap: wrap; }

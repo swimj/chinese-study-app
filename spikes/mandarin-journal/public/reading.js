@@ -415,8 +415,9 @@ export function createReading({
       applyEntry();
       update();
     },
-    openImport() {
+    openImport(prefill = '') {
       setImportOpen(true);
+      if (prefill) url.value = prefill;
     },
     resetImportFeedback,
     pdfMessage,

@@ -1,6 +1,7 @@
 import { createWordInbox } from './words.js';
 import { createAnnotations } from './annotations.js';
 import { createReading, readingLabel, referenceForSource } from './reading.js';
+import { createScrapbook, todayStep } from './scrapbook.js';
 
 const get = (id) => document.getElementById(id);
 const labels = { home: 'Journal', read: 'Reading', chat: 'Conversation', practice: 'Practice', saved: 'Saved' };
@@ -88,6 +89,21 @@ const annotations = createAnnotations({
 });
 const wordInbox = createWordInbox({
   get, node, button, submit, ui, persist,
+  hideReady: true,
+  intercept: (text, context) => {
+    const kind = captureKind(text);
+    if (kind === 'link') {
+      importUrl = text;
+      location.hash = 'read/import';
+      return true;
+    }
+    if (kind === 'passage') {
+      setTutor(true);
+      submit({ type: 'tutor', message: [text, context].filter(Boolean).join('\n'), surface: 'home', source: context || '' });
+      return true;
+    }
+    return false;
+  },
   canSubmit: () => Boolean(state && !busy && !ui.pending),
   refresh: async () => {
     const revision = requestRevision;
@@ -110,6 +126,35 @@ const reader = createReading({
   submit, discussInChinese,
   navigate: (dest, ref) => { location.hash = href(dest, ref ? 'source' : '', ref); },
 });
+let importUrl = '';
+// A drop is a word unless it is plainly a link or a whole sentence.
+function captureKind(text) {
+  const value = text.trim();
+  if (/^https?:\/\/\S+$/i.test(value)) return 'link';
+  if (value.length > 24 || /[。！？!?；;]|[，,].{4,}/.test(value)) return 'passage';
+  return 'word';
+}
+const captureLabels = { word: 'Add word', link: 'Import reading', passage: 'Ask tutor' };
+get('word-text').addEventListener('input', () => {
+  get('capture-submit').textContent = captureLabels[captureKind(get('word-text').value)];
+});
+const scrapbook = createScrapbook({
+  host: get('scrapbook'), viewport: get('scrap-viewport'), world: get('scrap-world'),
+  node, link, ui, persist, readingLabel,
+  getState: () => state,
+  openThread: async (id) => {
+    if (id === state.activeThreadId || await submit({ type: 'selectThread', threadId: id })) location.hash = 'chat';
+  },
+});
+function renderToday() {
+  const step = todayStep(state, { readingLabel });
+  const text = get('today-text');
+  text.textContent = step.text;
+  if (step.lang) text.lang = step.lang; else text.removeAttribute('lang');
+  get('today-action').textContent = step.label;
+  get('today-action').href = step.href;
+  for (const place of document.querySelectorAll('.places a')) place.hidden = place.getAttribute('href') === step.href.split('/')[0];
+}
 get('today').textContent = new Intl.DateTimeFormat(undefined, {
   weekday: 'long', month: 'long', day: 'numeric',
 }).format(new Date());
@@ -287,7 +332,6 @@ function renderPractice() {
   const record = get('attempt-detail');
   get('active-practice').hidden = historical;
   record.hidden = !historical;
-  get('home-mode').textContent = mode;
   get('practice-mode').value = mode;
   const attempt = historical ? state.attempts.find((a) => a.id === target.id)
     : result && state.attempts.findLast((a) => a.card.id === card?.id);
@@ -395,6 +439,8 @@ function renderState() {
   renderSaved();
   wordInbox.render(state);
   reader.render(state);
+  renderToday();
+  scrapbook.render();
   markBusy(busy);
 }
 function focusTarget(el) {
@@ -414,6 +460,7 @@ async function navigate(initial = false) {
     renderTutorContext();
   }
   for (const section of document.querySelectorAll('[data-page]')) section.hidden = section.dataset.page !== page;
+  document.body.dataset.view = page;
   if (page === 'practice' && ui.tutorOpen === undefined) setTutor(matchMedia('(min-width: 861px)').matches, false, false);
   else setTutor(Boolean(ui.tutorOpen), false, false);
   if (page !== 'home' && page !== 'saved') ui.recent = page;
@@ -446,7 +493,7 @@ async function navigate(initial = false) {
       : target.kind === 'source' && target.id ? target.id : state.reading.documentId;
     if (!reader.openReference(requested)) showError('This reading location could not be found.');
     reader.enter();
-    if (target.kind === 'import') reader.openImport();
+    if (target.kind === 'import') { reader.openImport(importUrl); importUrl = ''; }
   }
   if (note) {
     if (page === 'chat' && note.anchor.ownerId !== state.activeThreadId) {
