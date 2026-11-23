@@ -1,9 +1,10 @@
 import assert from 'node:assert/strict';
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { after, test } from 'node:test';
-import { loadDictionary, lookupLocal, type LookupInput } from './local.ts';
+import { createReaderCatalog } from '../reader-catalog.ts';
+import { loadDictionary, lookupLocal, type LookupInput } from '../reader-dictionary.ts';
 
 const directory = mkdtempSync(join(tmpdir(), 'journal-lookup-'));
 after(() => rmSync(directory, { recursive: true, force: true }));
@@ -15,6 +16,7 @@ writeFileSync(path, [
   '研究 研究 [yan2 jiu1] /research/', '研究生 研究生 [yan2 jiu1 sheng1] /graduate student/',
   '生命 生命 [sheng1 ming4] /life/',
   '種 种 [zhong3] /seed/', '種 种 [zhong4] /to plant/',
+  '還 还 [hai2] /still/also/', '還 还 [huan2] /return/',
   '米 米 [mi3] /rice/meter/', '牠 牠 [ta1] /variant of 它[ta1]/',
   '𠮷 𠮷 [ji2] /fortunate/',
 ].join('\n'));
@@ -50,4 +52,24 @@ test('UTF-16 targets can cover an astral Han character but cannot split it', () 
   assert.equal(lookup('tap', '🙂𠮷。', 2, 4).answer?.span, '𠮷');
   assert.throws(() => lookup('tap', '🙂𠮷。', 2, 3), RangeError);
   assert.throws(() => lookup('tap', '駝鹿', 0, 2), RangeError);
+});
+
+test('an agreed lexical span survives dictionary sense ambiguity at the pointed occurrence', () => {
+  const text = '米，🙂米。';
+  assert.deepEqual(lookup('tap', text, 4, 5), {
+    reason: 'multiple-or-missing-glosses', answer: null, occurrence: { text, start: 4, end: 5 },
+  });
+  assert.equal(lookup('tap', '研究生命', 2, 3).occurrence, undefined);
+  assert.deepEqual(lookup('tap', '🙂駝鹿。', 3, 4).occurrence, { text: '🙂駝鹿。', start: 2, end: 4 });
+});
+
+test('the reader catalog supplies both pronunciations for the matched occurrence', () => {
+  const text = '借的伞还没还。';
+  const match = lookup('tap', text, 5, 6);
+  assert.equal(match.reason, 'multiple-readings');
+  assert.ok(match.occurrence);
+  const catalog = createReaderCatalog(JSON.parse(readFileSync(new URL('./sense-catalog.sample.json', import.meta.url), 'utf8')));
+  const form = text.slice(match.occurrence.start, match.occurrence.end);
+  assert.deepEqual(catalog.sensesFor(form).map(s => [s.senseId, s.pinyin]),
+    [['return', 'huán'], ['still', 'hái'], ['also', 'hái']]);
 });

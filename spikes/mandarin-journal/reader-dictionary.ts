@@ -1,9 +1,9 @@
 import { readFileSync } from 'node:fs';
-import { parseCedictFile, type CedictEntry } from '../../../scripts/lib/cc-cedict.ts';
+import { parseCedictFile, type CedictEntry } from '../../scripts/lib/cc-cedict.ts';
 
 export type LookupInput = { kind: 'tap' | 'selection'; text: string; start: number; end: number };
 export type LookupAnswer = { span: string; pinyin: string; gloss: string; chunks?: string[] };
-export type LocalResult = { answer: LookupAnswer | null; reason: string };
+export type LocalResult = { answer: LookupAnswer | null; reason: string; occurrence?: { text: string; start: number; end: number } };
 type Dictionary = { byForm: Map<string, CedictEntry[]>; maxLength: number };
 
 export function loadDictionary(path: string): Dictionary {
@@ -73,6 +73,7 @@ export function lookupLocal(dictionary: Dictionary, input: LookupInput): LocalRe
   if (kind === 'selection' && !dictionary.byForm.has(selected)) return { answer: null, reason: 'no-exact-entry' };
 
   let span = selected;
+  let spanStart = start;
   if (hanRun.test(selected)) {
     const chars = Array.from(text);
     const target = Array.from(text.slice(0, start)).length;
@@ -82,11 +83,12 @@ export function lookupLocal(dictionary: Dictionary, input: LookupInput): LocalRe
       return { answer: null, reason: 'competing-boundaries' };
     }
     span = chars.slice(forward.start, forward.end).join('');
+    spanStart = start - chars.slice(forward.start, target).join('').length;
     if (kind === 'selection' && (forward.start !== target || selected !== span)) {
       return { answer: null, reason: 'selection-crosses-word-boundary' };
     }
   }
   const entries = dictionary.byForm.get(span);
   if (!entries) return { answer: null, reason: 'no-dictionary-entry' };
-  return resolveEntry(entries, span);
+  return { ...resolveEntry(entries, span), occurrence: { text, start: spanStart, end: spanStart + span.length } };
 }

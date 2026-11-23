@@ -2,6 +2,28 @@
 
 Open [the recorded comparison](replay/index.html) in a browser from this checkout. Choose a tap or selection, then replay the completed-answer wait or show both answers immediately. Model names can be revealed after reading. The replay runs offline. The reader itself still uses its six authored lookups.
 
+## Select a sense for a fixed occurrence
+
+The follow-up [sense comparison](replay/index.html?senses) keeps the underlined text identical across three cards. The instant reminder is an editorial, context-free label for the spelling. Gemini 3.5 Flash Lite selects from precomputed senses, and GPT-6.2 Sol writes a contextual gloss. Choose “Replay measured wait” to compare the recorded response times. A selector abstention has its own card. An eventual fallback to Sol would add a second call to the elapsed time.
+
+The [sample catalog](sense-catalog.sample.json) has 8 headwords, 9 entries by pronunciation and 14 senses. Five headwords take their labels and usage notes from the app's [retained sense-authoring comparison](../../../scripts/fixtures/sense-inventory-review.json). The others are authored fixture entries. IDs are local to the sample. A spelling can find several entries across readings, and simplified and traditional spellings can resolve to the same entry. Each sense belongs to one entry and has its own ID, label and optional notes. Source population, editing and database storage are open decisions.
+
+The journal can use the same server-side functions as the experiment. The dictionary returns the exact UTF-16 occurrence when segmentation agrees, even if the raw dictionary gloss is ambiguous. Pass its spelling to the catalog and supply the resulting candidates and the original occurrence to the selector. A deliberate selection can supply its own occurrence. The selector returns an original candidate or null. Empty inventories defer locally. Transport failures propagate separately. The journal reader still uses its authored lookup interaction. [Dictionary](../reader-dictionary.ts) · [Catalog](../reader-catalog.ts) · [Selector](../reader-sense.ts)
+
+On 14 fixture passages the selector made 12 expected decisions, comprising nine correct selections and three correct abstentions. It got the literal and financial uses of 泡沫 and both uses of 不堪. When the financial sense was removed it abstained. It chose huán for both occurrences in 还没还 and treated 与 inside 授与 as the standalone grant sense. Sol distinguished those occurrences and explained the compound boundary. For 报刊亭 the instant reminder and selected label both read “newsstand.”
+
+Median complete response was 0.713 s for selection and 1.998 s for a contextual gloss. OpenRouter reported $0.0017812 total for the 14 selection calls. These are single observations per arm and passage with a preloaded inventory. Two probes (垂危 and 有所改善) echo worked examples in the selector prompt. This set measures routing behavior, while the replay leaves the usefulness of each answer to the reader.
+
+The selector adapts the exercise [sense-mapping prompt](../../../server/vocabulary/reflection-prompts/sense-mapping.md) from revision 9db9a896. It retains lexical ownership, contextual evidence, rare uses and missing senses. The source is now a passage occurrence instead of an exercise. Both missing and unresolved uses return null. The caller displays the stored label and pronunciation, so the model returns only a supplied reference or null.
+
+From the journal directory, run each arm with the appropriate provider key and a new output filename, then export the replay.
+
+```sh
+node --env-file=/path/to/keys.env lookup-experiment/sense-run.ts selector .local/senses/selector.jsonl
+node --env-file=/path/to/keys.env lookup-experiment/sense-run.ts context .local/senses/context.jsonl
+node lookup-experiment/export-senses.ts .local/senses lookup-experiment/replay/senses.js
+```
+
 ## November 23 experiment
 
 The 24 [frozen cases](cases.ts) comprise 12 single-character taps and 12 deliberate selections. Eight excerpts come from the two demo stories. Sixteen additional probes test ordinary words, overlapping compounds, exact idioms, polyphonic characters, incorrect selections and longer constructions. Each model saw the same gesture, occurrence and surrounding text. The cases declared acceptable tap spans and a teaching intention before generation. The router and providers received neither scoring key.

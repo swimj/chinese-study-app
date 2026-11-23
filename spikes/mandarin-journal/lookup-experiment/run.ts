@@ -2,7 +2,7 @@ import { closeSync, mkdirSync, openSync, readFileSync, writeSync } from 'node:fs
 import { createHash } from 'node:crypto';
 import { dirname } from 'node:path';
 import { cases } from './cases.ts';
-import { loadDictionary, lookupLocal } from './local.ts';
+import { loadDictionary, lookupLocal } from '../reader-dictionary.ts';
 import { LookupModelError, runModel } from './models.ts';
 
 const [arm, destination, onlyCase] = process.argv.slice(2);

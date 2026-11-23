@@ -1,7 +1,7 @@
 import { readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { cases } from './cases.ts';
-import type { LookupAnswer } from './local.ts';
+import type { LookupAnswer } from '../reader-dictionary.ts';
 
 type Row = {
   id: string; arm: string; model?: string; elapsedMs: number;

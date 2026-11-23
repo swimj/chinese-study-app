@@ -1,0 +1,177 @@
+[
+  {
+    "wordId": "sample/泡沫/pàomò",
+    "forms": [
+      "泡沫"
+    ],
+    "pinyin": "pàomò",
+    "senses": [
+      {
+        "senseId": "泡沫/0",
+        "label": "Foam or lather",
+        "notes": [
+          "A noun for a mass of small bubbles on or in a liquid, such as soap lather, shaving foam, or froth.",
+          "Used for a visible, usually temporary layer or accumulation of bubbles in ordinary concrete contexts."
+        ]
+      },
+      {
+        "senseId": "泡沫/1",
+        "label": "Speculative or inflated bubble",
+        "notes": [
+          "A figurative noun for an overinflated, fragile situation or asset market whose apparent value is not sustainable.",
+          "Common in economic and financial discussion, especially with property, housing, or stock markets; it emphasizes the bubble's instability and eventual risk of bursting."
+        ]
+      }
+    ]
+  },
+  {
+    "wordId": "sample/不堪/bùkān",
+    "forms": [
+      "不堪"
+    ],
+    "pinyin": "bùkān",
+    "senses": [
+      {
+        "senseId": "不堪/0",
+        "label": "cannot bear or withstand",
+        "notes": [
+          "Used in constructions such as 不堪忍受, 不堪回首, and 不堪重负 to mean being unable to endure, tolerate, or withstand something.",
+          "Often somewhat formal or literary, but common in both written Chinese and set collocations."
+        ]
+      },
+      {
+        "senseId": "不堪/1",
+        "label": "extremely; to an unbearable degree",
+        "notes": [
+          "Usually follows a descriptive word, as in 疲惫不堪 or 狼狈不堪, and intensifies an already negative or undesirable state.",
+          "The sense is stronger than ordinary 很: it suggests reaching an extreme, often unpleasant, degree."
+        ]
+      }
+    ]
+  },
+  {
+    "wordId": "sample/垂/chuí",
+    "forms": [
+      "垂"
+    ],
+    "pinyin": "chuí",
+    "senses": [
+      {
+        "senseId": "垂/0",
+        "label": "hang down or droop",
+        "notes": [
+          "A verb describing something hanging downward or drooping, including a person lowering the head; the same core use covers physical objects and posture.",
+          "Common in constructions such as 垂到水面 and 垂着头."
+        ]
+      }
+    ]
+  },
+  {
+    "wordId": "sample/有所/yǒusuǒ",
+    "forms": [
+      "有所"
+    ],
+    "pinyin": "yǒusuǒ",
+    "senses": [
+      {
+        "senseId": "有所/0",
+        "label": "to some extent; show a certain degree of change",
+        "notes": [
+          "A formal construction meaning that something occurs or changes to an unspecified, usually limited degree, as in 有所改善 or 有所不同.",
+          "Typically used before a verb or adjective and is more common in careful speech and writing than in casual conversation."
+        ]
+      }
+    ]
+  },
+  {
+    "wordId": "sample/与/yǔ",
+    "forms": [
+      "与",
+      "與"
+    ],
+    "pinyin": "yǔ",
+    "senses": [
+      {
+        "senseId": "与/0",
+        "label": "and; as well as",
+        "notes": [
+          "Conjunction linking nouns, noun phrases, or clauses. More formal and written than 和 or 跟, but common in formal prose and set grammatical patterns."
+        ]
+      },
+      {
+        "senseId": "与/1",
+        "label": "with; together with; in relation to",
+        "notes": [
+          "Preposition introducing a companion, counterpart, or party in a relationship, comparison, cooperation, or interaction. Frequent in formal and written Mandarin; everyday speech usually prefers 和 or 跟."
+        ]
+      },
+      {
+        "senseId": "与/2",
+        "label": "give; grant",
+        "notes": [
+          "A literary or classical verb meaning to give or grant. It survives in some compact formal or fixed constructions, but is not the normal modern standalone verb for everyday 'give'; use 给 for that meaning."
+        ]
+      }
+    ]
+  },
+  {
+    "wordId": "sample/还/huán",
+    "forms": [
+      "还",
+      "還"
+    ],
+    "pinyin": "huán",
+    "senses": [
+      {
+        "senseId": "return",
+        "label": "give something back"
+      }
+    ]
+  },
+  {
+    "wordId": "sample/还/hái",
+    "forms": [
+      "还",
+      "還"
+    ],
+    "pinyin": "hái",
+    "senses": [
+      {
+        "senseId": "still",
+        "label": "still, continuing to be the case"
+      },
+      {
+        "senseId": "also",
+        "label": "also, in addition"
+      }
+    ]
+  },
+  {
+    "wordId": "sample/聪明反被聪明误/cōngming fǎn bèi cōngming wù",
+    "forms": [
+      "聪明反被聪明误",
+      "聰明反被聰明誤"
+    ],
+    "pinyin": "cōngming fǎn bèi cōngming wù",
+    "senses": [
+      {
+        "senseId": "clever",
+        "label": "to outsmart oneself"
+      }
+    ]
+  },
+  {
+    "wordId": "sample/报刊亭/bàokāntíng",
+    "forms": [
+      "报刊亭",
+      "報刊亭"
+    ],
+    "pinyin": "bàokāntíng",
+    "senses": [
+      {
+        "senseId": "stand",
+        "label": "newsstand"
+      }
+    ]
+  }
+]

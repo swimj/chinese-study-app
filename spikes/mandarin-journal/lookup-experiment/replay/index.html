@@ -28,14 +28,19 @@ summary {cursor:pointer} #reveal {accent-color:#3c7664}
 <details id="criteria"><summary>What this passage tests</summary><p id="intent"></p><small>Dictionary entries from <a href="https://www.mdbg.net/chinese/dictionary?page=cc-cedict">CC-CEDICT, published by MDBG</a>, under <a href="https://creativecommons.org/licenses/by-sa/4.0/">CC BY-SA 4.0</a>. Pronunciations are rendered with tone marks.</small></details>
 </main>
 <script src="results.js"></script>
+<script src="senses.js"></script>
 <script>
 const get = id => document.getElementById(id);
+const senseMode = new URLSearchParams(location.search).has('senses');
+const trials = senseMode ? senseTrials : lookupTrials;
+if (senseMode) document.querySelector('h1').textContent = document.title = 'Reader sense comparison';
+if (senseMode) get('criteria').querySelector('small').hidden=true;
 const selector = get('cases');
 let timers = [], visible = new Set();
-for (const [i,c] of lookupTrials.entries()) {
+for (const [i,c] of trials.entries()) {
   selector.add(new Option((i+1)+' · '+(c.kind==='tap'?'Tap':'Selection')+' · '+c.text.slice(c.start,c.end),i));
 }
-const current = () => lookupTrials[selector.selectedIndex];
+const current = () => trials[selector.selectedIndex];
 function element(tag,value,cls) {
   const el = document.createElement(tag);
   el.textContent=value;
@@ -67,11 +72,11 @@ function reset() {
   stop();visible.clear();
   const c=current();
   get('passage').replaceChildren(c.text.slice(0,c.start),element('mark',c.text.slice(c.start,c.end)),c.text.slice(c.end));
-  get('intent').textContent=c.intent+' Accepted span: '+c.acceptableSpans.join(' / ')+'.';
+  get('intent').textContent=c.acceptableSpans ? c.intent+' Accepted span: '+c.acceptableSpans.join(' / ')+'.' : c.intent;
   get('criteria').open=false; cards();
 }
 selector.onchange=reset;
-get('next').onclick=()=>{selector.selectedIndex=(selector.selectedIndex+1)%lookupTrials.length;reset();};
+get('next').onclick=()=>{selector.selectedIndex=(selector.selectedIndex+1)%trials.length;reset();};
 get('reveal').onchange=cards;
 get('now').onclick=()=>{stop();visible=new Set(order());cards();};
 get('replay').onclick=()=>{
