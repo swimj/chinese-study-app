@@ -287,3 +287,9 @@
   .an-quick-actions button, .an-character, .an-whole { min-height: 44px; }
   .an-character { min-width: 32px; }
 }
+
+::highlight(journal-lookup-cursor) { text-decoration: underline solid var(--clay); }
+.an-term, .an-gloss, .an-chunks { overflow-wrap: anywhere; }
+.an-chunks { margin: .3rem 0; font: 1rem/1.5 var(--han); color: var(--quiet); }
+.an-flag { padding: 3px 0 6px; font: .8rem/1.4 var(--sans); color: var(--quiet); }
+.an-feedback-error { display: block; font-size: .8rem; }

@@ -1,4 +1,4 @@
-import { passageLookups, characterLookup } from './reader-lookup.js';
+import { passageLookups } from './reader-lookup.js';
 
 const sourceSelector = '[data-annotation-surface][data-annotation-owner][data-annotation-block]';
 
@@ -88,7 +88,7 @@ function clamp(value, lo, hi) {
   return Math.max(lo, Math.min(value, hi));
 }
 
-export function createAnnotations({ submit, getState, canSubmit }) {
+export function createAnnotations({ submit, getState, canSubmit, lookupPassage, flagLookup }) {
   const toolbar = element('div', 'an-quote-action');
   toolbar.hidden = true;
   toolbar.setAttribute('role', 'group');
@@ -100,13 +100,20 @@ export function createAnnotations({ submit, getState, canSubmit }) {
   const pronunciation = element('span', 'an-pronunciation');
   const gloss = element('p', 'an-gloss');
   gloss.id = 'reader-gloss';
+  gloss.setAttribute('aria-live', 'polite');
+  const chunks = element('p', 'an-chunks');
+  chunks.lang = 'zh';
+  const flag = button('an-flag', 'Mark as wrong');
+  const feedbackError = element('span', 'an-feedback-error');
+  feedbackError.setAttribute('role', 'status');
   termLine.append(spelling, pronunciation);
-  dictionary.append(termLine, gloss);
+  dictionary.append(termLine, gloss, chunks, flag, feedbackError);
   const quickActions = element('div', 'an-quick-actions');
   const capture = button('an-capture', 'Save');
   const compose = button('an-compose', 'Ask');
   const withNote = button('an-with-note', 'Add note');
-  quickActions.append(capture, withNote, compose);
+  const inspect = button('an-inspect', 'Look up');
+  quickActions.append(capture, withNote, compose, inspect);
   toolbar.append(dictionary, quickActions);
   const confirmation = element('span', 'an-confirmation');
   confirmation.setAttribute('role', 'status');
@@ -360,7 +367,32 @@ export function createAnnotations({ submit, getState, canSubmit }) {
       undefined, document.activeElement);
   }
 
-  function offer(anchor, entry, whole, trigger) {
+  function updateFlag() {
+    flag.hidden = !lookup?.id;
+    flag.disabled = Boolean(lookup?.flagged || lookup?.flagPending);
+    flag.textContent = lookup?.flagged ? 'Marked as wrong' : 'Mark as wrong';
+    feedbackError.textContent = lookup?.feedbackError || '';
+  }
+
+  flag.onclick = async () => {
+    const entry = lookup;
+    if (!entry?.id || flag.disabled) return;
+    entry.flagPending = true;
+    entry.feedbackError = '';
+    updateFlag();
+    try {
+      await flagLookup(entry.id);
+      entry.flagged = true;
+    } catch {
+      entry.feedbackError = 'Couldn’t record feedback. Try again.';
+    } finally {
+      entry.flagPending = false;
+      if (lookup === entry) { updateFlag(); position(); }
+    }
+  };
+
+  function offer(anchor, entry, trigger) {
+    const previousFocus = toolbar.contains(document.activeElement) ? document.activeElement : null;
     candidate = anchor;
     lookup = entry;
     lookupTrigger = trigger;
@@ -368,45 +400,86 @@ export function createAnnotations({ submit, getState, canSubmit }) {
     toolbar.removeAttribute('aria-describedby');
     dictionary.hidden = !entry;
     capture.hidden = withNote.hidden = !reading;
+    inspect.hidden = !reading || Boolean(entry && !entry.error);
+    inspect.textContent = entry?.error ? 'Retry lookup' : 'Look up';
     compose.textContent = reading ? 'Ask' : 'Quote';
-    toolbar.classList.toggle('has-gloss', Boolean(entry?.gloss));
+    toolbar.classList.toggle('has-gloss', Boolean(entry));
     if (entry) {
       spelling.replaceChildren();
-      if (entry.gloss) toolbar.setAttribute('aria-describedby', gloss.id);
-      let offset = 0;
-      for (const glyph of entry.anchor.quote) {
-        const piece = characterLookup(entry, offset);
-        if (piece) {
-          const narrow = button('an-character', glyph);
-          narrow.setAttribute('aria-label', 'Look up ' + glyph);
-          narrow.onclick = () => {
-            offer(piece.anchor, piece, entry, trigger);
-            spelling.querySelector('button')?.focus({ preventScroll: true });
-          };
-          spelling.append(narrow);
-        } else spelling.append(glyph);
-        offset += glyph.length;
-      }
-      if (whole) {
+      const chars = [...anchor.quote];
+      if (anchor.startId === anchor.endId && entry.answer && chars.length > 1 && chars.length <= 8) {
+        let start = anchor.startOffset;
+        for (const glyph of chars) {
+          const piece = { ...anchor, startOffset: start, endOffset: start + glyph.length, quote: glyph };
+          if (/\p{Script=Han}/u.test(glyph)) {
+            const narrow = button('an-character', glyph);
+            narrow.setAttribute('aria-label', 'Look up ' + glyph);
+            narrow.onclick = () => startLookup(piece, 'selection', trigger, entry);
+            spelling.append(narrow);
+          } else spelling.append(glyph);
+          start = piece.endOffset;
+        }
+      } else spelling.textContent = anchor.quote;
+      if (entry.whole) {
+        const whole = entry.whole;
         const widen = button('an-whole', '↩ ' + whole.anchor.quote);
         widen.setAttribute('aria-label', 'Back to ' + whole.anchor.quote);
         widen.onclick = () => {
-          offer(whole.anchor, whole, undefined, trigger);
+          offer(whole.anchor, whole, trigger);
           spelling.querySelector('button')?.focus({ preventScroll: true });
         };
         spelling.append(widen);
       }
-      pronunciation.textContent = entry.pinyin || '';
-      gloss.textContent = entry.gloss || '';
-      gloss.hidden = !entry.gloss;
+      pronunciation.textContent = entry.answer?.pinyin || '';
+      gloss.textContent = entry.answer?.gloss || entry.error || (entry.pending ? 'Looking up…' : 'No gloss available.');
+      chunks.textContent = entry.answer?.chunks?.join(' / ') || '';
+      chunks.hidden = !chunks.textContent;
+      toolbar.setAttribute('aria-describedby', gloss.id);
     }
+    updateFlag();
     updateCapture();
     toolbar.hidden = false;
     paintLookup();
     position();
+    if (previousFocus && (!previousFocus.isConnected || previousFocus.hidden)) {
+      (spelling.querySelector('.an-whole') || (capture.disabled ? compose : capture)).focus({ preventScroll: true });
+    }
   }
 
-  function pointAt(block, event, entries) {
+  async function startLookup(anchor, kind, trigger, whole) {
+    const block = startBlock(anchor);
+    if (!block) return;
+    const entry = { anchor, kind, whole, pending: true };
+    // Keep Save and Ask available for the visible quote while its lookup runs.
+    offer(anchor, entry, trigger);
+    try {
+      const result = await lookupPassage({ documentId: anchor.ownerId, blockId: anchor.startId,
+        ...(anchor.startId !== anchor.endId ? { endBlockId: anchor.endId } : {}),
+        kind, start: anchor.startOffset, end: anchor.endOffset });
+      if (lookup !== entry || !block.isConnected) return;
+      if (kind === 'tap') {
+        const quote = block.textContent.slice(result.start, result.end);
+        entry.anchor = { ...anchor, startOffset: result.start, endOffset: result.end, quote };
+      }
+      entry.id = result.id;
+      entry.answer = result.answer;
+    } catch {
+      if (lookup !== entry || !block.isConnected) return;
+      entry.error = 'Couldn’t look up this passage.';
+    }
+    entry.pending = false;
+    offer(entry.anchor, entry, trigger);
+  }
+
+  inspect.onclick = () => {
+    if (!candidate) return;
+    startLookup(candidate, lookup?.kind || 'selection', lookupTrigger || startBlock(candidate)?.parentElement, lookup?.whole);
+    if (document.activeElement === inspect || document.activeElement === document.body) {
+      (capture.disabled ? compose : capture).focus({ preventScroll: true });
+    }
+  };
+
+  function pointAt(block, event) {
     if (event.button !== 0 || !window.getSelection()?.isCollapsed) return;
     // A caret is a boundary. Check the glyph on both sides so either half of a
     // character points at that character, including at a wrapped line ending.
@@ -426,11 +499,10 @@ export function createAnnotations({ submit, getState, canSubmit }) {
       const within = [...hit.getClientRects()].some(r => event.clientX >= r.left && event.clientX <= r.right &&
         event.clientY >= r.top && event.clientY <= r.bottom);
       if (!within) continue;
-      const entry = entries.find(({ anchor }) => anchor.startOffset <= startOffset && anchor.endOffset > startOffset);
       const { annotationOwner: ownerId, annotationBlock: blockId } = block.dataset;
-      const anchor = entry?.anchor || { surface: 'read', ownerId, startId: blockId, endId: blockId,
+      const anchor = { surface: 'read', ownerId, startId: blockId, endId: blockId,
         startOffset, endOffset: startOffset + quote.length, quote };
-      offer(anchor, entry || { anchor }, undefined, block.parentElement);
+      startLookup(anchor, 'tap', block.parentElement);
       return;
     }
   }
@@ -467,15 +539,41 @@ export function createAnnotations({ submit, getState, canSubmit }) {
     };
     if (surface === 'read') {
       const entries = passageLookups(owner, id, block.textContent);
-      block.onclick = event => pointAt(block, event, entries);
-      for (const entry of entries) {
-        const inspect = button('an-shortcut', 'Look up ' + entry.anchor.quote);
-        inspect.onclick = () => {
-          close();
-          offer(entry.anchor, entry, undefined, inspect);
-          toolbar.querySelector('button:not([hidden]):enabled')?.focus({ preventScroll: true });
-        };
-        rail.append(inspect);
+      block.onclick = event => pointAt(block, event);
+      const text = block.textContent;
+      const glyphs = [...text.matchAll(/\p{Script=Han}/gu)];
+      const first = glyphs[0];
+      if (first) {
+        // On imported passages the same keyboard control can reach every Han character.
+        const targets = entries.length ? entries.map(e => e.anchor) : [{ startOffset: first.index, quote: first[0] }];
+        for (const target of targets) {
+          const key = button('an-shortcut', 'Look up ' + target.quote);
+          key.setAttribute('aria-description', 'Use the left and right arrows to choose a character.');
+          key.setAttribute('aria-keyshortcuts', 'ArrowLeft ArrowRight');
+          let index = glyphs.findIndex(hit => hit.index === target.startOffset);
+          key.onkeydown = event => {
+            if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight') return;
+            event.preventDefault();
+            event.stopPropagation();
+            index = clamp(index + (event.key === 'ArrowRight' ? 1 : -1), 0, glyphs.length - 1);
+            key.textContent = 'Look up ' + glyphs[index][0];
+            if (window.CSS?.highlights && window.Highlight) {
+              const range = new Range();
+              range.setStart(block.firstChild, glyphs[index].index);
+              range.setEnd(block.firstChild, glyphs[index].index + glyphs[index][0].length);
+              CSS.highlights.set('journal-lookup-cursor', new Highlight(range));
+            }
+          };
+          key.onblur = () => window.CSS?.highlights?.delete('journal-lookup-cursor');
+          key.onclick = () => {
+            close();
+            const { index: startOffset, 0: quote } = glyphs[index];
+            startLookup({ surface, ownerId: owner, startId: id, endId: id, startOffset,
+              endOffset: startOffset + quote.length, quote }, 'tap', key);
+            (capture.disabled ? compose : capture).focus({ preventScroll: true });
+          };
+          rail.append(key);
+        }
       }
     }
     marker.onpointerenter = e => {
@@ -533,11 +631,12 @@ export function createAnnotations({ submit, getState, canSubmit }) {
   capture.onclick = async () => {
     if (!candidate || capture.disabled) return;
     const anchor = candidate;
+    const activeLookup = lookup;
     const target = lookupTrigger || startBlock(anchor)?.parentElement;
     const rect = toolbar.getBoundingClientRect();
     const keyboard = toolbar.contains(document.activeElement);
     if (!await submit({ type: 'captureReading', anchor })) return;
-    if (!candidate || anchorKey(candidate) !== anchorKey(anchor)) return;
+    if (!candidate || (activeLookup ? lookup !== activeLookup : anchorKey(candidate) !== anchorKey(anchor))) return;
     window.getSelection()?.removeAllRanges();
     clearCandidate();
     if (keyboard) target?.focus({ preventScroll: true });
@@ -604,6 +703,7 @@ export function createAnnotations({ submit, getState, canSubmit }) {
   document.addEventListener('selectionchange', () => {
     if (toolbar.contains(document.activeElement)) return;
     const next = selectedAnchor();
+    if (next && candidate && anchorKey(next) === anchorKey(candidate)) return;
     if (!next) { if (!lookup) clearCandidate(); return; }
     if (current) close();
     offer(next);

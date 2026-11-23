@@ -1027,6 +1027,9 @@ export function openJournal(path: string, backend: Backend = engine) {
         (s.mediaJobs.some((job) => job.status === 'pending') && ranToday(s) < DAILY_LIMIT && s.settings.pictures !== 'off')
       );
     },
+    readingParagraphs(documentId: string) {
+      return documentsFor(read().s.reading).find(doc => doc.id === documentId)?.paragraphs;
+    },
     act(a: Action) {
       return enqueue(() => perform(a));
     },

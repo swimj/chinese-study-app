@@ -10,6 +10,9 @@ import { ZodError } from 'zod';
 import { actionSchema, engine, JournalConflict, openJournal } from './journal.ts';
 import { buildFixture } from './fixture.ts';
 import { resolveStorage } from './storage.ts';
+import { createLookupService } from './reader-lookup-service.ts';
+import { lookupRequest, resolveLookupRange } from './reader-lookup-input.ts';
+import { feedbackRequest, readerLedger } from './reader-ledger.ts';
 
 const dir = dirname(fileURLToPath(import.meta.url));
 let resolved;
@@ -23,6 +26,8 @@ const storage = resolved.path;
 mkdirSync(dirname(storage), { recursive: true });
 if (resolved.profile === 'fixture' && resolved.fresh) await buildFixture(storage);
 const journal = openJournal(storage);
+const lookups = createLookupService();
+const ledger = readerLedger(storage);
 const defaultPorts = { live: 4317, copy: 4319, fixture: 4320, custom: 4320 } as const;
 const port = Number(process.env.JOURNAL_PORT || defaultPorts[resolved.profile]);
 const files = new Map([
@@ -104,10 +109,30 @@ const server = createServer(async (req, res) => {
       json(200, journal.get());
       return;
     }
-    if (req.method === 'POST' && req.url === '/api/action') {
+    if (req.method === 'POST' && ['/api/reader-lookup','/api/reader-lookup/feedback','/api/action'].includes(req.url ?? '')) {
       if (req.headers['content-type']?.split(';')[0] !== 'application/json')
         throw new RequestError(415, 'Expected JSON.');
-      const action = actionSchema.parse(await body(req));
+      const payload = await body(req);
+      if (req.url === '/api/reader-lookup/feedback') {
+        const { id } = feedbackRequest.parse(payload);
+        if (!ledger.flag(id)) throw new RequestError(404, 'Lookup decision not found.');
+        json(200, { id, flagged:true });
+        return;
+      }
+      if (req.url === '/api/reader-lookup') {
+        const request = lookupRequest.parse(payload);
+        const { documentId, blockId, endBlockId = blockId } = request;
+        const resolvedRange = resolveLookupRange(request, journal.readingParagraphs(documentId));
+        if (resolvedRange.error !== undefined) throw new RequestError(resolvedRange.status, resolvedRange.error);
+        const { input, lastBlockStart } = resolvedRange;
+        const startedAt = new Date().toISOString();
+        const result = await lookups.lookup(input, { documentId, blockId });
+        const id = ledger.record({ documentId, blockId, endBlockId, sourceEnd:request.end, input, result, startedAt });
+        const { start, end, answer, route } = result;
+        json(200, { id, start, end: end - lastBlockStart, answer, route });
+        return;
+      }
+      const action = actionSchema.parse(payload);
       json(200, await journal.act(action));
       return;
     }

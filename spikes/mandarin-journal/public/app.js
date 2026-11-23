@@ -83,7 +83,14 @@ chatDraft.oninput = () => {
   persist();
 };
 
+async function readerRequest(path, body) {
+  return responseJson(await fetch(path, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
+  }));
+}
 const annotations = createAnnotations({
+  lookupPassage: body => readerRequest('/api/reader-lookup', body),
+  flagLookup: id => readerRequest('/api/reader-lookup/feedback', { id }),
   submit,
   getState: () => state,
   canSubmit: () => Boolean(state && !busy && !ui.pending),

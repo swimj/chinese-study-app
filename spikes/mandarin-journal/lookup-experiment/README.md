@@ -1,6 +1,6 @@
 # What should a Mandarin lookup underline?
 
-Open [the recorded comparison](replay/index.html) in a browser from this checkout. Choose a tap or selection, then replay the completed-answer wait or show both answers immediately. Model names can be revealed after reading. The replay runs offline. The reader itself still uses its six authored lookups.
+Open [the recorded comparison](replay/index.html) in a browser from this checkout. Choose a tap or selection, then replay the completed-answer wait or show both answers immediately. Model names can be revealed after reading. The replay runs offline. The journal reader now uses the same dictionary, selector and contextual model.
 
 ## Select a sense for a fixed occurrence
 
@@ -8,7 +8,7 @@ The follow-up [sense comparison](replay/index.html?senses) keeps the underlined 
 
 The [sample catalog](sense-catalog.sample.json) has 8 headwords, 9 entries by pronunciation and 14 senses. Five headwords take their labels and usage notes from the app's [retained sense-authoring comparison](../../../scripts/fixtures/sense-inventory-review.json). The others are authored fixture entries. IDs are local to the sample. A spelling can find several entries across readings, and simplified and traditional spellings can resolve to the same entry. Each sense belongs to one entry and has its own ID, label and optional notes. Source population, editing and database storage are open decisions.
 
-The journal can use the same server-side functions as the experiment. The dictionary returns the exact UTF-16 occurrence when segmentation agrees, even if the raw dictionary gloss is ambiguous. Pass its spelling to the catalog and supply the resulting candidates and the original occurrence to the selector. A deliberate selection can supply its own occurrence. The selector returns an original candidate or null. Empty inventories defer locally. Transport failures propagate separately. The journal reader still uses its authored lookup interaction. [Dictionary](../reader-dictionary.ts) · [Catalog](../reader-catalog.ts) · [Selector](../reader-sense.ts)
+The journal can use the same server-side functions as the experiment. The dictionary returns the exact UTF-16 occurrence when segmentation agrees, even if the raw dictionary gloss is ambiguous. Pass its spelling to the catalog and supply the resulting candidates and the original occurrence to the selector. A deliberate selection can supply its own occurrence. The selector returns an original candidate or null. Empty inventories defer locally. Transport failures propagate separately. The reader uses the selector on live gestures and retains authored examples for offline fallback. [Dictionary](../reader-dictionary.ts) · [Catalog](../reader-catalog.ts) · [Selector](../reader-sense.ts)
 
 On 14 fixture passages the selector made 12 expected decisions, comprising nine correct selections and three correct abstentions. It got the literal and financial uses of 泡沫 and both uses of 不堪. When the financial sense was removed it abstained. It chose huán for both occurrences in 还没还 and treated 与 inside 授与 as the standalone grant sense. Sol distinguished those occurrences and explained the compound boundary. For 报刊亭 the instant reminder and selected label both read “newsstand.”
 
