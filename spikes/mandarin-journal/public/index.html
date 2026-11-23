@@ -8,6 +8,7 @@
     <link rel="stylesheet" href="/style.css" />
     <link rel="stylesheet" href="/reading.css" />
     <link rel="stylesheet" href="/annotations.css" />
+    <link rel="stylesheet" href="/scrapbook.css" />
     <script type="module" src="/app.js"></script>
   </head>
   <body>
@@ -26,58 +27,49 @@
       </div>
       <div id="layout" class="layout">
         <main id="content">
-          <section data-page="home">
-            <p class="dateline" id="today"></p>
-            <section class="word-inbox" aria-labelledby="word-heading">
-              <h2 id="word-heading">Words to learn</h2>
+          <section data-page="home" class="scrapbook" id="scrapbook">
+            <h1 class="sr">Your journal</h1>
+            <div class="scrap-viewport" id="scrap-viewport">
+              <div class="scrap-world" id="scrap-world" aria-label="Your scrapbook" role="region"></div>
+            </div>
+            <div class="scrap-today">
+              <p class="dateline" id="today"></p>
+              <p class="today-line"><span class="seal-mini" lang="zh" aria-hidden="true">师</span><span id="today-text"></span></p>
+              <div class="today-actions">
+                <a id="today-action" class="primary" href="#practice"></a>
+                <nav class="places" aria-label="Activities">
+                  <a href="#read">Read</a><a href="#chat">Talk</a><a href="#practice">Practice</a>
+                </nav>
+              </div>
+              <div id="recent" class="recent" hidden>
+                <span class="small">Last opened</span><a id="recent-link" href="#read"></a>
+              </div>
+            </div>
+            <div class="scrap-zoom" aria-label="Scrapbook view">
+              <button type="button" data-zoom="out" aria-label="Zoom out">−</button>
+              <span data-zoom-label aria-hidden="true">100%</span>
+              <button type="button" data-zoom="in" aria-label="Zoom in">+</button>
+              <button type="button" data-zoom="fit" class="fit">See everything</button>
+            </div>
+            <section class="capture" aria-labelledby="word-heading">
+              <h2 id="word-heading" class="sr">Drop something</h2>
+              <ul id="word-items" class="word-items"></ul>
+              <button id="word-more" class="text-button" type="button" aria-expanded="false" aria-controls="word-items" hidden></button>
+              <p id="word-refresh-error" class="sub" hidden></p>
               <form id="word-form">
                 <div class="intake-line">
-                  <label for="word-text" class="sr">Word or phrase to learn</label>
-                  <input id="word-text" maxlength="320" required placeholder="Word or phrase" autocomplete="off" />
-                  <button class="primary" data-mutation>Add word</button>
+                  <label for="word-text" class="sr">A word, a link, or a sentence</label>
+                  <input id="word-text" maxlength="2048" required placeholder="A word, a link, a sentence…" autocomplete="off" />
+                  <button class="primary" id="capture-submit" data-mutation>Add word</button>
                 </div>
                 <details id="word-context-toggle" class="word-context">
-                  <summary>Add context</summary>
+                  <summary>Where you met it</summary>
                   <label for="word-context" class="sr">Where you saw or heard it</label>
-                  <textarea id="word-context" maxlength="2000" rows="2" placeholder="Where did you see or hear it?"></textarea>
+                  <textarea id="word-context" maxlength="2000" rows="2" placeholder="A sentence, a place, a person…"></textarea>
                 </details>
               </form>
               <p id="word-status" class="sr" role="status"></p>
-              <p id="word-refresh-error" class="sub" hidden></p>
-              <ul id="word-items" class="word-items"></ul>
-              <button id="word-more" class="text-button" type="button" aria-expanded="false" aria-controls="word-items" hidden></button>
             </section>
-            <div class="home-spread">
-              <article class="cover">
-                <span class="ribbon" aria-hidden="true"></span>
-                <p class="small">Featured reading</p>
-                <h1 lang="zh">河边的报刊亭</h1>
-                <p class="excerpt" lang="zh">
-                  河边那座旧报刊亭关了三年。青绿色的铁皮被雨冲得发白，玻璃上还贴着一张早已过期的订报广告。
-                </p>
-                <div class="cover-links">
-                  <a class="primary" href="#read/source/riverside-kiosk">Read on <span aria-hidden="true">→</span></a>
-                  <a href="#read/import" class="text-button">Import a reading</a>
-                </div>
-              </article>
-              <nav class="home-actions" aria-label="Activities">
-                <a
-                  href="#chat"
-                  class="activity"
-                  aria-label="Start or resume a conversation in Chinese"
-                  title="Conversation in Chinese"
-                  ><span class="chat-symbol" aria-hidden="true"></span
-                  ><span class="arrow" aria-hidden="true">↗</span></a
-                >
-                <a href="#practice" class="activity"
-                  ><span><strong>Practice</strong><span class="sub" id="home-mode">Daily mix</span></span
-                  ><span class="arrow" aria-hidden="true">→</span></a
-                >
-              </nav>
-            </div>
-            <div id="recent" class="recent" hidden>
-              <span class="small">Last opened</span><a id="recent-link" href="#read"></a>
-            </div>
           </section>
           <section data-page="read" hidden class="page article"></section>
           <section data-page="chat" hidden class="page">

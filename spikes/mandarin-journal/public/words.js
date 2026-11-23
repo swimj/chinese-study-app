@@ -1,4 +1,4 @@
-export function createWordInbox({ get, node, button, submit, canSubmit, ui, persist, refresh }) {
+export function createWordInbox({ get, node, button, submit, canSubmit, ui, persist, refresh, intercept, hideReady = false }) {
   const form = get('word-form');
   const input = get('word-text');
   const context = get('word-context');
@@ -26,6 +26,16 @@ export function createWordInbox({ get, node, button, submit, canSubmit, ui, pers
     const text = input.value.trim();
     const source = context.value.trim();
     if (!text || !canSubmit()) return;
+    if (intercept?.(text, source)) {
+      input.value = '';
+      context.value = '';
+      contextToggle.open = false;
+      delete ui.wordDraft;
+      delete ui.wordContext;
+      persist();
+      input.dispatchEvent(new Event('input'));
+      return;
+    }
     if (await submit({ type: 'addWord', text, ...(source ? { context: source } : {}) })) {
       if (input.value.trim() === text && context.value.trim() === source) {
         input.value = '';
@@ -135,14 +145,14 @@ export function createWordInbox({ get, node, button, submit, canSubmit, ui, pers
         row.dataset.stamp = stamp;
       }
       if (item.status === 'ready') readyCount++;
-      row.hidden = item.status === 'ready' && readyCount > 2 && !showOlder;
+      row.hidden = item.status === 'ready' && (hideReady || (readyCount > 2 && !showOlder));
     }
     const ids = new Set(items.map(item => item.id));
     for (const [id, row] of rows) {
       if (!ids.has(id)) { row.remove(); rows.delete(id); }
     }
     if (announcements.length) status.textContent = announcements.join('. ');
-    more.hidden = readyCount <= 2;
+    more.hidden = hideReady || readyCount <= 2;
     more.setAttribute('aria-expanded', String(showOlder));
     more.textContent = showOlder ? 'Show fewer words' : 'Show ' + (readyCount - 2) + ' earlier ' + (readyCount === 3 ? 'word' : 'words');
     clearTimeout(pollTimer);

@@ -35,6 +35,8 @@ const files = new Map([
   ['/reading.js', ['reading.js', 'text/javascript']],
   ['/reading.css', ['reading.css', 'text/css']],
   ['/style.css', ['style.css', 'text/css']],
+  ['/scrapbook.js', ['scrapbook.js', 'text/javascript']],
+  ['/scrapbook.css', ['scrapbook.css', 'text/css']],
 ]);
 // Only the PDF.js resources used by text extraction have public URLs.
 const pdfBuild = dirname(fileURLToPath(import.meta.resolve('pdfjs-dist')));
