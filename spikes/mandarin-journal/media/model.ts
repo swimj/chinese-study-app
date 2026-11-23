@@ -41,7 +41,17 @@ export type MediaDecision = {
 };
 export type Pictures = 'off' | 'quiet' | 'normal';
 export type Settings = { pictures: Pictures };
-export type MediaState = { media: MediaItem[]; mediaDecisions: MediaDecision[]; settings: Settings };
+/** One queued back-office consideration of an anchor piece (media/job.ts). */
+export type MediaJob = {
+  id: string;
+  anchor: MediaAnchor;
+  status: 'pending' | 'done' | 'failed' | 'skipped';
+  queuedAt: string;
+  finishedAt?: string;
+  /** Why a job failed or was skipped. */
+  outcome?: string;
+};
+export type MediaState = { media: MediaItem[]; mediaDecisions: MediaDecision[]; mediaJobs: MediaJob[]; settings: Settings };
 
 export const DECISIONS_KEPT = 200;
 
@@ -49,6 +59,7 @@ export const DECISIONS_KEPT = 200;
 export function withMediaDefaults<S extends Partial<MediaState>>(s: S): S & MediaState {
   s.media ??= [];
   s.mediaDecisions ??= [];
+  s.mediaJobs ??= [];
   s.settings ??= { pictures: 'normal' };
   s.settings.pictures ??= 'normal';
   return s as S & MediaState;

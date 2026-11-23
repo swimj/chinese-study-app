@@ -1,3 +1,4 @@
+import type { Tool } from '@openai/agents';
 import { z } from 'zod';
 import type { TurnContext, TutorResult } from '../tutor.ts';
 
@@ -35,8 +36,12 @@ export const actionSchema = z.object({
 export type TutorAction = z.infer<typeof actionSchema>;
 
 export type Situation<Schema extends z.ZodObject, Output> = {
-  /** Appended to the shared voice. */
+  /** Appended to the shared voice, unless the situation is standalone. */
   instructions: string;
+  /** A back-office situation that never addresses the learner and so does not speak in the tutor's voice. */
+  standalone?: boolean;
+  /** Tools for this situation. The tutor's recall tool by default. */
+  tools?: Tool<TurnContext>[];
   /** The narrow structured output requested from the model. */
   schema: Schema;
   /** The user message for this situation, built from the journal context. */
@@ -48,12 +53,13 @@ export type Situation<Schema extends z.ZodObject, Output> = {
   validate(result: TutorResult, input: TurnContext): Output;
 };
 
-type StructuredField = 'action' | 'wordDecision' | 'reflection' | 'observation';
+type StructuredField = 'action' | 'wordDecision' | 'reflection' | 'observation' | 'media';
 const unexpected: Record<StructuredField, string> = {
   action: 'This tutor turn cannot change the journal',
   wordDecision: 'Unexpected word intake decision',
   reflection: 'Only reflection turns can return takeaways',
   observation: 'Only exercise feedback can include an observation',
+  media: 'Only media consideration can judge a picture',
 };
 
 /** Rejects structured effects that belong to another situation. */

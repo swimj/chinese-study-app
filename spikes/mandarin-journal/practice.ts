@@ -1,4 +1,5 @@
 import { demoIntake, demoStashGlosses } from './word-intake-demo.ts';
+import { demoMedia } from './media/demo.ts';
 import type { TurnContext, TutorResult } from './tutor.ts';
 
 export type Card = {
@@ -395,6 +396,8 @@ export function demoTutor(input: TurnContext): TutorResult {
   const text = input.message.trim();
   const described = text + '\n' + input.source;
   switch (input.trigger) {
+    case 'mediaConsider':
+      return demoMedia(input);
     case 'wordIntake':
       if (!input.wordIntake) throw new Error('Missing word intake');
       return { reply: '', action: null, wordDecision: demoIntake(input.wordIntake) };

@@ -48,8 +48,9 @@ overrides that refusal. Use it only on purpose, and never from an agent.
 - **Default:** `npm start` in the branch's checkout. On first start it builds
   the fixture by replaying a short week through the offline tutor, so the
   fixture always matches the branch's code. That week is two conversations with
-  reflections, a queued practice request, three words, reading progress with
-  margin notes, and practice in progress. `npm run journal:fixture` rebuilds it
+  reflections, a queued practice request, four words, reading progress with
+  margin notes, practice in progress, and two offline pictures (报刊亭 placed,
+  鸟食 latent). `npm run journal:fixture` rebuilds it
   after it has been changed or after the journal shape changes.
 - **Against real data:** `npm run journal:copy-live` makes a consistent copy
   of the live journal and leaves the original untouched; it is safe while the

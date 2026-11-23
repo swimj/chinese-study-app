@@ -1,11 +1,13 @@
-import { Agent, Runner, tool } from '@openai/agents';
+import { Agent, Runner, tool, type Tool } from '@openai/agents';
 import { z } from 'zod';
 import type { WordDecision, WordRequest, WordContent } from './word-intake.ts';
+import type { MediaConsideration, MediaRequest } from './situations/media.ts';
 import { instructionsFor, situationFor, situations, type Reflection, type SituationName, type TutorAction } from './situations/index.ts';
 
 export interface TurnContext {
-  trigger: 'ask' | 'miss' | 'practice' | 'reflect' | 'answer' | 'wordIntake';
+  trigger: 'ask' | 'miss' | 'practice' | 'reflect' | 'answer' | 'wordIntake' | 'mediaConsider';
   wordIntake?: WordRequest;
+  media?: MediaRequest;
   practiceWord?: { title: string } & WordContent;
   message: string;
   surface: string;
@@ -33,6 +35,7 @@ export type TutorResult = {
   wordDecision?: WordDecision | null;
   reflection?: Reflection | null;
   observation?: string | null;
+  media?: MediaConsideration | null;
 };
 
 const recallInput = z.object({
@@ -72,11 +75,12 @@ const agents = new Map<SituationName, Agent<TurnContext, z.ZodObject>>();
 function agentFor(name: SituationName) {
   let agent = agents.get(name);
   if (!agent) {
+    const situation: { tools?: Tool<TurnContext>[]; standalone?: boolean } = situations[name];
     agent = new Agent<TurnContext, z.ZodObject>({
-      name: 'Journal tutor',
+      name: situation.standalone ? 'Journal back office' : 'Journal tutor',
       model,
       modelSettings: { store: false },
-      tools: [recall],
+      tools: situation.tools ?? [recall],
       outputType: situations[name].schema,
       instructions: instructionsFor(name),
     });

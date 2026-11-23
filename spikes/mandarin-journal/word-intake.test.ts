@@ -183,6 +183,8 @@ test('unfinished work resumes after restart, a failed turn retries, and an old w
     j = openJournal(path, {
       ...demo,
       async tutor(ctx) {
+        // Saving the word also queues a picture consideration; count word turns only.
+        if (ctx.trigger !== 'wordIntake') return demoTutor(ctx);
         if (!attempts++) throw new Error('simulated failure');
         return demoTutor(ctx);
       },
