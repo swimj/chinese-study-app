@@ -23,6 +23,8 @@ Home is a scrapbook of what the learner has brought into the journal, grouped by
 
 On a wide screen the scrapbook is an open table: drag or scroll to move around, pinch or Ctrl/⌘-scroll to zoom, and zoom far out to see clusters folded to their names. **See everything** fits the whole table. On a phone the same clusters read top to bottom with pieces in a sideways row. A small card offers one next step from state alone (practice waiting, else the reading underway, else a conversation), and the bar at the bottom accepts whatever the learner wants to bring in.
 
+Pictures the system adds on its own are a proposal for now: [Media on the board](MEDIA.md) describes the judgment model, the composition policy and a first-cut implementation spec.
+
 ## Try a learner journey
 
 1. Open Chat and start a thread about birdwatching. Describe putting out seeds or waiting to see the birds. Reflect on the exchange, follow a quoted takeaway to the original message, and ask the tutor about it. Opening the same reflection again retrieves the saved review. More messages in this thread start a new stretch.
