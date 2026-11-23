@@ -97,6 +97,8 @@ export const actionSchema = z.discriminatedUnion('type', [
   z.object({ id, type: z.literal('answer'), answer: text, cardId: text }),
   z.object({ id, type: z.literal('next'), cardId: text }),
   z.object({ id, type: z.literal('saveReading'), title: text, detail: text, source }),
+  z.object({ id, type: z.literal('mediaReaction'), mediaId: text, reaction: z.enum(['keep', 'notForMe']) }),
+  z.object({ id, type: z.literal('settings'), pictures: z.enum(['off', 'quiet', 'normal']) }),
 ]);
 type Action = z.infer<typeof actionSchema>;
 type Reference = {
@@ -669,6 +671,15 @@ async function mutate(s: State, a: Action, backend: Backend, reviewImport: Retur
     }
     case 'practice':
       return startPractice(s, a.mode, backend, a.continue);
+    case 'mediaReaction': {
+      const item = s.media.find((m) => m.id === a.mediaId);
+      if (!item) throw new JournalConflict('This picture is no longer on the board.');
+      item.reactions[a.reaction === 'keep' ? 'kept' : 'notForMe'] = new Date().toISOString();
+      return;
+    }
+    case 'settings':
+      s.settings.pictures = a.pictures;
+      return;
     case 'answer':
     case 'next': {
       const p = s.practice,

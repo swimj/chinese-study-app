@@ -151,3 +151,30 @@ test('considerations stop at the daily limit', async () => {
     j.close();
   }
 });
+
+test('reactions and the pictures setting persist, and pictures off skips considerations', async () => {
+  let turns = 0;
+  const j = openJournal(':memory:', {
+    ...demo,
+    async tutor(ctx) {
+      if (ctx.trigger === 'mediaConsider') turns++;
+      return demoTutor(ctx);
+    },
+  });
+  try {
+    await j.act({ type: 'addWord', id: randomUUID(), text: '鸟食' });
+    const [item] = (await idle(j)).media;
+    await j.act({ type: 'mediaReaction', id: randomUUID(), mediaId: item.id, reaction: 'keep' });
+    await j.act({ type: 'mediaReaction', id: randomUUID(), mediaId: item.id, reaction: 'notForMe' });
+    const reacted = j.get().media[0].reactions;
+    assert.ok(reacted.kept && reacted.notForMe && reacted.notForMe >= reacted.kept);
+    await assert.rejects(j.act({ type: 'mediaReaction', id: randomUUID(), mediaId: 'gone', reaction: 'keep' }), /no longer on the board/);
+    await j.act({ type: 'settings', id: randomUUID(), pictures: 'off' });
+    assert.deepEqual(j.get().settings, { pictures: 'off' });
+    await j.act({ type: 'addWord', id: randomUUID(), text: '分心' });
+    await idle(j);
+    assert.equal(turns, 1, 'no model turn while pictures are off');
+  } finally {
+    j.close();
+  }
+});

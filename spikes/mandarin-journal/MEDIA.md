@@ -1,8 +1,9 @@
 # Media on the board
 
 **Status: being built.** The data model, both policies, `find_image`, the
-`mediaConsider` situation and the media job are implemented (`media/`,
-`situations/media.ts`, `public/media-policy.js`).
+`mediaConsider` situation, the media job and the learner surface are
+implemented (`media/`, `situations/media.ts`, `public/media-policy.js`,
+`public/scrapbook.js`).
 
 This document is for anyone deciding how pictures, and later other media,
 appear in the scrapbook without the learner asking for them. It explains the
@@ -196,7 +197,20 @@ Old journals open with empty arrays and `pictures: 'normal'`.
   - **Not for me:** dismissed. This feeds the taste rule.
 - **Settings:** a single `Pictures: off / quiet / normal` control in the dock
   menu.
-- **List view:** placed and kept images appear under their cluster.
+- **List view:** placed and kept images appear under their cluster. It is
+  built from the same clusters as the table, so latent cues appear there too.
+
+Notes on the first implementation:
+
+- "Not for me" also appears on a kept clipping; the later reaction wins, so it
+  takes the picture off the board again.
+- Reactions are the `mediaReaction` action (`keep` or `notForMe`) and the
+  setting is the `settings` action; both are ordinary journal actions.
+- The cue shows on hover or keyboard focus of its piece. On a touch screen a
+  saved word takes focus when tapped, but a margin note is a link, so tapping it
+  opens the note; its cue is reachable only by keyboard there.
+- A picture attached in the background appears the next time the page loads
+  state, for example after the learner's next action.
 
 ### Tests
 

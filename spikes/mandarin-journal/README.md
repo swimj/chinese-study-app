@@ -23,7 +23,7 @@ Home is a scrapbook of what the learner has brought into the journal, grouped by
 
 On a wide screen the scrapbook is an open table: drag or scroll to move around, pinch or Ctrl/⌘-scroll to zoom, and zoom far out to see clusters folded to their names. **See everything** fits the whole table. On a phone the same clusters read top to bottom with pieces in a sideways row. A small card offers one next step from state alone (practice waiting, else the reading underway, else a conversation), and the bar at the bottom accepts whatever the learner wants to bring in.
 
-Pictures the system adds on its own are a proposal for now: [Media on the board](MEDIA.md) describes the judgment model, the composition policy and a first-cut implementation spec.
+After a word is saved or a note is made on a reading, the journal may find a credited Wikimedia Commons picture for it. A strong case is placed as a clipping beside its piece; a weaker one waits on the piece and shows a small **picture ↗** cue when you hover or focus it, with **Keep on board** and **Not for me**. **Pictures: off / quiet / normal** in the menu controls how much shows. [Media on the board](MEDIA.md) describes the judgment model and the composition policy.
 
 ## Try a learner journey
 

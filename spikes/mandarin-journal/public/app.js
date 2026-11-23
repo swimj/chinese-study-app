@@ -2,6 +2,7 @@ import { createWordInbox } from './words.js';
 import { createAnnotations } from './annotations.js';
 import { createReading, readingLabel, referenceForSource } from './reading.js';
 import { createScrapbook, todayStep } from './scrapbook.js';
+import { compose } from './media-policy.js';
 
 const get = (id) => document.getElementById(id);
 const labels = { home: 'Journal', read: 'Reading', chat: 'Conversation', practice: 'Practice', saved: 'Scrapbook' };
@@ -140,8 +141,9 @@ get('word-text').addEventListener('input', () => {
 });
 const scrapbook = createScrapbook({
   host: get('scrapbook'), viewport: get('scrap-viewport'), world: get('scrap-world'),
-  node, link, ui, persist, readingLabel,
+  node, link, ui, persist, readingLabel, compose,
   getState: () => state,
+  react: (mediaId, reaction) => submit({ type: 'mediaReaction', mediaId, reaction }),
   openThread: async (id) => {
     if (id === state.activeThreadId || await submit({ type: 'selectThread', threadId: id })) location.hash = 'chat';
   },
@@ -419,7 +421,16 @@ function renderSaved() {
   }
   if (!state.activity.length) activity.append(node('li', 'No activity yet.', 'sub'));
 }
+for (const option of document.querySelectorAll('input[name="pictures"]')) {
+  option.onchange = async () => {
+    if (!await submit({ type: 'settings', pictures: option.value })) renderPictures();
+  };
+}
+function renderPictures() {
+  for (const option of document.querySelectorAll('input[name="pictures"]')) option.checked = option.value === (state.settings?.pictures || 'normal');
+}
 function renderState() {
+  renderPictures();
   get('session-notice').textContent = state.notice || '';
   get('session-notice').hidden = !state.notice;
   renderTutor();

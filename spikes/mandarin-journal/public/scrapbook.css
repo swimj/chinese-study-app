@@ -216,6 +216,95 @@ a.scrap:focus-visible {
 .also::before { content: '↔ '; }
 .scrap-observation { background: var(--tutor-tint); }
 
+/* Pictures: a clipping with its credit, and a cue that waits on its piece. */
+.scrap-media {
+  flex: 1 1 12rem;
+  padding: .55rem .55rem .6rem;
+  background: #fff;
+  box-shadow: 0 1px 0 #2146370f, 0 10px 22px -12px #21463780;
+}
+.clip-figure { margin: 0; }
+.clip-figure img {
+  display: block;
+  width: 100%;
+  height: auto;
+  max-height: 16rem;
+  object-fit: cover;
+  border-radius: 2px;
+  background: #e3e9e2;
+}
+.clip-caption { margin: .45rem .1rem 0; font-size: 1.05rem; line-height: 1.4; }
+.clip-caption:lang(zh) { font-family: var(--han); }
+.credit {
+  margin: .3rem .1rem 0;
+  font-size: .74rem;
+  line-height: 1.45;
+  color: var(--quiet);
+  overflow-wrap: anywhere;
+}
+.credit a, .clip-work a { color: inherit; }
+.clip-work { margin: .3rem .1rem 0; font-size: 1rem; }
+.clip-work .clip-link { color: var(--solid); }
+.clip-actions { display: flex; flex-wrap: wrap; gap: .4rem; margin-top: .55rem; }
+.clip-action {
+  padding: .3rem .75rem;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--panel);
+  color: var(--ink);
+  font-size: .84rem;
+}
+/* The control layer appears only while the clipping is pointed at or focused. */
+.clip-controls { position: absolute; top: 1rem; right: 1rem; margin: 0; }
+.scrap-media { position: relative; }
+.scrap-media:not(:hover):not(:focus-within) .clip-controls { opacity: 0; pointer-events: none; }
+.scrap-holder { position: relative; display: flex; flex: 1 1 11rem; max-width: 100%; }
+.scrap-holder.holder-word, .scrap-holder.holder-saved { flex-basis: 9.5rem; }
+.scrap-holder > .scrap { flex: 1 1 auto; }
+.picture-cue {
+  position: absolute;
+  top: -.7rem;
+  right: -.35rem;
+  z-index: 1;
+  padding: .2rem .6rem;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--panel);
+  color: var(--solid);
+  font-size: .8rem;
+  box-shadow: 0 6px 14px -10px #21463780;
+  transition: opacity 140ms ease;
+}
+.scrap-holder:not(:hover):not(:focus-within) .picture-cue:not(:focus-visible) { opacity: 0; pointer-events: none; }
+.picture-pop {
+  width: min(24rem, calc(100vw - 2rem));
+  max-height: calc(100dvh - 2rem);
+  overflow: auto;
+  padding: .8rem;
+  border: 1px solid #c9d5cb;
+  border-radius: .8rem;
+  background: var(--panel);
+  color: var(--ink);
+  box-shadow: 0 24px 48px -20px #21463799;
+}
+.picture-pop::backdrop { background: #1d2b2433; }
+.picture-pop .clip-figure img { max-height: 60dvh; object-fit: contain; }
+.pictures-setting {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: .15rem .35rem;
+  margin: .2rem 0 0;
+  padding: .45rem .55rem .3rem;
+  border: 0;
+  border-top: 1px solid #dfe7e0;
+  font-size: .9rem;
+}
+.pictures-setting legend { float: left; width: 100%; padding: 0 0 .15rem .3rem; color: var(--quiet); font-size: .82rem; }
+.pictures-setting label { white-space: nowrap; display: inline-flex; align-items: center; gap: .2rem; padding: .2rem .3rem; border-radius: .4rem; cursor: pointer; }
+.pictures-setting label:has(:checked) { background: var(--tint); }
+.pictures-setting input { margin: 0; accent-color: var(--solid); }
+
 /* Zoomed far out, pieces fold into their cluster. */
 .scrapbook.far .pieces,
 .scrapbook.far .cluster-head .tutor-note,
@@ -260,7 +349,7 @@ a.scrap:focus-visible {
   top: calc(100% + .45rem);
   left: 0;
   display: grid;
-  min-width: 11rem;
+  min-width: 14rem;
   padding: .35rem;
   background: var(--panel);
   border: 1px solid #c9d5cb;
@@ -397,6 +486,11 @@ a.scrap:focus-visible {
   }
   .scrap { flex: 0 0 min(17rem, 78vw); scroll-snap-align: start; }
   .scrap-word, .scrap-saved { flex-basis: min(13rem, 62vw); }
+  .scrap-holder { flex: 0 0 min(17rem, 78vw); scroll-snap-align: start; padding-top: .7rem; }
+  .scrap-holder.holder-word, .scrap-holder.holder-saved { flex-basis: min(13rem, 62vw); }
+  .scrap-holder > .scrap { flex: 1 1 auto; }
+  .picture-cue { top: 0; }
+  .scrap-media { flex-basis: min(15rem, 70vw); }
   .cluster-head h2 { font-size: 1.7rem; }
   .capture {
     position: fixed;

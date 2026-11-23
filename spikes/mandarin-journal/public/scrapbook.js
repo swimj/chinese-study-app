@@ -14,7 +14,10 @@ function tilt(id, range) {
   return ((hash(id) % 1000) / 1000 - 0.5) * 2 * range;
 }
 
-export function buildScrapbook(state, { readingLabel }) {
+// `media`, when given, is the composition policy's verdict for each media item
+// (media-policy.js): placed items become clippings beside their piece, and latent
+// ones wait on their piece until the learner focuses it.
+export function buildScrapbook(state, { readingLabel, media }) {
   const clusters = new Map();
   const cluster = (key, init) => {
     if (!clusters.has(key)) clusters.set(key, { key, scraps: [], recency: -1, also: new Set(), ...init() });
@@ -120,6 +123,18 @@ export function buildScrapbook(state, { readingLabel }) {
   // A fresh journal still has its readings to open.
   if (![...clusters.values()].some((c) => c.kind === 'read')) for (const doc of documents.slice(0, 2)) readingCluster(doc.id);
 
+  if (media) {
+    for (const c of clusters.values()) {
+      c.scraps = c.scraps.flatMap((scrap) => {
+        const attached = (state.media || []).filter((m) => m.anchor.id === scrap.id && media[m.id]);
+        const latent = attached.filter((m) => media[m.id].level === 'latent');
+        if (latent.length) scrap.latent = latent;
+        const placed = attached.filter((m) => media[m.id].level === 'placed').map((item) => ({ kind: 'media', id: 'media-' + item.id, item }));
+        return [scrap, ...placed];
+      });
+    }
+  }
+
   return [...clusters.values()]
     .filter((c) => c.kind !== 'chat' || c.scraps.length || c.overview)
     .filter((c) => c.kind !== LOOSE || c.scraps.length)
@@ -138,7 +153,7 @@ export function todayStep(state, { readingLabel }) {
   return { text: 'Tell your conversation partner about your day.', label: 'Talk', href: '#chat' };
 }
 
-export function createScrapbook({ host, viewport, world, node, link, getState, readingLabel, openThread, ui, persist }) {
+export function createScrapbook({ host, viewport, world, node, link, getState, readingLabel, openThread, ui, persist, compose, react }) {
   const view = { x: 0, y: 0, s: 1, ...(ui.scrapView || {}) };
   let positioned = false;
   let drag;
@@ -179,7 +194,7 @@ export function createScrapbook({ host, viewport, world, node, link, getState, r
   }
 
   viewport.addEventListener('pointerdown', (e) => {
-    if (narrow.matches || e.button !== 0 || e.target.closest('a, button, input, textarea, summary')) return;
+    if (narrow.matches || e.button !== 0 || e.target.closest('a, button, input, textarea, summary, [popover]')) return;
     drag = { x: e.clientX, y: e.clientY, vx: view.x, vy: view.y, moved: false };
     viewport.setPointerCapture(e.pointerId);
   });
@@ -196,7 +211,7 @@ export function createScrapbook({ host, viewport, world, node, link, getState, r
   viewport.addEventListener('pointerup', endDrag);
   viewport.addEventListener('pointercancel', endDrag);
   viewport.addEventListener('wheel', (e) => {
-    if (narrow.matches) return;
+    if (narrow.matches || e.target.closest('[popover]')) return;
     e.preventDefault();
     const r = viewport.getBoundingClientRect();
     if (e.ctrlKey || e.metaKey) zoomAt(e.clientX - r.left, e.clientY - r.top, Math.exp(-e.deltaY * 0.01));
@@ -230,7 +245,96 @@ export function createScrapbook({ host, viewport, world, node, link, getState, r
     menu.addEventListener('click', (e) => { if (e.target.closest('.dock-panel a, .dock-panel button')) menu.open = false; });
   }
 
+  function licenseLabel(license) {
+    const version = /\/(\d\.\d)\/?$/.exec(license.url || '')?.[1];
+    const name = { PD: 'Public domain', CC0: 'CC0', 'CC-BY': 'CC BY', 'CC-BY-SA': 'CC BY-SA' }[license.code] || license.code;
+    return license.code === 'PD' || license.code === 'CC0' || !version ? name : name + ' ' + version;
+  }
+  const outbound = (text, url) => Object.assign(link(text, url), { target: '_blank', rel: 'noopener noreferrer' });
+  // A picture with its credit: author, license (linked) and source page.
+  function picture(item) {
+    const parts = [];
+    if (item.kind === 'image') {
+      const figure = node('figure', undefined, 'clip-figure');
+      const img = node('img');
+      img.src = item.source.thumbUrl;
+      img.alt = (item.source.title || '').replace(/^File:/, '').replace(/\.[a-z0-9]+$/i, '').replace(/_/g, ' ');
+      img.loading = 'lazy';
+      img.decoding = 'async';
+      if (item.source.width && item.source.height) { img.width = item.source.width; img.height = item.source.height; }
+      img.referrerPolicy = 'no-referrer';
+      const caption = node('figcaption', item.caption, 'clip-caption');
+      if (hanzi.test(item.caption)) caption.lang = 'zh';
+      figure.append(img, caption);
+      parts.push(figure);
+      const credit = node('p', undefined, 'credit');
+      credit.append(item.credit?.author || 'Unknown author', ' · ');
+      if (item.license) credit.append(outbound(licenseLabel(item.license), item.license.url), ' · ');
+      credit.append(outbound('Wikimedia Commons', item.source.pageUrl));
+      parts.push(credit);
+    } else {
+      const caption = node('p', item.caption, 'clip-caption');
+      if (hanzi.test(item.caption)) caption.lang = 'zh';
+      const title = outbound(item.source.title || item.source.pageUrl, item.source.pageUrl);
+      title.className = 'clip-link';
+      if (hanzi.test(title.textContent)) title.lang = 'zh';
+      const line = node('p', undefined, 'clip-work');
+      line.append(title);
+      if (item.source.year) line.append(' ', node('span', item.source.year, 'sub'));
+      parts.push(caption, line);
+    }
+    return parts;
+  }
+  function control(label, action) {
+    const b = node('button', label, 'clip-action');
+    b.type = 'button';
+    b.dataset.mutation = '';
+    b.onclick = action;
+    return b;
+  }
+  // A latent picture: nothing shows until the learner focuses or hovers its piece.
+  function latentCue(scrap, el) {
+    const holder = node('div', undefined, 'scrap-holder holder-' + scrap.kind);
+    holder.append(el);
+    for (const item of scrap.latent) {
+      const pop = node('div', undefined, 'picture-pop');
+      pop.id = 'picture-' + item.id;
+      pop.popover = 'auto';
+      pop.setAttribute('role', 'dialog');
+      pop.setAttribute('aria-label', 'Picture of ' + item.caption);
+      const actions = node('div', undefined, 'clip-actions');
+      actions.append(
+        control('Keep on board', () => { pop.hidePopover(); react(item.id, 'keep'); }),
+        control('Not for me', () => { pop.hidePopover(); react(item.id, 'notForMe'); }),
+      );
+      pop.append(...picture(item), actions);
+      const cue = node('button', item.kind === 'link' ? 'link ↗' : 'picture ↗', 'picture-cue');
+      cue.type = 'button';
+      cue.setAttribute('popovertarget', pop.id);
+      cue.setAttribute('aria-label', (item.kind === 'link' ? 'Link for ' : 'Picture of ') + item.caption);
+      holder.append(cue, pop);
+    }
+    return holder;
+  }
+
   function scrapNode(scrap, state, list = false) {
+    if (scrap.kind === 'media') {
+      const el = node('article', undefined, 'scrap scrap-media scrap-media-' + scrap.item.kind);
+      el.tabIndex = 0;
+      el.setAttribute('aria-label', (scrap.item.kind === 'link' ? 'Link for ' : 'Picture of ') + scrap.item.caption);
+      if (!list) el.style.setProperty('--tilt', tilt(scrap.id, 2.2).toFixed(2) + 'deg');
+      el.append(...picture(scrap.item));
+      if (scrap.item.origin === 'system') {
+        const actions = node('div', undefined, 'clip-actions clip-controls');
+        actions.append(control('Not for me', () => react(scrap.item.id, 'notForMe')));
+        el.append(actions);
+      }
+      return el;
+    }
+    const el = scrapElement(scrap, state, list);
+    return scrap.latent ? latentCue(scrap, el) : el;
+  }
+  function scrapElement(scrap, state, list) {
     const tag = scrap.href ? 'a' : 'article';
     const el = node(tag, undefined, 'scrap scrap-' + scrap.kind);
     if (scrap.href) el.href = scrap.href;
@@ -385,7 +489,7 @@ export function createScrapbook({ host, viewport, world, node, link, getState, r
     render() {
       const state = getState();
       if (!state) return;
-      const clusters = buildScrapbook(state, { readingLabel });
+      const clusters = buildScrapbook(state, { readingLabel, media: compose(state, Date.now()) });
       world.replaceChildren(...clusters.map((c) => clusterNode(c, state, false)));
       host.classList.toggle('empty', !clusters.some((c) => c.scraps.length));
       requestAnimationFrame(layout);
@@ -394,7 +498,7 @@ export function createScrapbook({ host, viewport, world, node, link, getState, r
     renderList(container) {
       const state = getState();
       if (!state) return;
-      const clusters = buildScrapbook(state, { readingLabel }).filter((c) => c.scraps.length);
+      const clusters = buildScrapbook(state, { readingLabel, media: compose(state, Date.now()) }).filter((c) => c.scraps.length);
       container.replaceChildren(...clusters.map((c) => clusterNode(c, state, true)));
     },
     fit,

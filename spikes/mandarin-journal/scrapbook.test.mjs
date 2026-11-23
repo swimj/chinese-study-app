@@ -70,3 +70,23 @@ test('today offers one step: waiting practice, else the reading underway, else c
   assert.equal(todayStep(journal(), { readingLabel }).href, '#read/source/kiosk');
   assert.equal(todayStep(journal({ reading: { positions: {}, documents: [] } }), { readingLabel }).href, '#chat');
 });
+
+test('placed pictures become clippings beside their piece; latent ones wait on it, in table and list alike', () => {
+  const picture = (id, anchorId, ceiling) => ({
+    id, kind: 'image', origin: 'system', caption: id, anchor: { kind: 'annotation', id: anchorId }, ceiling,
+    source: { provider: 'wikidata-commons', pageUrl: 'https://commons.wikimedia.org/wiki/File:' + id, thumbUrl: 'https://upload.wikimedia.org/' + id },
+    createdAt: '2026-11-01T00:00:00Z', reactions: {},
+  });
+  const state = journal({ media: [picture('kiosk-photo', 'n1', 'placed'), picture('word-photo', 'w2', 'latent'), picture('hidden', 'n1', 'latent')] });
+  state.media[1].anchor = { kind: 'word', id: 'w2' };
+  const levels = { 'kiosk-photo': { level: 'placed', reasons: [] }, 'word-photo': { level: 'latent', reasons: [] }, hidden: { level: 'none', reasons: ['setting'] } };
+  const c = byKey(buildScrapbook(state, { readingLabel, media: levels }));
+  const kiosk = c['read:kiosk'].scraps;
+  const at = kiosk.findIndex((s) => s.id === 'n1');
+  assert.equal(kiosk[at + 1].kind, 'media');
+  assert.equal(kiosk[at + 1].item.id, 'kiosk-photo');
+  assert.equal(kiosk[at].latent, undefined, 'a hidden item leaves no cue');
+  assert.deepEqual(c.loose.scraps.find((s) => s.id === 'w2').latent.map((m) => m.id), ['word-photo']);
+  // Without a verdict, the board is text only, as composition sees it.
+  assert.ok(!buildScrapbook(state, { readingLabel }).flatMap((x) => x.scraps).some((s) => s.kind === 'media' || s.latent));
+});
