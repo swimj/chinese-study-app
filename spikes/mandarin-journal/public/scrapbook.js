@@ -94,6 +94,7 @@ export function buildScrapbook(state, { readingLabel }) {
     home.scraps.push({
       kind: isWord ? 'word' : 'saved', id: item.id, title: term,
       pinyin: item.word?.pinyin, meaning: item.word?.meaning || (!isWord ? item.detail : ''),
+      example: item.word?.example, translation: item.word?.translation,
       context: item.source && item.source !== term ? item.source : '',
       also: homes.slice(1).map((c) => ({ key: c.key, title: c.title })),
     });
@@ -218,11 +219,11 @@ export function createScrapbook({ host, viewport, world, node, link, getState, r
   host.querySelector('[data-zoom="out"]').onclick = () => { zoomAt(viewport.clientWidth / 2, viewport.clientHeight / 2, 0.8); remember(); };
   host.querySelector('[data-zoom="fit"]').onclick = () => fit();
 
-  function scrapNode(scrap, state) {
+  function scrapNode(scrap, state, list = false) {
     const tag = scrap.href ? 'a' : 'article';
     const el = node(tag, undefined, 'scrap scrap-' + scrap.kind);
     if (scrap.href) el.href = scrap.href;
-    el.style.setProperty('--tilt', tilt(scrap.id, 1.6).toFixed(2) + 'deg');
+    if (!list) el.style.setProperty('--tilt', tilt(scrap.id, 1.6).toFixed(2) + 'deg');
     if (scrap.kind === 'line') {
       el.append(node('q', scrap.quote, 'yours zh-line'));
     } else if (scrap.kind === 'takeaway') {
@@ -240,6 +241,12 @@ export function createScrapbook({ host, viewport, world, node, link, getState, r
       if (scrap.pinyin) head.append(node('span', scrap.pinyin, 'pinyin'));
       el.append(head);
       if (scrap.meaning) el.append(node('p', scrap.meaning, 'gloss'));
+      if (list && scrap.example) {
+        const ex = node('p', scrap.example, 'example');
+        ex.lang = 'zh';
+        el.append(ex);
+        if (scrap.translation) el.append(node('p', scrap.translation, 'translation'));
+      }
       if (scrap.context) {
         const ctx = node('p', scrap.context, 'yours-note');
         if (hanzi.test(scrap.context)) ctx.lang = 'zh';
@@ -315,22 +322,31 @@ export function createScrapbook({ host, viewport, world, node, link, getState, r
   new ResizeObserver(() => layout()).observe(viewport);
   narrow.addEventListener('change', () => { positioned = false; layout(); });
 
+  function clusterNode(c, state, list) {
+    const section = node('section', undefined, 'cluster cluster-' + c.kind);
+    section.dataset.key = c.key;
+    section.append(header(c, state));
+    const pieces = node('div', undefined, 'pieces');
+    pieces.append(...c.scraps.map((s) => scrapNode(s, state, list)));
+    if (c.scraps.length) section.append(pieces);
+    return section;
+  }
+
   return {
     render() {
       const state = getState();
       if (!state) return;
       const clusters = buildScrapbook(state, { readingLabel });
-      world.replaceChildren(...clusters.map((c) => {
-        const section = node('section', undefined, 'cluster cluster-' + c.kind);
-        section.dataset.key = c.key;
-        section.append(header(c, state));
-        const pieces = node('div', undefined, 'pieces');
-        pieces.append(...c.scraps.map((s) => scrapNode(s, state)));
-        if (c.scraps.length) section.append(pieces);
-        return section;
-      }));
+      world.replaceChildren(...clusters.map((c) => clusterNode(c, state, false)));
       host.classList.toggle('empty', !clusters.some((c) => c.scraps.length));
       requestAnimationFrame(layout);
+    },
+    // The same scrapbook read top to bottom, with full word details.
+    renderList(container) {
+      const state = getState();
+      if (!state) return;
+      const clusters = buildScrapbook(state, { readingLabel }).filter((c) => c.scraps.length);
+      container.replaceChildren(...clusters.map((c) => clusterNode(c, state, true)));
     },
     fit,
   };

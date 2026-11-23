@@ -238,24 +238,12 @@ textarea {
   overflow-wrap: anywhere;
   max-width: 100%;
 }
-.result,
-.saved-row {
+.result {
   border-top: 1px solid var(--line);
   margin: 17px 0 0;
   padding: 13px 0;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
-}
-.saved-row {
-  display: grid;
-  gap: 5px;
-}
-.saved-row h2 {
-  font: normal 22px/1.35 var(--serif);
-  margin: 0;
-}
-.saved-row p {
-  margin: 0;
 }
 #tutor {
   position: sticky;
@@ -513,15 +501,6 @@ footer {
   text-decoration-thickness: 1px;
   text-underline-offset: .18em;
 }
-#margin-notes {
-  list-style: none;
-  padding: 0;
-}
-.margin-index-link {
-  display: block;
-  width: fit-content;
-  overflow-wrap: anywhere;
-}
 .text-button {
   display: inline-flex;
   align-items: center;
@@ -620,13 +599,8 @@ footer {
   border-top: 1px solid var(--line);
   padding: 10px 0;
 }
-.activity-disclosure p,
-.saved-row blockquote {
+.activity-disclosure p {
   margin: 3px 0;
-}
-.saved-row blockquote {
-  border-inline-start: 2px solid var(--clay);
-  padding-inline-start: 10px;
 }
 #chat-form,
 .thread-tools,

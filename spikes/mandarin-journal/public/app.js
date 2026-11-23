@@ -4,7 +4,7 @@ import { createReading, readingLabel, referenceForSource } from './reading.js';
 import { createScrapbook, todayStep } from './scrapbook.js';
 
 const get = (id) => document.getElementById(id);
-const labels = { home: 'Journal', read: 'Reading', chat: 'Conversation', practice: 'Practice', saved: 'Saved' };
+const labels = { home: 'Journal', read: 'Reading', chat: 'Conversation', practice: 'Practice', saved: 'Scrapbook' };
 const uiKey = 'mandarin-journal.ui.v1';
 function readUi() {
   try {
@@ -386,33 +386,8 @@ function renderPractice() {
 }
 function renderSaved() {
   const list = get('saved-items');
-  list.replaceChildren();
-  for (const item of [...state.saved].reverse()) {
-    const row = node('article', undefined, 'saved-row');
-    row.append(node('span', item.kind, 'small'), node('h2', item.title));
-    if (item.detail) row.append(node('p', item.detail));
-    const target = item.reference && sourceHref(item.reference);
-    const id = referenceForSource(state, item.source) || referenceForSource(state, item.title);
-    if (target) row.append(link(item.reference.label + ' ↗', target, 'text-button'));
-    else if (id) row.append(link('Open ' + readingLabel(state, id) + ' ↗', href('read', 'source', id), 'text-button'));
-    else if (item.source) row.append(node('small', item.source, 'sub'));
-    list.append(row);
-  }
-  if (!list.childElementCount && !state.annotationThreads.length)
-    list.append(node('p', 'Your saved readings, words, and notes will appear here.', 'sub'));
-  const margin = get('margin-index');
-  margin.hidden = !state.annotationThreads.length;
-  const notes = get('margin-notes');
-  notes.replaceChildren();
-  for (const note of [...state.annotationThreads].reverse()) {
-    const anchor = note.anchor;
-    const title = anchor.surface === 'chat'
-      ? state.threads.find(t => t.id === anchor.ownerId)?.title
-      : readingLabel(state, anchor.ownerId);
-    const row = node('li');
-    row.append(node('small', title, 'sub'), link('“' + anchor.quote + '”', href(anchor.surface, 'annotation', note.id), 'margin-index-link'));
-    notes.append(row);
-  }
+  scrapbook.renderList(list);
+  if (!list.childElementCount) list.append(node('p', 'Nothing kept yet.', 'sub'));
   const activity = get('activity-list');
   activity.replaceChildren();
   for (const item of [...state.activity].reverse()) {

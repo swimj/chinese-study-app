@@ -1,10 +1,13 @@
 /* Home: an open scrapbook of the learner's material. */
-.scrapbook {
+.scrapbook,
+.scrap-list {
   --table: #eef3ec;
   --paper: #fffef8;
   --card: #fbf6e3;
   --marker: #f4e6ad;
   --tutor-tint: #fff6f1;
+}
+.scrapbook {
   position: relative;
   container: scrapbook / inline-size;
   height: max(34rem, calc(100dvh - 7.5rem));
@@ -302,4 +305,26 @@ a.scrap:focus-visible {
     z-index: 9;
   }
   body[data-view="home"] #tutor { bottom: calc(max(.6rem, env(safe-area-inset-bottom)) + 7.4rem); }
+}
+
+/* The scrapbook as a list: same clusters, read top to bottom. */
+.scrap-zoom a.fit {
+  display: inline-flex;
+  align-items: center;
+  min-height: 2.4rem;
+  padding: 0 .7rem;
+  font-size: .88rem;
+}
+.scrap-list { display: grid; gap: 2.4rem; margin-top: 1.2rem; }
+.scrap-list .cluster { position: static; }
+.scrap-list .pieces {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 17rem), 1fr));
+  gap: .9rem;
+}
+.scrap-list .scrap { transform: none; }
+.scrap-list .example { margin: .55rem 0 0; font: 1.05rem/1.6 var(--han); }
+.scrap-list .translation { margin: .1rem 0 0; font-size: .88rem; color: var(--quiet); }
+@container scrapbook (max-width: 52rem) {
+  .scrap-zoom a.fit { display: none; }
 }
