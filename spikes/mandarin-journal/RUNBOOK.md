@@ -68,7 +68,7 @@ overrides that refusal. Use it only on purpose, and never from an agent.
 
 ## Lookup dogfood and decision ledger
 
-Tap a Han character for a quick lookup. Selecting a span opens Save, Ask and **Look up**. Only Look up requests a definition for that selection. Local matches use CC-CEDICT and the sample sense catalog (8 headwords, 14 senses). A clean lexical entry can answer immediately. With `OPENROUTER_API_KEY`, the selector can choose a stored sense using the passage. With `OPENAI_API_KEY`, Sol can explain unresolved lookups. `JOURNAL_DEMO=1` disables both model paths. Point `LOOKUP_DICTIONARY` to an extracted CC-CEDICT v1 file to use a full dictionary. The default is the attributed excerpt bundled with the spike.
+Tap a Han character for a quick lookup. Escape, ×, or another tap on the underlined text closes it. Tapping a different word opens its lookup directly. Selecting a span opens Save, Ask and **Look up**. Only Look up requests a definition for that selection. Local matches use CC-CEDICT and the sample sense catalog (8 headwords, 14 senses). A clean lexical entry can answer immediately. With `OPENROUTER_API_KEY`, the selector can choose a stored sense using the passage. With `OPENAI_API_KEY`, Sol can explain unresolved lookups. `JOURNAL_DEMO=1` disables both model paths. Point `LOOKUP_DICTIONARY` to an extracted CC-CEDICT v1 file to use a full dictionary. The default is the attributed excerpt bundled with the spike.
 
 From the journal directory, a separate fixture server can load provider keys explicitly:
 

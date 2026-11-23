@@ -106,7 +106,11 @@ export function createAnnotations({ submit, getState, canSubmit, lookupPassage, 
   const flag = button('an-flag', 'Mark as wrong');
   const feedbackError = element('span', 'an-feedback-error');
   feedbackError.setAttribute('role', 'status');
-  termLine.append(spelling, pronunciation);
+  const closeLookup = button('an-close-lookup', '×');
+  closeLookup.setAttribute('aria-label', 'Close lookup');
+  closeLookup.setAttribute('aria-keyshortcuts', 'Escape');
+  closeLookup.title = 'Close lookup (Esc)';
+  termLine.append(spelling, pronunciation, closeLookup);
   dictionary.append(termLine, gloss, chunks, flag, feedbackError);
   const quickActions = element('div', 'an-quick-actions');
   const capture = button('an-capture', 'Save');
@@ -235,6 +239,12 @@ export function createAnnotations({ submit, getState, canSubmit, lookupPassage, 
       }
     }
   }
+
+  function dismissPopover() {
+    if (candidate) window.getSelection()?.removeAllRanges();
+    close(true);
+  }
+  closeLookup.onclick = dismissPopover;
 
   function position() {
     const view = window.visualViewport;
@@ -479,7 +489,11 @@ export function createAnnotations({ submit, getState, canSubmit, lookupPassage, 
     }
   };
 
+  // pointerdown dismisses the old box before click resolves the tapped glyph.
+  let dismissedRange;
   function pointAt(block, event) {
+    const previous = dismissedRange;
+    dismissedRange = undefined;
     if (event.button !== 0 || !window.getSelection()?.isCollapsed) return;
     // A caret is a boundary. Check the glyph on both sides so either half of a
     // character points at that character, including at a wrapped line ending.
@@ -499,6 +513,7 @@ export function createAnnotations({ submit, getState, canSubmit, lookupPassage, 
       const within = [...hit.getClientRects()].some(r => event.clientX >= r.left && event.clientX <= r.right &&
         event.clientY >= r.top && event.clientY <= r.bottom);
       if (!within) continue;
+      if (previous?.startContainer === node && startOffset >= previous.startOffset && startOffset < previous.endOffset) return;
       const { annotationOwner: ownerId, annotationBlock: blockId } = block.dataset;
       const anchor = { surface: 'read', ownerId, startId: blockId, endId: blockId,
         startOffset, endOffset: startOffset + quote.length, quote };
@@ -711,15 +726,20 @@ export function createAnnotations({ submit, getState, canSubmit, lookupPassage, 
   document.addEventListener('keydown', e => {
     if (e.key === 'Escape' && (current || candidate)) {
       e.preventDefault();
-      if (candidate) window.getSelection()?.removeAllRanges();
-      close(true);
+      dismissPopover();
     } else if (candidate && !toolbar.hidden && e.key === 'Tab' && !e.shiftKey && !toolbar.contains(document.activeElement)) {
       e.preventDefault();
       ((lookup && spelling.querySelector('button')) || (capture.hidden || capture.disabled ? compose : capture)).focus({ preventScroll: true });
     }
   });
   document.addEventListener('pointerdown', e => {
-    if (!panel.contains(e.target) && !e.target.closest('.an-rail') && !toolbar.contains(e.target)) close();
+    dismissedRange = undefined;
+    if (panel.contains(e.target) || e.target.closest('.an-rail') || toolbar.contains(e.target)) return;
+    const block = sourceAt(e.target);
+    if (lookup && block && e.isPrimary && e.button === 0) {
+      dismissedRange = sourceRanges(lookup.anchor).find(range => range.startContainer.parentElement === block);
+    }
+    close();
   });
   document.addEventListener('focusin', e => {
     if (candidate && toolbar.contains(e.relatedTarget) && !toolbar.contains(e.target) && e.target !== lookupTrigger) {

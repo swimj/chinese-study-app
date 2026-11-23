@@ -265,7 +265,17 @@
 .an-quick-actions button { min-height: 36px; padding: 4px 12px; color: var(--solid); }
 .an-capture { font-weight: 600; }
 .an-dictionary { padding: 5px 6px 0; }
-.an-term-line { display: flex; align-items: baseline; flex-wrap: wrap; gap: .5em; }
+.an-term-line { position: relative; padding-inline-end: 32px; min-height: 32px; display: flex; align-items: baseline; flex-wrap: wrap; gap: .5em; }
+.an-close-lookup {
+  position: absolute;
+  inset-block-start: -4px;
+  inset-inline-end: -4px;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  color: var(--quiet);
+  font-size: 1.25rem;
+}
 .an-term, .an-character { font: 1.3rem/1.5 var(--han); }
 .an-character { padding: 0; color: inherit; border-bottom: 1px dotted var(--line); }
 .an-pronunciation, .an-whole { color: var(--quiet); font: .87rem/1.4 var(--sans); }
@@ -284,6 +294,8 @@
   pointer-events: none;
 }
 @media (pointer: coarse) {
+  .an-close-lookup { width: 44px; height: 44px; }
+  .an-term-line { padding-inline-end: 44px; min-height: 44px; }
   .an-quick-actions button, .an-character, .an-whole { min-height: 44px; }
   .an-character { min-width: 32px; }
 }
