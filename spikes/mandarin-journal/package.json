@@ -7,8 +7,8 @@
   },
   "scripts": {
     "start": "node --env-file-if-exists=.env server.ts",
-    "start:live": "JOURNAL_PROFILE=live node --env-file-if-exists=.env server.ts",
-    "start:copy": "JOURNAL_PROFILE=copy node --env-file-if-exists=.env server.ts",
+    "start:live": "JOURNAL_PROFILE=live node --env-file-if-exists=../../.env --env-file-if-exists=.env server.ts",
+    "start:copy": "JOURNAL_PROFILE=copy node --env-file-if-exists=../../.env --env-file-if-exists=.env server.ts",
     "journal:where": "node journal-cli.ts where",
     "journal:backup": "node journal-cli.ts backup",
     "journal:copy-live": "node journal-cli.ts copy-live",

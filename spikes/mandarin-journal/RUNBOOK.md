@@ -28,8 +28,10 @@ npm ci
 npm run start:live
 ```
 
-Put `OPENAI_API_KEY` in `spikes/mandarin-journal/.env` (ignored by Git), or
-pass `--env-file`. Without a key the live journal opens with the offline demo
+`start:live` and `start:copy` read `OPENAI_API_KEY` from the repository root
+`.env`, then from `spikes/mandarin-journal/.env` if present (ignored by Git;
+it wins). Plain `npm start` reads only the latter, so fixture servers in agent
+worktrees, which receive a copy of the root `.env`, stay on the offline tutor. Without a key the live journal opens with the offline demo
 tutor. The startup line names the journal, the tutor mode, the path and the
 snapshot it just took.
 
