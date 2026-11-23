@@ -146,6 +146,17 @@ const scrapbook = createScrapbook({
     if (id === state.activeThreadId || await submit({ type: 'selectThread', threadId: id })) location.hash = 'chat';
   },
 });
+get('dock-tutor').onclick = (e) => setTutor(get('tutor-body').inert, true, true, e.currentTarget);
+const pointButton = get('tutor-point');
+function setPointing(on) {
+  pointButton.setAttribute('aria-pressed', String(on));
+  pointButton.textContent = on ? 'Pick a piece on the table' : 'Point to something';
+}
+pointButton.onclick = () => {
+  if (pointButton.getAttribute('aria-pressed') === 'true') { scrapbook.stopPicking(); return; }
+  setPointing(true);
+  scrapbook.pick((piece) => primeTutor({ label: piece.label, surface: 'home', source: piece.source }), () => setPointing(false));
+};
 function renderToday() {
   const step = todayStep(state, { readingLabel });
   const text = get('today-text');
@@ -161,6 +172,8 @@ get('today').textContent = new Intl.DateTimeFormat(undefined, {
 
 function setTutor(open, focus = false, remember = true, opener = document.activeElement) {
   if (remember) { ui.tutorOpen = open; persist(); }
+  get('dock-tutor').setAttribute('aria-expanded', String(open));
+  if (!open && typeof scrapbook !== 'undefined') { scrapbook.stopPicking(); scrapbook.clearAsked(); }
   const toggle = get('tutor-toggle');
   const body = get('tutor-body');
   const changed = toggle.getAttribute('aria-expanded') !== String(open);
@@ -194,6 +207,7 @@ function primeTutor(context) {
   setTutor(true, true);
 }
 get('clear-context').onclick = () => {
+  scrapbook.clearAsked();
   delete ui.tutorContext;
   persist();
   renderTutorContext();
@@ -436,6 +450,7 @@ async function navigate(initial = false) {
   }
   for (const section of document.querySelectorAll('[data-page]')) section.hidden = section.dataset.page !== page;
   document.body.dataset.view = page;
+  get('tutor-point').hidden = page !== 'home';
   if (page === 'practice' && ui.tutorOpen === undefined) setTutor(matchMedia('(min-width: 861px)').matches, false, false);
   else setTutor(Boolean(ui.tutorOpen), false, false);
   if (page !== 'home' && page !== 'saved') ui.recent = page;

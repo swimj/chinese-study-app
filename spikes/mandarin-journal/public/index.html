@@ -44,7 +44,7 @@
                 </nav>
               </details>
               <p class="today-line">
-                <span class="seal-mini" lang="zh" aria-hidden="true">师</span><span id="today-text"></span>
+                <button type="button" id="dock-tutor" class="today-seal" aria-label="Tutor" aria-controls="tutor-body" aria-expanded="false"><span lang="zh" aria-hidden="true">师</span></button><span id="today-text"></span>
                 <a id="today-action" class="today-go" href="#practice"></a>
               </p>
               <p class="dateline" id="today" hidden></p>
@@ -127,6 +127,7 @@
           </button>
           <div class="tutor-fold"><div id="tutor-body" inert aria-hidden="true">
           <div id="tutor-messages" role="log" aria-label="Tutor conversation" class="thread"></div>
+          <button type="button" id="tutor-point" class="tutor-point" aria-pressed="false" hidden>Point to something</button>
           <div id="tutor-context" class="tutor-context" hidden>
             <span id="tutor-context-label"></span>
             <button id="clear-context" type="button" aria-label="Remove source from question">×</button>
