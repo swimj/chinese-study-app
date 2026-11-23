@@ -1,3 +1,5 @@
+import { passageLookups } from './reader-lookup.js';
+
 const sourceSelector = '[data-annotation-surface][data-annotation-owner][data-annotation-block]';
 
 function element(tag, className, text) {
@@ -78,14 +80,47 @@ function anchorKey(anchor) {
   return JSON.stringify([anchor.surface, anchor.ownerId, anchor.startId, anchor.startOffset, anchor.endId, anchor.endOffset]);
 }
 
+function savedPassage(thread) {
+  return thread?.capturedAt && !thread.messages.some(message => message.role === 'assistant');
+}
+
 function clamp(value, lo, hi) {
   return Math.max(lo, Math.min(value, hi));
 }
 
-export function createAnnotations({ submit, getState, canSubmit }) {
-  const toolbar = button('an-quote-action', 'Quote');
+export function createAnnotations({ submit, getState, canSubmit, lookupPassage, flagLookup }) {
+  const toolbar = element('div', 'an-quote-action');
   toolbar.hidden = true;
-  toolbar.setAttribute('aria-label', 'Quote');
+  toolbar.setAttribute('role', 'group');
+  toolbar.setAttribute('aria-label', 'Passage actions');
+  const dictionary = element('div', 'an-dictionary');
+  const termLine = element('div', 'an-term-line');
+  const spelling = element('span', 'an-term');
+  spelling.lang = 'zh';
+  const pronunciation = element('span', 'an-pronunciation');
+  const gloss = element('p', 'an-gloss');
+  gloss.id = 'reader-gloss';
+  gloss.setAttribute('aria-live', 'polite');
+  const chunks = element('p', 'an-chunks');
+  chunks.lang = 'zh';
+  const flag = button('an-flag', 'Mark as wrong');
+  const feedbackError = element('span', 'an-feedback-error');
+  feedbackError.setAttribute('role', 'status');
+  const closeLookup = button('an-close-lookup', '×');
+  closeLookup.setAttribute('aria-label', 'Close lookup');
+  closeLookup.setAttribute('aria-keyshortcuts', 'Escape');
+  closeLookup.title = 'Close lookup (Esc)';
+  termLine.append(spelling, pronunciation, closeLookup);
+  dictionary.append(termLine, gloss, chunks, flag, feedbackError);
+  const quickActions = element('div', 'an-quick-actions');
+  const capture = button('an-capture', 'Save');
+  const compose = button('an-compose', 'Ask');
+  const withNote = button('an-with-note', 'Add note');
+  const inspect = button('an-inspect', 'Look up');
+  quickActions.append(capture, withNote, compose, inspect);
+  toolbar.append(dictionary, quickActions);
+  const confirmation = element('span', 'an-confirmation');
+  confirmation.setAttribute('role', 'status');
   const panel = element('section', 'an-panel');
   panel.hidden = true;
   panel.id = 'annotation-panel';
@@ -110,8 +145,12 @@ export function createAnnotations({ submit, getState, canSubmit }) {
   save.type = ask.type = 'submit';
   actions.append(save, ask);
   form.append(input, actions);
-  panel.append(head, chooser, messages, form);
-  document.body.append(toolbar, panel);
+  const savedActions = element('div', 'an-actions');
+  const appendNote = button('an-ask', 'Add note');
+  const discuss = button('an-ask', 'Ask');
+  savedActions.append(appendNote, discuss);
+  panel.append(head, chooser, messages, savedActions, form);
+  document.body.append(toolbar, panel, confirmation);
 
   const sources = () => getState()?.annotationThreads || [];
   const draftKey = 'mandarin-journal.annotation-drafts.v1';
@@ -124,12 +163,21 @@ export function createAnnotations({ submit, getState, canSubmit }) {
     try { sessionStorage.setItem(draftKey, JSON.stringify([...drafts])); }
     catch { /* In-memory drafts remain available. */ }
   }
-  let current, candidate, inFlight, hoverTimer, frame;
+  let current, candidate, lookup, lookupTrigger, inFlight, hoverTimer, frame, confirmationTimer;
   const controls = new Map();
-  const keyFor = (view) => view.id || anchorKey(view.anchor);
+  const keyFor = view => (view.mode === 'capture' ? 'capture:' : '') + (view.id || anchorKey(view.anchor));
   const groupFor = (anchor) => sources().filter(t =>
     t.anchor.surface === anchor.surface && t.anchor.ownerId === anchor.ownerId && t.anchor.startId === anchor.startId);
   const startBlock = (anchor) => blocksOf(anchor.surface, anchor.ownerId).find(el => el.dataset.annotationBlock === anchor.startId);
+
+  const threadAt = anchor => sources().find(thread => anchorKey(thread.anchor) === anchorKey(anchor));
+
+  function updateCapture() {
+    const saved = candidate && threadAt(candidate)?.capturedAt;
+    capture.textContent = saved ? 'Saved' : 'Save';
+    withNote.textContent = saved ? 'Add note' : 'Save with note';
+    capture.disabled = Boolean(saved) || !canSubmit();
+  }
 
   function updateButtons() {
     const disabled = !input.value.trim() || !!inFlight || !canSubmit();
@@ -138,31 +186,46 @@ export function createAnnotations({ submit, getState, canSubmit }) {
     form.setAttribute('aria-busy', String(input.readOnly));
   }
 
+  function paintLookup() {
+    if (!window.CSS?.highlights || !window.Highlight) return;
+    CSS.highlights.set('journal-lookup', new Highlight(...(lookup && candidate ? sourceRanges(candidate) : [])));
+  }
+
   let rangesByBlock = new WeakMap();
   function paint() {
     rangesByBlock = new WeakMap();
-    const all = [];
+    const notes = [];
+    const saves = [];
     for (const thread of sources()) {
       for (const range of sourceRanges(thread.anchor)) {
         const block = range.startContainer.parentElement;
         if (!rangesByBlock.has(block)) rangesByBlock.set(block, []);
         rangesByBlock.get(block).push({range, thread});
-        all.push(range);
+        (savedPassage(thread) ? saves : notes).push(range);
       }
     }
     if (!window.CSS?.highlights || !window.Highlight) return;
-    CSS.highlights.set('journal-note', new Highlight(...all));
+    CSS.highlights.set('journal-note', new Highlight(...notes));
+    CSS.highlights.set('journal-saved', new Highlight(...saves));
     CSS.highlights.set('journal-open-note', new Highlight(...(current ? sourceRanges(current.anchor) : [])));
   }
 
   function clearCandidate() {
     toolbar.hidden = true;
     candidate = undefined;
+    lookupTrigger = undefined;
+    if (lookup) {
+      lookup = undefined;
+      paintLookup();
+    }
   }
 
   function close(restore = false) {
     clearTimeout(hoverTimer);
+    const returnTo = lookupTrigger;
     clearCandidate();
+    if (restore) returnTo?.focus({ preventScroll: true });
+    confirmation.textContent = '';
     const active = current;
     current = undefined;
     panel.hidden = true;
@@ -177,15 +240,27 @@ export function createAnnotations({ submit, getState, canSubmit }) {
     }
   }
 
+  function dismissPopover() {
+    if (candidate) window.getSelection()?.removeAllRanges();
+    close(true);
+  }
+  closeLookup.onclick = dismissPopover;
+
   function position() {
     const view = window.visualViewport;
-    const left = (view?.offsetLeft || 0) + 8;
-    const top = (view?.offsetTop || 0) + 8;
-    const right = left + (view?.width || innerWidth) - 16;
-    const bottom = top + (view?.height || innerHeight) - 16;
-    if (!toolbar.hidden && candidate) {
-      const rect = sourceRanges(candidate)[0]?.getClientRects()[0];
-      if (!rect || rect.bottom < top || rect.top > bottom) { toolbar.hidden = true; return; }
+    const source = candidate || current?.anchor;
+    const reader = source?.surface === 'read' && startBlock(source)?.closest('.reader-scroll')?.getBoundingClientRect();
+    const viewportLeft = view?.offsetLeft || 0;
+    const viewportTop = view?.offsetTop || 0;
+    const left = Math.max(viewportLeft, reader ? reader.left : viewportLeft) + 8;
+    const top = Math.max(viewportTop, reader ? reader.top : viewportTop) + 8;
+    const right = Math.min(viewportLeft + (view?.width || innerWidth), reader ? reader.right : Infinity) - 8;
+    const bottom = Math.min(viewportTop + (view?.height || innerHeight), reader ? reader.bottom : Infinity) - 8;
+    if (candidate) {
+      const rect = sourceRanges(candidate).flatMap(range => [...range.getClientRects()]).find(r => r.bottom >= top && r.top <= bottom);
+      if (!rect) { clearCandidate(); return; }
+      toolbar.hidden = false;
+      toolbar.style.maxHeight = Math.max(0, bottom - top) + 'px';
       toolbar.style.left = clamp(rect.left, left, right - toolbar.offsetWidth) + 'px';
       toolbar.style.top = clamp(rect.top - toolbar.offsetHeight - 5 >= top ? rect.top - toolbar.offsetHeight - 5 : rect.bottom + 5, top, bottom - toolbar.offsetHeight) + 'px';
     }
@@ -225,7 +300,21 @@ export function createAnnotations({ submit, getState, canSubmit }) {
     const group = thread ? groupFor(thread.anchor) : [];
     chooser.hidden = group.length < 2;
     if (!chooser.hidden) {
-      chooser.replaceChildren(...group.map((t, index) => new Option((index + 1) + ' · ' + t.anchor.quote, t.id)));
+      chooser.replaceChildren();
+      if (group.some(savedPassage)) {
+        for (const [label, items] of [
+          ['Saved passages', group.filter(savedPassage)],
+          ['Margin notes', group.filter(t => !savedPassage(t))],
+        ]) {
+          if (!items.length) continue;
+          const section = document.createElement('optgroup');
+          section.label = label;
+          section.append(...items.map(t => new Option(t.anchor.quote, t.id)));
+          chooser.append(section);
+        }
+      } else {
+        chooser.append(...group.map((t, index) => new Option((index + 1) + ' · ' + t.anchor.quote, t.id)));
+      }
       chooser.value = current.id;
     }
     const stamp = JSON.stringify(thread?.messages || []);
@@ -239,9 +328,17 @@ export function createAnnotations({ submit, getState, canSubmit }) {
       messages.scrollTop = messages.scrollHeight;
     }
     messages.hidden = !thread?.messages.length;
-    input.placeholder = thread ? 'Reply in the margin…' : 'Add a note or ask your tutor…';
-    input.setAttribute('aria-label', thread ? 'Reply to this note' : 'Note about the quoted text');
-    save.textContent = thread ? 'Reply' : 'Save note';
+    const capturing = current.mode === 'capture';
+    const compact = current.mode === 'inspect' && savedPassage(thread);
+    form.hidden = Boolean(compact);
+    savedActions.hidden = !compact;
+    ask.hidden = capturing;
+    panel.classList.toggle('an-saved-passage', Boolean(compact));
+    panel.setAttribute('aria-label', compact ? 'Saved passage' : capturing ? 'Save with a note' : 'Margin note');
+    input.placeholder = capturing ? 'Add a note…' : current.mode === 'ask' ? 'Ask about this passage…'
+      : thread ? 'Reply in the margin…' : 'Add a note or ask your tutor…';
+    input.setAttribute('aria-label', capturing ? 'Note for this save' : thread ? 'Reply to this note' : 'Note about the quoted text');
+    save.textContent = capturing ? 'Save note' : thread ? 'Reply' : 'Save note';
     updateButtons();
   }
 
@@ -250,14 +347,15 @@ export function createAnnotations({ submit, getState, canSubmit }) {
     if (!block?.getClientRects().length) return false;
     clearTimeout(hoverTimer);
     clearCandidate();
-    current = { anchor, id, trigger, preview: mode === 'hover' };
+    current = { anchor, id, trigger, preview: mode === 'hover', mode };
+    form.classList.toggle('an-asking', mode === 'ask');
     input.value = drafts.get(keyFor(current)) || '';
     panel.hidden = false;
     displayThread();
     for (const [el, { marker }] of controls) marker.setAttribute('aria-expanded', String(Boolean(id && el === block)));
     paint();
     position();
-    if (mode === 'edit') input.focus({ preventScroll: true });
+    if (mode === 'edit' || mode === 'ask' || mode === 'capture') input.focus({ preventScroll: true });
     if (mode === 'inspect') panel.focus({ preventScroll: true });
     return true;
   }
@@ -270,15 +368,158 @@ export function createAnnotations({ submit, getState, canSubmit }) {
     return show(thread.anchor, id, controls.get(block)?.marker, 'inspect');
   }
 
-  function openBlock(surface, ownerId, blockId, excerpt) {
+  function openBlock(surface, ownerId, blockId) {
     const block = blocksOf(surface, ownerId).find(el => el.dataset.annotationBlock === blockId);
     if (!block) return false;
-    const text = block.textContent;
-    const quote = excerpt || text;
-    const startOffset = text.indexOf(quote);
-    if (startOffset < 0 || !quote.trim()) return false;
-    return show({ surface, ownerId, startId: blockId, endId: blockId, startOffset, endOffset: startOffset + quote.length, quote },
+    const quote = block.textContent;
+    if (!quote.trim()) return false;
+    return show({ surface, ownerId, startId: blockId, endId: blockId, startOffset: 0, endOffset: quote.length, quote },
       undefined, document.activeElement);
+  }
+
+  function updateFlag() {
+    flag.hidden = !lookup?.id;
+    flag.disabled = Boolean(lookup?.flagged || lookup?.flagPending);
+    flag.textContent = lookup?.flagged ? 'Marked as wrong' : 'Mark as wrong';
+    feedbackError.textContent = lookup?.feedbackError || '';
+  }
+
+  flag.onclick = async () => {
+    const entry = lookup;
+    if (!entry?.id || flag.disabled) return;
+    entry.flagPending = true;
+    entry.feedbackError = '';
+    updateFlag();
+    try {
+      await flagLookup(entry.id);
+      entry.flagged = true;
+    } catch {
+      entry.feedbackError = 'Couldn’t record feedback. Try again.';
+    } finally {
+      entry.flagPending = false;
+      if (lookup === entry) { updateFlag(); position(); }
+    }
+  };
+
+  function offer(anchor, entry, trigger) {
+    const previousFocus = toolbar.contains(document.activeElement) ? document.activeElement : null;
+    candidate = anchor;
+    lookup = entry;
+    lookupTrigger = trigger;
+    const reading = anchor.surface === 'read';
+    toolbar.removeAttribute('aria-describedby');
+    dictionary.hidden = !entry;
+    capture.hidden = withNote.hidden = !reading;
+    inspect.hidden = !reading || Boolean(entry && !entry.error);
+    inspect.textContent = entry?.error ? 'Retry lookup' : 'Look up';
+    compose.textContent = reading ? 'Ask' : 'Quote';
+    toolbar.classList.toggle('has-gloss', Boolean(entry));
+    if (entry) {
+      spelling.replaceChildren();
+      const chars = [...anchor.quote];
+      if (anchor.startId === anchor.endId && entry.answer && chars.length > 1 && chars.length <= 8) {
+        let start = anchor.startOffset;
+        for (const glyph of chars) {
+          const piece = { ...anchor, startOffset: start, endOffset: start + glyph.length, quote: glyph };
+          if (/\p{Script=Han}/u.test(glyph)) {
+            const narrow = button('an-character', glyph);
+            narrow.setAttribute('aria-label', 'Look up ' + glyph);
+            narrow.onclick = () => startLookup(piece, 'selection', trigger, entry);
+            spelling.append(narrow);
+          } else spelling.append(glyph);
+          start = piece.endOffset;
+        }
+      } else spelling.textContent = anchor.quote;
+      if (entry.whole) {
+        const whole = entry.whole;
+        const widen = button('an-whole', '↩ ' + whole.anchor.quote);
+        widen.setAttribute('aria-label', 'Back to ' + whole.anchor.quote);
+        widen.onclick = () => {
+          offer(whole.anchor, whole, trigger);
+          spelling.querySelector('button')?.focus({ preventScroll: true });
+        };
+        spelling.append(widen);
+      }
+      pronunciation.textContent = entry.answer?.pinyin || '';
+      gloss.textContent = entry.answer?.gloss || entry.error || (entry.pending ? 'Looking up…' : 'No gloss available.');
+      chunks.textContent = entry.answer?.chunks?.join(' / ') || '';
+      chunks.hidden = !chunks.textContent;
+      toolbar.setAttribute('aria-describedby', gloss.id);
+    }
+    updateFlag();
+    updateCapture();
+    toolbar.hidden = false;
+    paintLookup();
+    position();
+    if (previousFocus && (!previousFocus.isConnected || previousFocus.hidden)) {
+      (spelling.querySelector('.an-whole') || (capture.disabled ? compose : capture)).focus({ preventScroll: true });
+    }
+  }
+
+  async function startLookup(anchor, kind, trigger, whole) {
+    const block = startBlock(anchor);
+    if (!block) return;
+    const entry = { anchor, kind, whole, pending: true };
+    // Keep Save and Ask available for the visible quote while its lookup runs.
+    offer(anchor, entry, trigger);
+    try {
+      const result = await lookupPassage({ documentId: anchor.ownerId, blockId: anchor.startId,
+        ...(anchor.startId !== anchor.endId ? { endBlockId: anchor.endId } : {}),
+        kind, start: anchor.startOffset, end: anchor.endOffset });
+      if (lookup !== entry || !block.isConnected) return;
+      if (kind === 'tap') {
+        const quote = block.textContent.slice(result.start, result.end);
+        entry.anchor = { ...anchor, startOffset: result.start, endOffset: result.end, quote };
+      }
+      entry.id = result.id;
+      entry.answer = result.answer;
+    } catch {
+      if (lookup !== entry || !block.isConnected) return;
+      entry.error = 'Couldn’t look up this passage.';
+    }
+    entry.pending = false;
+    offer(entry.anchor, entry, trigger);
+  }
+
+  inspect.onclick = () => {
+    if (!candidate) return;
+    startLookup(candidate, lookup?.kind || 'selection', lookupTrigger || startBlock(candidate)?.parentElement, lookup?.whole);
+    if (document.activeElement === inspect || document.activeElement === document.body) {
+      (capture.disabled ? compose : capture).focus({ preventScroll: true });
+    }
+  };
+
+  // pointerdown dismisses the old box before click resolves the tapped glyph.
+  let dismissedRange;
+  function pointAt(block, event) {
+    const previous = dismissedRange;
+    dismissedRange = undefined;
+    if (event.button !== 0 || !window.getSelection()?.isCollapsed) return;
+    // A caret is a boundary. Check the glyph on both sides so either half of a
+    // character points at that character, including at a wrapped line ending.
+    const caret = document.caretPositionFromPoint?.(event.clientX, event.clientY);
+    const range = !caret && document.caretRangeFromPoint?.(event.clientX, event.clientY);
+    const node = caret?.offsetNode || range?.startContainer;
+    if (!node || node !== block.firstChild || node.nodeType !== Node.TEXT_NODE) return;
+    const offset = caret?.offset ?? range.startOffset;
+    for (let startOffset of [offset, offset - 1]) {
+      if (startOffset < 0 || startOffset >= node.length) continue;
+      if (/[\uDC00-\uDFFF]/u.test(node.data[startOffset])) startOffset--;
+      const quote = String.fromCodePoint(node.data.codePointAt(startOffset));
+      if (!/\p{Script=Han}/u.test(quote)) continue;
+      const hit = document.createRange();
+      hit.setStart(node, startOffset);
+      hit.setEnd(node, startOffset + quote.length);
+      const within = [...hit.getClientRects()].some(r => event.clientX >= r.left && event.clientX <= r.right &&
+        event.clientY >= r.top && event.clientY <= r.bottom);
+      if (!within) continue;
+      if (previous?.startContainer === node && startOffset >= previous.startOffset && startOffset < previous.endOffset) return;
+      const { annotationOwner: ownerId, annotationBlock: blockId } = block.dataset;
+      const anchor = { surface: 'read', ownerId, startId: blockId, endId: blockId,
+        startOffset, endOffset: startOffset + quote.length, quote };
+      startLookup(anchor, 'tap', block.parentElement);
+      return;
+    }
   }
 
   function releasePreview() {
@@ -311,9 +552,48 @@ export function createAnnotations({ submit, getState, canSubmit }) {
       if (current?.trigger === marker && !current.preview) { close(true); return; }
       showGroup('inspect');
     };
+    if (surface === 'read') {
+      const entries = passageLookups(owner, id, block.textContent);
+      block.onclick = event => pointAt(block, event);
+      const text = block.textContent;
+      const glyphs = [...text.matchAll(/\p{Script=Han}/gu)];
+      const first = glyphs[0];
+      if (first) {
+        // On imported passages the same keyboard control can reach every Han character.
+        const targets = entries.length ? entries.map(e => e.anchor) : [{ startOffset: first.index, quote: first[0] }];
+        for (const target of targets) {
+          const key = button('an-shortcut', 'Look up ' + target.quote);
+          key.setAttribute('aria-description', 'Use the left and right arrows to choose a character.');
+          key.setAttribute('aria-keyshortcuts', 'ArrowLeft ArrowRight');
+          let index = glyphs.findIndex(hit => hit.index === target.startOffset);
+          key.onkeydown = event => {
+            if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight') return;
+            event.preventDefault();
+            event.stopPropagation();
+            index = clamp(index + (event.key === 'ArrowRight' ? 1 : -1), 0, glyphs.length - 1);
+            key.textContent = 'Look up ' + glyphs[index][0];
+            if (window.CSS?.highlights && window.Highlight) {
+              const range = new Range();
+              range.setStart(block.firstChild, glyphs[index].index);
+              range.setEnd(block.firstChild, glyphs[index].index + glyphs[index][0].length);
+              CSS.highlights.set('journal-lookup-cursor', new Highlight(range));
+            }
+          };
+          key.onblur = () => window.CSS?.highlights?.delete('journal-lookup-cursor');
+          key.onclick = () => {
+            close();
+            const { index: startOffset, 0: quote } = glyphs[index];
+            startLookup({ surface, ownerId: owner, startId: id, endId: id, startOffset,
+              endOffset: startOffset + quote.length, quote }, 'tap', key);
+            (capture.disabled ? compose : capture).focus({ preventScroll: true });
+          };
+          rail.append(key);
+        }
+      }
+    }
     marker.onpointerenter = e => {
       clearTimeout(hoverTimer);
-      if (e.pointerType === 'mouse' && (!current || current.preview))
+      if (surface !== 'read' && e.pointerType === 'mouse' && (!current || current.preview))
         hoverTimer = setTimeout(() => showGroup('hover'), 160);
     };
     marker.onpointerleave = releasePreview;
@@ -333,7 +613,11 @@ export function createAnnotations({ submit, getState, canSubmit }) {
       marker.hidden = !group.length;
       count.textContent = group.length > 1 ? String(group.length) : '';
       if (group.length) {
-        marker.setAttribute('aria-label', group.length === 1 ? 'Open note on “' + group[0].anchor.quote + '”' : 'Open ' + group.length + ' margin notes');
+        const onlySaved = group.every(savedPassage);
+        marker.classList.toggle('an-bookmark', onlySaved);
+        const label = onlySaved ? 'saved passage' : 'note';
+        marker.setAttribute('aria-label', group.length === 1 ? 'Open ' + label + ' on “' + group[0].anchor.quote + '”' :
+          'Open ' + group.length + (onlySaved ? ' saved passages' : ' margin items'));
         marker.setAttribute('aria-expanded', String(Boolean(current?.id && group.some(t => t.id === current.id))));
       }
     }
@@ -341,18 +625,42 @@ export function createAnnotations({ submit, getState, canSubmit }) {
       if (!startBlock(current.anchor)?.getClientRects().length) close();
       else displayThread();
     }
+    updateCapture();
     paint();
     schedulePosition();
   }
 
   toolbar.onpointerdown = e => e.preventDefault();
-  function quoteSelection() {
+  function openCandidate(mode) {
+    if (!candidate) return;
     const anchor = candidate;
-    if (!anchor) return;
+    const trigger = lookupTrigger || controls.get(startBlock(anchor))?.shortcut;
+    const thread = anchor.surface === 'read' && threadAt(anchor);
     window.getSelection()?.removeAllRanges();
-    show(anchor, undefined, controls.get(startBlock(anchor))?.shortcut);
+    show(anchor, thread?.id, trigger, anchor.surface === 'read' ? mode : 'edit');
   }
-  toolbar.onclick = quoteSelection;
+  compose.onclick = () => openCandidate('ask');
+  withNote.onclick = () => openCandidate('capture');
+  appendNote.onclick = () => show(current.anchor, current.id, current.trigger, 'capture');
+  discuss.onclick = () => show(current.anchor, current.id, current.trigger, 'ask');
+  capture.onclick = async () => {
+    if (!candidate || capture.disabled) return;
+    const anchor = candidate;
+    const activeLookup = lookup;
+    const target = lookupTrigger || startBlock(anchor)?.parentElement;
+    const rect = toolbar.getBoundingClientRect();
+    const keyboard = toolbar.contains(document.activeElement);
+    if (!await submit({ type: 'captureReading', anchor })) return;
+    if (!candidate || (activeLookup ? lookup !== activeLookup : anchorKey(candidate) !== anchorKey(anchor))) return;
+    window.getSelection()?.removeAllRanges();
+    clearCandidate();
+    if (keyboard) target?.focus({ preventScroll: true });
+    clearTimeout(confirmationTimer);
+    confirmation.style.left = rect.left + 'px';
+    confirmation.style.top = rect.top + 'px';
+    confirmation.textContent = 'Saved';
+    confirmationTimer = setTimeout(() => { confirmation.textContent = ''; }, 1100);
+  };
   dismiss.onclick = () => close(true);
   panel.onpointerenter = () => clearTimeout(hoverTimer);
   panel.onpointerleave = releasePreview;
@@ -362,7 +670,7 @@ export function createAnnotations({ submit, getState, canSubmit }) {
   input.onkeydown = e => {
     if (e.key === 'Enter' && (e.metaKey || e.ctrlKey) && !e.isComposing && !save.disabled) {
       e.preventDefault();
-      form.requestSubmit(save);
+      form.requestSubmit(current?.mode === 'ask' ? ask : save);
     }
   };
   form.onsubmit = async e => {
@@ -376,7 +684,10 @@ export function createAnnotations({ submit, getState, canSubmit }) {
     updateButtons();
     try {
       const source = view.id ? { annotationId: view.id } : { anchor: view.anchor };
-      if (!await submit({ type: 'annotationPost', ...source, message: input.value.trim(), askTutor })) return;
+      const message = input.value.trim();
+      const action = view.mode === 'capture' ? { type: 'captureReading', anchor: view.anchor, note: message }
+        : { type: 'annotationPost', ...source, message, askTutor };
+      if (!await submit(action)) return;
       setDraft(key, '');
       if (current !== view) return;
       const id = view.id || sources().find(t => !existing.has(t.id) && anchorKey(t.anchor) === anchorKey(view.anchor))?.id;
@@ -393,7 +704,9 @@ export function createAnnotations({ submit, getState, canSubmit }) {
   document.addEventListener('pointermove', event => {
     if (event.pointerType !== 'mouse' || event.buttons || (current && !current.preview) || candidate) return;
     if (panel.contains(event.target) || event.target.closest('.an-rail')) return;
-    const hits = rangesByBlock.get(sourceAt(event.target)) || [];
+    const block = sourceAt(event.target);
+    if (block?.dataset.annotationSurface === 'read') return;
+    const hits = rangesByBlock.get(block) || [];
     const hit = hits.find(({range}) => [...range.getClientRects()].some(rect =>
       event.clientX >= rect.left && event.clientX <= rect.right && event.clientY >= rect.top && event.clientY <= rect.bottom));
     if (!hit) { releasePreview(); return; }
@@ -403,33 +716,40 @@ export function createAnnotations({ submit, getState, canSubmit }) {
   });
 
   document.addEventListener('selectionchange', () => {
-    if (document.activeElement === toolbar) return;
+    if (toolbar.contains(document.activeElement)) return;
     const next = selectedAnchor();
-    if (!next) { clearCandidate(); return; }
+    if (next && candidate && anchorKey(next) === anchorKey(candidate)) return;
+    if (!next) { if (!lookup) clearCandidate(); return; }
     if (current) close();
-    candidate = next;
-    toolbar.hidden = false;
-    position();
+    offer(next);
   });
   document.addEventListener('keydown', e => {
     if (e.key === 'Escape' && (current || candidate)) {
       e.preventDefault();
-      if (candidate) window.getSelection()?.removeAllRanges();
-      close(true);
-    } else if (candidate && !toolbar.hidden && e.key === 'Tab' && !e.shiftKey && document.activeElement !== toolbar) {
+      dismissPopover();
+    } else if (candidate && !toolbar.hidden && e.key === 'Tab' && !e.shiftKey && !toolbar.contains(document.activeElement)) {
       e.preventDefault();
-      toolbar.focus({ preventScroll: true });
+      ((lookup && spelling.querySelector('button')) || (capture.hidden || capture.disabled ? compose : capture)).focus({ preventScroll: true });
     }
   });
   document.addEventListener('pointerdown', e => {
-    if (!panel.contains(e.target) && !e.target.closest('.an-rail') && e.target !== toolbar) close();
+    dismissedRange = undefined;
+    if (panel.contains(e.target) || e.target.closest('.an-rail') || toolbar.contains(e.target)) return;
+    const block = sourceAt(e.target);
+    if (lookup && block && e.isPrimary && e.button === 0) {
+      dismissedRange = sourceRanges(lookup.anchor).find(range => range.startContainer.parentElement === block);
+    }
+    close();
   });
   document.addEventListener('focusin', e => {
+    if (candidate && toolbar.contains(e.relatedTarget) && !toolbar.contains(e.target) && e.target !== lookupTrigger) {
+      clearCandidate();
+    }
     if (current && !current.preview && !panel.contains(e.target) && !e.target.closest('.an-rail')) close();
   });
   window.addEventListener('resize', schedulePosition);
   window.addEventListener('scroll', schedulePosition, true);
   window.visualViewport?.addEventListener('resize', schedulePosition);
   window.visualViewport?.addEventListener('scroll', schedulePosition);
-  return { render, close, open, openBlock };
+  return { render, close, open };
 }

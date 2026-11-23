@@ -74,6 +74,10 @@ export const actionSchema = z.discriminatedUnion('type', [
   }),
   z.object({ id, type: z.literal('readingPosition'), documentId: text, paragraphId: text }),
   z.object({
+    id, type: z.literal('captureReading'), anchor: anchorSchema.extend({ surface: z.literal('read') }),
+    note: z.string().trim().min(1).max(1600).optional(),
+  }),
+  z.object({
     id,
     type: z.literal('annotate'),
     documentId: text,
@@ -316,6 +320,7 @@ function practiceSources(s: State, mode: string): string[] {
       .map((m) => t.title + ' · ' + m.text),
   );
   const discussions = s.annotationThreads
+    .filter((thread) => thread.messages.length > 0)
     .slice(-8)
     .reverse()
     .map((t) => describeAnnotation(s, t));
@@ -618,6 +623,25 @@ async function mutate(s: State, a: Action, backend: Backend, reviewImport: Retur
     case 'readingPosition':
       applyReadingPosition(s.reading, a.documentId, a.paragraphId);
       return;
+    case 'captureReading': {
+      const { anchor } = a;
+      resolveAnchor(s, anchor);
+      const existing = s.annotationThreads.find(({ anchor: other }) =>
+        other.surface === anchor.surface && other.ownerId === anchor.ownerId &&
+        other.startId === anchor.startId && other.startOffset === anchor.startOffset &&
+        other.endId === anchor.endId && other.endOffset === anchor.endOffset
+      );
+      if (existing?.capturedAt && !a.note) return;
+      const activity = existing?.capturedAt ? 'Added a note to a passage from ' : 'Saved a passage from ';
+      const thread: AnnotationThread = existing ?? { id: a.id, anchor, messages: [] };
+      const at = new Date().toISOString();
+      thread.capturedAt ??= at;
+      if (a.note) thread.messages.push({ role: 'user', text: a.note, at });
+      if (!existing) s.annotationThreads.push(thread);
+      const reference = annotationReference(s, thread);
+      logActivity(s, activity + reference.label, reference.label, reference);
+      return;
+    }
     case 'annotate': {
       const anchor = anchorForQuote(s, 'read', a.documentId, a.paragraphId, a.quote);
       return postAnnotation(
@@ -1002,6 +1026,9 @@ export function openJournal(path: string, backend: Backend = engine) {
         s.wordIntakes.some((item) => item.status === 'pending') ||
         (s.mediaJobs.some((job) => job.status === 'pending') && ranToday(s) < DAILY_LIMIT && s.settings.pictures !== 'off')
       );
+    },
+    readingParagraphs(documentId: string) {
+      return documentsFor(read().s.reading).find(doc => doc.id === documentId)?.paragraphs;
     },
     act(a: Action) {
       return enqueue(() => perform(a));

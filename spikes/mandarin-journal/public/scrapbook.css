@@ -1,6 +1,7 @@
 /* Home: an open scrapbook of the learner's material. */
 .scrapbook,
-.scrap-list {
+.scrap-list,
+[data-page='read'] {
   --table: #eef3ec;
   --paper: #fffef8;
   --card: #fbf6e3;

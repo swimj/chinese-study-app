@@ -48,7 +48,7 @@ function sourceFor(document, paragraph) {
 }
 
 export function createReading({
-  host, submit, canSubmit, discussInChinese, navigate, quoteBlock, openAnnotation, refreshAnnotations,
+  host, importPanel, submit, canSubmit, discussInChinese, navigate, openAnnotation, refreshAnnotations,
 }) {
   let state;
   let documentView;
@@ -57,28 +57,24 @@ export function createReading({
   let entered = false;
   let reference = '';
   let busy = true;
-  let pendingPosition;
+  const pendingPositions = new Map();
   let positionTimer;
   let scrollIntent = 0;
   let currentParagraphId;
-  let focusImportedId;
   let importRevision = 0;
   let preview;
   let pasteUrl;
   let extractingPdf = false;
 
-  const back = node('a', '← Journal', 'back');
+  const back = node('a', 'Home', 'reader-home');
+  const arrow = node('span', '←');
+  arrow.setAttribute('aria-hidden', 'true');
+  back.prepend(arrow);
   back.href = '#home';
   const title = node('h1');
   title.lang = 'zh';
   title.tabIndex = -1;
   const kind = node('p', '', 'small folio');
-  const picker = node('select');
-  picker.id = 'reader-document';
-  picker.onchange = () => navigate('read', picker.value);
-  const pickerLabel = node('label', 'Reading');
-  pickerLabel.htmlFor = picker.id;
-  const pickerGroup = node('div', undefined, 'reader-picker');
   const pdfFile = node('input');
   pdfFile.type = 'file';
   pdfFile.accept = 'application/pdf,.pdf';
@@ -95,7 +91,7 @@ export function createReading({
     const file = pdfFile.files[0];
     pdfFile.value = '';
     if (!file || !canSubmit()) return;
-    setImportOpen(false);
+    resetImportFeedback();
     const revision = importRevision;
     extractingPdf = true;
     uploadPdf.disabled = true;
@@ -121,17 +117,6 @@ export function createReading({
   };
   const importForm = node('form', undefined, 'reader-import');
   importForm.id = 'reader-import-form';
-  importForm.hidden = true;
-  const importToggle = button('Import URL', () => setImportOpen(importForm.hidden), 'text-button');
-  importToggle.setAttribute('aria-expanded', 'false');
-  importToggle.setAttribute('aria-controls', importForm.id);
-  function setImportOpen(open) {
-    importForm.hidden = !open;
-    pasteHistorical.hidden = open || !documentView?.canPaste;
-    importToggle.setAttribute('aria-expanded', String(open));
-    if (open) url.focus();
-    else resetImportFeedback();
-  }
   const url = node('input');
   url.id = 'reader-url';
   url.type = 'url';
@@ -179,7 +164,6 @@ export function createReading({
     if (pasteUrl !== source) pastedText.value = '';
     pasteUrl = source;
     url.value = source;
-    setImportOpen(true);
     pasteBox.hidden = false;
     importButton.hidden = true;
     pasteToggle.hidden = true;
@@ -223,9 +207,9 @@ export function createReading({
   };
   pastedText.oninput = () => pastedText.setCustomValidity('');
   url.oninput = resetImportFeedback;
-  pickerGroup.append(pickerLabel, picker, importToggle, uploadPdf, pdfFile);
-  const header = node('div', undefined, 'reader-header');
-  header.append(back, pickerGroup);
+  const pdfTools = node('div', undefined, 'home-import-pdf');
+  pdfTools.append(uploadPdf, pdfFile, pdfStatus);
+  importPanel.append(importForm, pdfTools);
 
   const save = button('Save reading', () => {
     if (!documentView) return;
@@ -248,15 +232,34 @@ export function createReading({
   }, 'reader-resume');
   resume.hidden = true;
   const tools = node('div', undefined, 'tools reader-tools');
-  tools.append(discuss, save);
+  tools.append(discuss, save, resume);
   const passage = node('div', undefined, 'passage reader-passage');
   const importWarning = node('p', '', 'notice');
   importWarning.hidden = true;
-  const pasteHistorical = button('Paste article text', () => {
-    if (documentView.canPaste) openPaste(documentView.sourceUrl);
-  }, 'secondary');
+  const pasteHistorical = node('a', 'Paste article text', 'secondary');
   pasteHistorical.hidden = true;
-  host.replaceChildren(header, pdfStatus, importForm, kind, title, importWarning, pasteHistorical, resume, passage, tools);
+  const progress = node('progress', undefined, 'reader-progress');
+  progress.max = 1;
+  progress.value = 0;
+  progress.setAttribute('aria-label', 'Reading position');
+  const scroller = node('div', undefined, 'reader-scroll');
+  scroller.tabIndex = 0;
+  scroller.setAttribute('role', 'region');
+  scroller.setAttribute('aria-label', 'Reading passage');
+  const sheet = node('article', undefined, 'reader-sheet');
+  sheet.append(kind, title, importWarning, pasteHistorical, passage, tools);
+  scroller.append(sheet);
+  const returnControl = node('div', undefined, 'reader-return');
+  returnControl.append(back, progress);
+  host.replaceChildren(returnControl, scroller);
+  function updateProgress() {
+    if (!active) return;
+    const distance = scroller.scrollHeight - scroller.clientHeight;
+    progress.value = distance > 0 ? Math.max(0, Math.min(1, scroller.scrollTop / distance)) : 1;
+  }
+  const resize = new ResizeObserver(updateProgress);
+  resize.observe(scroller);
+  resize.observe(sheet);
 
   function buildParagraph(documentId, paragraph) {
     const section = node('div', undefined, 'reader-paragraph');
@@ -269,17 +272,8 @@ export function createReading({
     source.dataset.annotationBlock = paragraph.id;
     prose.append(source);
     section.append(prose);
-    rows.set(paragraph.id, { section, prose });
+    rows.set(paragraph.id, prose);
 
-    for (const phrase of paragraph.phrases ?? []) {
-      const shortcut = button('Ask about ', () => {
-        quoteBlock('read', documentId, paragraph.id, phrase);
-      }, 'reader-phrase');
-      const phraseText = node('span', phrase);
-      phraseText.lang = 'zh';
-      shortcut.append(phraseText);
-      section.append(shortcut);
-    }
     return section;
   }
 
@@ -292,8 +286,8 @@ export function createReading({
     kind.textContent = nextDocument.kind;
     importWarning.textContent = nextDocument.importWarning || '';
     importWarning.hidden = !nextDocument.importWarning;
-    pasteHistorical.hidden = !importForm.hidden || !nextDocument.canPaste;
-    picker.value = nextDocument.id;
+    pasteHistorical.hidden = !nextDocument.canPaste;
+    if (nextDocument.canPaste) pasteHistorical.href = '#home/import/' + encodeURIComponent(nextDocument.id);
     passage.replaceChildren(...nextDocument.paragraphs.map((paragraph) => buildParagraph(nextDocument.id, paragraph)));
   }
 
@@ -310,23 +304,18 @@ export function createReading({
     importButton.disabled = busy;
     uploadPdf.disabled = busy || extractingPdf;
     accept.disabled = busy;
-    pasteToggle.disabled = pasteHistorical.disabled = busy;
+    pasteToggle.disabled = busy;
     pastedText.readOnly = busy;
     pasteSave.disabled = busy;
-    picker.disabled = state.reading.documents.length < 2;
-    for (const [id, row] of rows) {
-      row.section.classList.toggle('reader-at-place', id === position);
-    }
   }
 
   function focusPassage(paragraphId) {
-    const row = rows.get(paragraphId);
-    if (!row) return;
+    const prose = rows.get(paragraphId);
+    if (!prose) return;
     currentParagraphId = paragraphId;
     scrollIntent = 0;
-    row.prose.focus({ preventScroll: true });
-    const { top } = row.prose.getBoundingClientRect();
-    if (top < 0 || top >= window.innerHeight) row.prose.scrollIntoView({ block: 'start' });
+    prose.focus({ preventScroll: true });
+    prose.scrollIntoView({ block: 'start' });
   }
 
   function applyEntry() {
@@ -338,31 +327,32 @@ export function createReading({
     mount(source.document);
     update();
     refreshAnnotations();
-    const position = reading.positions[documentView.id];
+    const position = pendingPositions.get(documentView.id) || reading.positions[documentView.id];
     const firstParagraphId = documentView.paragraphs[0].id;
     const paragraphId = source.paragraph?.id || position || firstParagraphId;
     currentParagraphId = paragraphId;
+    scroller.scrollTop = 0;
     if (source.paragraph || paragraphId !== firstParagraphId) focusPassage(paragraphId);
-    if (focusImportedId === documentView.id) {
-      focusImportedId = undefined;
-      title.focus();
-    }
+    else title.focus({ preventScroll: true });
+    updateProgress();
     if (source.annotation) openAnnotation(source.annotation.id);
-    if (documentView.id !== reading.documentId) queuePosition(position || firstParagraphId, 0);
+    queuePosition(position || firstParagraphId, 0);
   }
 
   function flushPosition() {
-    if (!active || !pendingPosition || !canSubmit()) return;
-    const { documentId, paragraphId } = pendingPosition;
-    pendingPosition = undefined;
-    if (documentId !== documentView.id) return;
-    if (state.reading.documentId === documentId && state.reading.positions[documentId] === paragraphId) return;
-    submit({ type: 'readingPosition', documentId, paragraphId });
+    if (!canSubmit()) return;
+    for (const [documentId, paragraphId] of pendingPositions) {
+      pendingPositions.delete(documentId);
+      if (state.reading.documentId === documentId && state.reading.positions[documentId] === paragraphId) continue;
+      submit({ type: 'readingPosition', documentId, paragraphId });
+      break;
+    }
   }
 
   function queuePosition(paragraphId, delay) {
     window.clearTimeout(positionTimer);
-    pendingPosition = { documentId: documentView.id, paragraphId };
+    pendingPositions.delete(documentView.id);
+    pendingPositions.set(documentView.id, paragraphId);
     positionTimer = window.setTimeout(() => {
       positionTimer = undefined;
       flushPosition();
@@ -376,20 +366,23 @@ export function createReading({
     scrollIntent = performance.now() + 1500;
   }
 
-  window.addEventListener('wheel', trackPosition, { passive: true });
-  window.addEventListener('touchmove', trackPosition, { passive: true });
-  window.addEventListener('keydown', (event) => {
+  scroller.addEventListener('wheel', trackPosition, { passive: true });
+  scroller.addEventListener('touchmove', trackPosition, { passive: true });
+  scroller.addEventListener('keydown', (event) => {
     if (['PageDown', 'PageUp', 'ArrowDown', 'ArrowUp', 'Home', 'End', ' '].includes(event.key)) trackPosition(event);
   });
-  window.addEventListener('scroll', () => {
+  scroller.addEventListener('pointerdown', event => {
+    if (event.target === scroller) trackPosition(event);
+  });
+  scroller.addEventListener('scroll', () => {
+    updateProgress();
     if (!active || performance.now() > scrollIntent || !documentView) return;
-    const line = window.innerHeight * 0.33;
+    const line = scroller.getBoundingClientRect().top + scroller.clientHeight / 3;
     let current = documentView.paragraphs[0].id;
-    for (const [id, row] of rows) {
-      if (row.prose.getBoundingClientRect().top > line) break;
+    for (const [id, prose] of rows) {
+      if (prose.getBoundingClientRect().top > line) break;
       current = id;
     }
-    const scroller = document.scrollingElement;
     if (scroller.scrollTop + scroller.clientHeight >= scroller.scrollHeight - 1) {
       current = documentView.paragraphs.at(-1).id;
     }
@@ -401,29 +394,28 @@ export function createReading({
     render(nextState) {
       state = nextState;
       if (!state.reading) return;
-      if (picker.options.length !== state.reading.documents.length) {
-        picker.replaceChildren();
-        for (const entry of state.reading.documents) {
-          const option = node('option', entry.title);
-          option.value = entry.id;
-          option.lang = 'zh';
-          picker.append(option);
-        }
-        if (documentView) picker.value = documentView.id;
-      }
       if (!documentView) mount(lookup(state, state.reading.documentId).document);
       applyEntry();
       update();
     },
-    openImport(prefill = '') {
-      setImportOpen(true);
-      if (prefill) url.value = prefill;
+    openImport(prefill, repairId) {
+      if (!importPanel.open) importPanel.showModal();
+      const repair = repairId && lookup(state, repairId)?.document;
+      if (repair?.canPaste) openPaste(repair.sourceUrl);
+      else {
+        if (prefill) url.value = prefill;
+        url.focus();
+      }
     },
-    resetImportFeedback,
+    closeImport() {
+      if (importPanel.open) importPanel.close();
+      resetImportFeedback();
+    },
     pdfMessage,
     trackImport(submittedUrl) {
       const revision = importRevision;
-      return () => revision === importRevision && (!url.value || url.value.trim() === submittedUrl);
+      return () => importPanel.open && revision === importRevision &&
+        (submittedUrl === undefined || !url.value || url.value.trim() === submittedUrl);
     },
     importError(submittedUrl, message, candidate, canPaste, submittedText) {
       if (submittedText !== undefined) {
@@ -438,7 +430,6 @@ export function createReading({
       url.value = submittedUrl;
       importError.textContent = message;
       importError.hidden = false;
-      setImportOpen(true);
       if (candidate) {
         preview = { url: submittedUrl, token: candidate.token };
         previewTitle.textContent = candidate.title;
@@ -447,22 +438,11 @@ export function createReading({
         previewTitle.focus();
       }
     },
-    imported(submittedUrl, follow) {
-      if (url.value.trim() === submittedUrl) url.value = '';
-      resetImportFeedback();
-      if (follow) {
-        setImportOpen(false);
-        window.clearTimeout(positionTimer);
-        positionTimer = undefined;
-        pendingPosition = undefined;
-        focusImportedId = state.reading.documentId;
-        if (documentView.id === focusImportedId) {
-          focusImportedId = undefined;
-          title.focus();
-        }
-        navigate('read', state.reading.documentId);
-      }
+    imported() {
+      url.value = '';
+      navigate('read', state.reading.documentId);
     },
+    documentId: () => documentView?.id,
     title: () => documentView?.title || 'Reading',
     currentReference: () => documentView ? documentView.id + '/' + currentParagraphId : '',
     source: () => {
@@ -487,7 +467,7 @@ export function createReading({
       scrollIntent = 0;
       window.clearTimeout(positionTimer);
       positionTimer = undefined;
-      pendingPosition = undefined;
+      flushPosition();
     },
     setBusy(value) {
       busy = value;

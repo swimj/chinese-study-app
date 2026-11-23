@@ -120,8 +120,8 @@ export function buildScrapbook(state, { readingLabel, media }) {
   const active = clusters.get('chat:' + state.activeThreadId);
   if (active) active.recency = Infinity;
 
-  // A fresh journal still has its readings to open.
-  if (![...clusters.values()].some((c) => c.kind === 'read')) for (const doc of documents.slice(0, 2)) readingCluster(doc.id);
+  // Each reading has a place to open on the table, even before its first save.
+  for (const doc of documents) readingCluster(doc.id);
 
   if (media) {
     for (const c of clusters.values()) {
@@ -489,10 +489,35 @@ export function createScrapbook({ host, viewport, world, node, link, getState, r
     render() {
       const state = getState();
       if (!state) return;
+      // A final bookmark write can refresh the board just after returning to the story title.
+      const focused = document.activeElement;
+      const restoreTitle = world.contains(focused) && focused.matches('.cluster-title')
+        ? focused.closest('.cluster').dataset.key : undefined;
       const clusters = buildScrapbook(state, { readingLabel, media: compose(state, Date.now()) });
       world.replaceChildren(...clusters.map((c) => clusterNode(c, state, false)));
       host.classList.toggle('empty', !clusters.some((c) => c.scraps.length));
-      requestAnimationFrame(layout);
+      if (restoreTitle) {
+        layout();
+        const cluster = [...world.children].find(el => el.dataset.key === restoreTitle);
+        cluster?.querySelector('.cluster-title')?.focus({ preventScroll: true });
+      } else requestAnimationFrame(layout);
+    },
+    showReading(id) {
+      const cluster = [...world.children].find(el => el.dataset.key === 'read:' + id);
+      if (!cluster) return;
+      layout();
+      const heading = cluster.querySelector('.cluster-title');
+      if (narrow.matches) {
+        heading.scrollIntoView({ block: 'center' });
+      } else {
+        const header = host.querySelector('.dock').getBoundingClientRect();
+        view.s = Math.max(view.s, .92);
+        view.x = (viewport.clientWidth - cluster.offsetWidth * view.s) / 2 - cluster.offsetLeft * view.s;
+        view.y = header.bottom + 24 - cluster.offsetTop * view.s;
+        apply();
+        remember();
+      }
+      heading.focus({ preventScroll: true });
     },
     // The same scrapbook read top to bottom, with full word details.
     renderList(container) {

@@ -66,6 +66,28 @@ overrides that refusal. Use it only on purpose, and never from an agent.
 - Treat copies as personal data. Don't commit them or paste them into issues,
   and delete them when the branch is done (`rm .local/live-copy.sqlite`).
 
+## Lookup dogfood and decision ledger
+
+Tap a Han character for a quick lookup. Escape, ×, or another tap on the underlined text closes it. Tapping a different word opens its lookup directly. Selecting a span opens Save, Ask and **Look up**. Only Look up requests a definition for that selection. Local matches use CC-CEDICT and the sample sense catalog (8 headwords, 14 senses). A clean lexical entry can answer immediately. With `OPENROUTER_API_KEY`, the selector can choose a stored sense using the passage. With `OPENAI_API_KEY`, Sol can explain unresolved lookups. `JOURNAL_DEMO=1` disables both model paths. Point `LOOKUP_DICTIONARY` to an extracted CC-CEDICT v1 file to use a full dictionary. The default is the attributed excerpt bundled with the spike.
+
+From the journal directory, a separate fixture server can load provider keys explicitly:
+
+```sh
+JOURNAL_PROFILE=fixture JOURNAL_PORT=4386 node --env-file=/path/to/keys.env server.ts
+```
+
+**Mark as wrong** flags the individual answer. You can then Ask, select a more useful span, or keep reading. Asking, saving, narrowing, dismissing and returning to the story imply no judgment about correctness.
+
+Each completed lookup is recorded before the server responds, including answers the learner may dismiss before they arrive. The record includes UTC times, source document and block IDs, the original gesture, the exact text sent for lookup, UTF-16 offsets, the returned range and answer, dictionary and catalog hashes, candidate labels and IDs, selected sense, and routing steps. Model steps include provider, model, prompt hash, elapsed time, outcome and available usage. A flag is a separate, timestamped record linked to the original decision. Repeated feedback preserves the first timestamp.
+
+Export one JSON object per decision from the fixture with the command below. Set `JOURNAL_PROFILE=live` in the primary checkout or `JOURNAL_DB` for a custom journal. The export joins feedback onto its decision. A null feedback field means the learner gave no explicit judgment. Use `startedAt` or `completedAt` to order records.
+
+```sh
+npm run --silent journal:lookups > .local/lookup-decisions.jsonl
+```
+
+The plain JSON files live in a directory alongside the journal, e.g. `.local/fixture.sqlite.lookups/`. Preserve that directory when backing up or moving the evidence. SQLite snapshots and copy-live cover the journal database alone.
+
 ## Restore the live journal
 
 1. Stop the live server.

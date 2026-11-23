@@ -1,0 +1,88 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<link rel="icon" href="data:,">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Reader lookup comparison</title>
+<style>
+:root {color-scheme:light; font: 105%/1.5 "DM Sans",system-ui,sans-serif; color:#2d3840; background:#f8f6ef}
+* {box-sizing:border-box} body {max-width:60rem;margin:5vh auto;padding:0 1.3rem 2rem}
+h1 {font-family:Georgia,serif;font-weight:500;font-size:2rem;margin:0 0 1rem}
+nav,.actions {display:flex; flex-wrap:wrap; gap:.55rem; align-items:center}
+button, select {font:inherit;color:inherit;border:1px solid #bbb6aa;border-radius:.5rem;background:#fffdf8;padding:.45rem .65rem;max-width:100%}
+button {cursor:pointer} button:hover {background:#efebdf}
+:focus-visible {outline:3px solid #35705e;outline-offset:2px}
+#passage {font-family:"Songti SC","Noto Serif CJK SC",serif; font-size:clamp(1.6rem,4vw,2.4rem);line-height:1.75;margin:1.5rem 0}
+mark {background:#ffe8ae;color:inherit;border-radius:.12em}
+#cards {display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,15rem),1fr));gap:1rem;margin:1.5rem 0}
+article {border-top:2px solid #b9afa0;padding:.6rem .15rem; min-width:0; overflow-wrap:anywhere} h2 {font-size:.9rem;font-weight:600;margin:0}
+article p {margin:.45rem 0}.han {font-size:1.45rem}.muted,small {color:#515e60}
+summary {cursor:pointer} #reveal {accent-color:#3c7664}
+</style>
+<main>
+<h1>Reader lookup comparison</h1>
+<nav aria-label="Passages"><label for="cases">Passage</label><select id="cases"></select><button id="next">Next</button></nav>
+<p id="passage" lang="zh-Hans"></p>
+<div class="actions"><button id="replay">Replay measured wait</button><button id="now">Show answers now</button><label><input type="checkbox" id="reveal"> Reveal models</label></div>
+<section id="cards" aria-label="Lookup answers" aria-live="polite"></section>
+<details id="criteria"><summary>What this passage tests</summary><p id="intent"></p><small>Dictionary entries from <a href="https://www.mdbg.net/chinese/dictionary?page=cc-cedict">CC-CEDICT, published by MDBG</a>, under <a href="https://creativecommons.org/licenses/by-sa/4.0/">CC BY-SA 4.0</a>. Pronunciations are rendered with tone marks.</small></details>
+</main>
+<script src="results.js"></script>
+<script src="senses.js"></script>
+<script>
+const get = id => document.getElementById(id);
+const senseMode = new URLSearchParams(location.search).has('senses');
+const trials = senseMode ? senseTrials : lookupTrials;
+if (senseMode) document.querySelector('h1').textContent = document.title = 'Reader sense comparison';
+if (senseMode) get('criteria').querySelector('small').hidden=true;
+const selector = get('cases');
+let timers = [], visible = new Set();
+for (const [i,c] of trials.entries()) {
+  selector.add(new Option((i+1)+' · '+(c.kind==='tap'?'Tap':'Selection')+' · '+c.text.slice(c.start,c.end),i));
+}
+const current = () => trials[selector.selectedIndex];
+function element(tag,value,cls) {
+  const el = document.createElement(tag);
+  el.textContent=value;
+  if(cls) el.className=cls;
+  return el;
+}
+function order() {
+  return selector.selectedIndex % 2 ? [0,2,1] : [0,1,2];
+}
+function cards() {
+  const nodes = order().map((idx,pos) => {
+    const r = current().results[idx], card = document.createElement('article');
+    const showName = !idx || get('reveal').checked;
+    card.append(element('h2',showName ? r.model : 'Answer '+(pos===1?'A':'B')));
+    if (!visible.has(idx)) {card.append(element('p',timers.length?'Looking up…':'—','muted'));return card;}
+    if (!r.answer) card.append(element('p', r.failed ? 'Lookup failed' : 'Defer to context','muted'));
+    else {
+      const a=r.answer;
+      card.append(element('p',a.span,'han'),element('p',a.pinyin,'muted'),element('p',a.gloss));
+      if(a.chunks?.length) card.append(element('p',a.chunks.join(' / '),'muted'));
+    }
+    if(showName) card.append(element('small',r.ms<1?'Under 1 ms':(r.ms/1000).toFixed(2)+' s'));
+    return card;
+  });
+  get('cards').replaceChildren(...nodes);
+}
+function stop() {timers.forEach(clearTimeout);timers=[];}
+function reset() {
+  stop();visible.clear();
+  const c=current();
+  get('passage').replaceChildren(c.text.slice(0,c.start),element('mark',c.text.slice(c.start,c.end)),c.text.slice(c.end));
+  get('intent').textContent=c.acceptableSpans ? c.intent+' Accepted span: '+c.acceptableSpans.join(' / ')+'.' : c.intent;
+  get('criteria').open=false; cards();
+}
+selector.onchange=reset;
+get('next').onclick=()=>{selector.selectedIndex=(selector.selectedIndex+1)%trials.length;reset();};
+get('reveal').onchange=cards;
+get('now').onclick=()=>{stop();visible=new Set(order());cards();};
+get('replay').onclick=()=>{
+  stop();visible.clear();
+  timers=current().results.map((r,i)=>setTimeout(()=>{visible.add(i);cards();},r.ms)); cards();
+};
+reset();
+</script>
+</html>
