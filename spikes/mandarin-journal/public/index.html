@@ -32,25 +32,23 @@
             <div class="scrap-viewport" id="scrap-viewport">
               <div class="scrap-world" id="scrap-world" aria-label="Your scrapbook" role="region"></div>
             </div>
-            <div class="scrap-today">
-              <p class="dateline" id="today"></p>
-              <p class="today-line"><span class="seal-mini" lang="zh" aria-hidden="true">师</span><span id="today-text"></span></p>
-              <div class="today-actions">
-                <a id="today-action" class="primary" href="#practice"></a>
-                <nav class="places" aria-label="Activities">
-                  <a href="#read">Read</a><a href="#chat">Talk</a><a href="#practice">Practice</a>
+            <div class="dock">
+              <details class="dock-menu" id="dock-menu">
+                <summary aria-label="Journal menu"><span class="seal" lang="zh" aria-hidden="true">记</span></summary>
+                <nav class="dock-panel places" aria-label="Journal">
+                  <a href="#read">Read</a>
+                  <a href="#chat">Talk</a>
+                  <a href="#practice">Practice</a>
+                  <a href="#saved">List</a>
+                  <button type="button" data-zoom="fit">See everything</button>
                 </nav>
-              </div>
-              <div id="recent" class="recent" hidden>
-                <span class="small">Last opened</span><a id="recent-link" href="#read"></a>
-              </div>
-            </div>
-            <div class="scrap-zoom" aria-label="Scrapbook view">
-              <button type="button" data-zoom="out" aria-label="Zoom out">−</button>
-              <span data-zoom-label aria-hidden="true">100%</span>
-              <button type="button" data-zoom="in" aria-label="Zoom in">+</button>
-              <button type="button" data-zoom="fit" class="fit">See everything</button>
-              <a href="#saved" class="fit">List</a>
+              </details>
+              <p class="today-line">
+                <span class="seal-mini" lang="zh" aria-hidden="true">师</span><span id="today-text"></span>
+                <a id="today-action" class="today-go" href="#practice"></a>
+              </p>
+              <p class="dateline" id="today" hidden></p>
+              <div id="recent" class="recent" hidden><a id="recent-link" href="#read"></a></div>
             </div>
             <section class="capture" aria-labelledby="word-heading">
               <h2 id="word-heading" class="sr">Drop something</h2>

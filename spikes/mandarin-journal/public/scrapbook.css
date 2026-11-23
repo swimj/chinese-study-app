@@ -8,16 +8,38 @@
   --tutor-tint: #fff6f1;
 }
 .scrapbook {
-  position: relative;
+  position: fixed;
+  inset: 0;
+  z-index: 1;
   container: scrapbook / inline-size;
-  height: max(34rem, calc(100dvh - 7.5rem));
-  margin-top: 1.1rem;
-  border-radius: 1.2rem;
   background-color: var(--table);
   background-image: radial-gradient(#c7d4c9 1.1px, transparent 1.2px);
   background-size: 26px 26px;
   overflow: hidden;
 }
+/* Home is the table itself: no masthead, frame or footer around it. */
+body[data-view="home"] .masthead,
+body[data-view="home"] .journal > footer { display: none; }
+body[data-view="home"] .journal { padding: 0; }
+body[data-view="home"] .layout,
+body[data-view="home"] .layout.with-tutor { display: block; }
+body[data-view="home"] #notice {
+  position: fixed;
+  z-index: 20;
+  top: 1rem;
+  left: 50%;
+  transform: translateX(-50%);
+}
+/* The tutor floats over the table as a window instead of pushing it aside. */
+body[data-view="home"] #tutor {
+  position: fixed;
+  inset: auto 1rem 1rem auto;
+  margin: 0;
+  width: 7.7rem;
+  z-index: 10;
+}
+body[data-view="home"] .with-tutor #tutor { width: min(30rem, calc(100% - 2rem)); }
+body[data-view="home"] #tutor .thread { height: min(26rem, calc(100dvh - 12rem)); }
 .scrap-viewport {
   position: absolute;
   inset: 0;
@@ -177,92 +199,129 @@ a.scrap:focus-visible {
 .scrapbook.far .far-count { font-size: calc(.95rem * var(--inv, 1)); }
 .scrapbook.far .cluster-head .small { font-size: calc(.7rem * var(--inv, 1)); }
 
-/* Floating controls over the table. */
-.scrap-today,
-.scrap-zoom,
+/* Structure on demand: a dock, one line from the trainer, and a capture bar. */
+.dock,
 .capture {
   position: absolute;
-  z-index: 2;
-  background: color-mix(in srgb, var(--panel) 94%, transparent);
-  border: 1px solid #c9d5cb;
-  box-shadow: 0 10px 28px -16px #21463766;
+  z-index: 3;
 }
-.scrap-today {
+.dock {
   top: 1rem;
   left: 1rem;
-  max-width: min(30rem, calc(100% - 2rem));
-  padding: .8rem 1.1rem 1rem;
-  border-radius: .9rem;
-}
-.scrap-today .dateline { margin: 0 0 .4rem; }
-.today-line {
-  display: flex;
-  align-items: flex-start;
-  margin: 0 0 .75rem;
-  font: 1.18rem/1.4 var(--serif);
-}
-.today-line [lang="zh"] { font-family: var(--han); }
-.today-line .seal-mini { margin-top: .2rem; }
-.today-actions { display: flex; align-items: center; gap: 1.1rem; flex-wrap: wrap; }
-.places { display: flex; gap: .9rem; font-size: .92rem; }
-.places a { color: var(--quiet); }
-.places a:hover { color: var(--ink); }
-.scrap-today .recent { display: none !important; }
-
-.scrap-zoom {
-  top: 1rem;
-  right: 1rem;
   display: flex;
   align-items: center;
-  gap: .15rem;
-  padding: .25rem .35rem;
-  border-radius: 999px;
+  gap: .55rem;
+  max-width: calc(100% - 2rem);
 }
-.scrap-zoom button {
-  min-width: 2.4rem;
-  min-height: 2.4rem;
-  padding: 0 .55rem;
-  border-radius: 999px;
-  font-size: 1.05rem;
+.dock .dateline,
+.dock .recent { display: none !important; }
+.dock-menu { position: relative; flex: 0 0 auto; }
+.dock-menu summary {
+  display: flex;
+  list-style: none;
+  cursor: pointer;
+  border-radius: 6px;
 }
-.scrap-zoom button.fit { font-size: .88rem; }
-.scrap-zoom [data-zoom-label] { min-width: 3rem; text-align: center; font-size: .82rem; color: var(--quiet); }
+.dock-menu summary::-webkit-details-marker { display: none; }
+.dock-menu .seal {
+  width: 2.5rem;
+  height: 2.5rem;
+  font-size: 1.35rem;
+  box-shadow: 0 8px 20px -12px #6b2a1580;
+}
+.dock-panel {
+  position: absolute;
+  top: calc(100% + .45rem);
+  left: 0;
+  display: grid;
+  min-width: 11rem;
+  padding: .35rem;
+  background: var(--panel);
+  border: 1px solid #c9d5cb;
+  border-radius: .8rem;
+  box-shadow: 0 14px 32px -16px #21463780;
+}
+.dock-panel a,
+.dock-panel button {
+  display: block;
+  padding: .55rem .75rem;
+  border-radius: .5rem;
+  text-align: left;
+  color: var(--ink);
+  font-size: .95rem;
+  text-decoration: none;
+}
+.dock-panel a:hover,
+.dock-panel button:hover { background: var(--tint); text-decoration: none; }
+.dock-panel button { border-top: 1px solid #dfe7e0; border-radius: 0 0 .5rem .5rem; margin-top: .2rem; }
+.today-line {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  margin: 0;
+  padding: .3rem .35rem .3rem .75rem;
+  background: color-mix(in srgb, var(--panel) 92%, transparent);
+  border: 1px solid #c9d5cb;
+  border-radius: 999px;
+  box-shadow: 0 10px 26px -18px #21463766;
+  font: 1.02rem/1.35 var(--serif);
+}
+.today-line [lang="zh"] { font-family: var(--han); }
+#today-text { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.today-go {
+  flex: 0 0 auto;
+  margin-left: .65rem;
+  padding: .32rem .85rem;
+  border-radius: 999px;
+  background: var(--solid);
+  color: var(--on);
+  font: 500 .88rem/1.4 var(--sans);
+}
+.today-go::after { content: ' →'; }
+.today-go:hover { text-decoration: none; filter: brightness(1.08); }
 
 .capture {
   left: 50%;
   bottom: 1.1rem;
   transform: translateX(-50%);
-  width: min(38rem, calc(100% - 2rem));
-  padding: .55rem .6rem .45rem .9rem;
-  border-radius: 1.1rem;
+  width: min(32rem, calc(100% - 20rem));
+  min-width: min(22rem, calc(100% - 2rem));
+  padding: .3rem .35rem .3rem .95rem;
+  background: color-mix(in srgb, var(--panel) 94%, transparent);
+  border: 1px solid #c9d5cb;
+  border-radius: 1.6rem;
+  box-shadow: 0 10px 28px -16px #21463766;
 }
-.capture .intake-line { display: flex; gap: .5rem; }
+.capture .intake-line { display: flex; gap: .5rem; align-items: center; }
 .capture .intake-line input {
   flex: 1;
   min-width: 0;
   border: 0;
   background: transparent;
-  font-size: 1.02rem;
-  padding: .55rem .2rem;
+  font-size: 1rem;
+  padding: .45rem .1rem;
 }
-.capture .intake-line input:focus-visible { outline-offset: 1px; }
-.capture .intake-line .primary { border-radius: .7rem; white-space: nowrap; }
-.capture .word-context { margin: .1rem 0 .1rem .1rem; font-size: .85rem; color: var(--quiet); }
-.capture .word-context textarea { width: 100%; margin-top: .35rem; }
+.capture .intake-line input:focus-visible { outline: none; }
+.capture:focus-within { border-color: var(--solid); }
+.capture .intake-line .primary { min-height: 2.4rem; border-radius: 999px; padding: .4rem 1rem; white-space: nowrap; }
+.capture .word-context { margin: .05rem 0 .35rem .05rem; font-size: .85rem; color: var(--quiet); }
+.capture .word-context textarea { width: calc(100% - .6rem); margin-top: .35rem; }
+.capture:not(:focus-within):not(:has(#word-text:not(:placeholder-shown))) .word-context:not([open]) { display: none; }
 .capture .word-items:not(:has(> li:not([hidden]))) { display: none; }
 .capture .word-items {
   max-height: 40vh;
   overflow: auto;
-  margin: 0 0 .5rem;
+  margin: .4rem .3rem .4rem 0;
   padding: .2rem .2rem .6rem;
   border-bottom: 1px solid #d6e0d7;
 }
 
-/* A narrow table (small window, tutor open): controls step out of the way. */
+/* With the tutor window open, the bar keeps clear of it. */
+.with-tutor .capture { left: 1rem; transform: none; width: auto; right: calc(min(30rem, 100% - 2rem) + 2rem); min-width: 0; }
+
+/* A narrow table: the bar moves aside for the tutor handle. */
 @container scrapbook (max-width: 52rem) {
-  .scrap-zoom { top: auto; bottom: 6.6rem; flex-direction: column; border-radius: 1.2rem; }
-  .scrap-zoom [data-zoom-label], .scrap-zoom .fit { display: none; }
-  .scrap-today { max-width: calc(100% - 2rem); }
+  .capture { left: 1rem; transform: none; width: auto; right: 9.7rem; min-width: 0; }
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -272,19 +331,20 @@ a.scrap:focus-visible {
 /* Phones and narrow panels: the same scrapbook, read top to bottom. */
 @media (max-width: 760px) {
   .scrapbook {
+    position: static;
     display: flex;
     flex-direction: column;
-    height: auto;
+    min-height: 100dvh;
     overflow: visible;
-    margin: .8rem -.4rem 0;
-    padding: 0 .4rem 9rem;
+    padding: max(.8rem, env(safe-area-inset-top)) .8rem 9rem;
     background-size: 22px 22px;
   }
   .scrap-viewport { position: static; cursor: auto; touch-action: auto; }
   .scrap-world { position: static; transform: none !important; width: auto !important; height: auto !important; }
   .cluster { position: static; width: auto !important; margin: 0 0 2.2rem; }
-  .scrap-today { position: static; order: -1; max-width: none; margin: .4rem 0 1.6rem; }
-  .scrap-zoom { display: none; }
+  .dock { position: relative; top: 0; left: 0; order: -1; margin: 0 0 1.6rem; max-width: none; z-index: 4; }
+  .today-line { flex: 1; }
+  #today-text { white-space: normal; }
   .pieces {
     flex-wrap: nowrap;
     overflow-x: auto;
@@ -301,20 +361,14 @@ a.scrap:focus-visible {
     right: max(.6rem, env(safe-area-inset-right));
     bottom: max(.6rem, env(safe-area-inset-bottom));
     width: auto;
+    min-width: 0;
     transform: none;
     z-index: 9;
   }
-  body[data-view="home"] #tutor { bottom: calc(max(.6rem, env(safe-area-inset-bottom)) + 7.4rem); }
+  body[data-view="home"] #tutor { inset: auto max(.6rem, env(safe-area-inset-right)) calc(max(.6rem, env(safe-area-inset-bottom)) + 4.4rem) auto; }
 }
 
 /* The scrapbook as a list: same clusters, read top to bottom. */
-.scrap-zoom a.fit {
-  display: inline-flex;
-  align-items: center;
-  min-height: 2.4rem;
-  padding: 0 .7rem;
-  font-size: .88rem;
-}
 .scrap-list { display: grid; gap: 2.4rem; margin-top: 1.2rem; }
 .scrap-list .cluster { position: static; }
 .scrap-list .pieces {
@@ -325,6 +379,3 @@ a.scrap:focus-visible {
 .scrap-list .scrap { transform: none; }
 .scrap-list .example { margin: .55rem 0 0; font: 1.05rem/1.6 var(--han); }
 .scrap-list .translation { margin: .1rem 0 0; font-size: .88rem; color: var(--quiet); }
-@container scrapbook (max-width: 52rem) {
-  .scrap-zoom a.fit { display: none; }
-}

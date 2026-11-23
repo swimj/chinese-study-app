@@ -167,7 +167,7 @@ export function createScrapbook({ host, viewport, world, node, link, getState, r
     const w = world.offsetWidth, h = world.offsetHeight;
     const vw = viewport.clientWidth, vh = viewport.clientHeight;
     if (!w || !h || !vw) return;
-    const today = host.querySelector('.scrap-today');
+    const today = host.querySelector('.dock');
     const top = (today ? today.offsetTop + today.offsetHeight : 0) + 20, bottom = 130;
     const whole = Math.max(0.3, Math.min(1, (vw - 48) / w, (vh - top - bottom) / h));
     view.s = readable ? Math.max(whole, 0.92) : whole;
@@ -215,9 +215,20 @@ export function createScrapbook({ host, viewport, world, node, link, getState, r
     apply(true);
     remember();
   });
-  host.querySelector('[data-zoom="in"]').onclick = () => { zoomAt(viewport.clientWidth / 2, viewport.clientHeight / 2, 1.25); remember(); };
-  host.querySelector('[data-zoom="out"]').onclick = () => { zoomAt(viewport.clientWidth / 2, viewport.clientHeight / 2, 0.8); remember(); };
-  host.querySelector('[data-zoom="fit"]').onclick = () => fit();
+  const zoomButton = (name, act) => { const b = host.querySelector('[data-zoom="' + name + '"]'); if (b) b.onclick = act; };
+  zoomButton('in', () => { zoomAt(viewport.clientWidth / 2, viewport.clientHeight / 2, 1.25); remember(); });
+  zoomButton('out', () => { zoomAt(viewport.clientWidth / 2, viewport.clientHeight / 2, 0.8); remember(); });
+  zoomButton('fit', () => fit());
+
+  // The dock menu appears on demand and gets out of the way again.
+  const menu = host.querySelector('.dock-menu');
+  if (menu) {
+    document.addEventListener('pointerdown', (e) => { if (menu.open && !menu.contains(e.target)) menu.open = false; });
+    menu.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape' && menu.open) { menu.open = false; menu.querySelector('summary').focus(); }
+    });
+    menu.addEventListener('click', (e) => { if (e.target.closest('.dock-panel a, .dock-panel button')) menu.open = false; });
+  }
 
   function scrapNode(scrap, state, list = false) {
     const tag = scrap.href ? 'a' : 'article';
