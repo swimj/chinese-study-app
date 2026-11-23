@@ -734,6 +734,76 @@ async function mutate(s: State, a: Action, backend: Backend, reviewImport: Retur
   }
 }
 
+// Opens a stored body in the current shape; older journal shapes are upgraded in memory.
+function upgrade(body: string): State {
+  const parsed = JSON.parse(body) as State & { chat?: Message[] };
+  parsed.wordIntakes ??= [];
+  withMediaDefaults(parsed);
+  if (!parsed.threads) {
+    const turns = (parsed.chat ?? []).map((turn, i) => ({ ...turn, id: 'legacy-turn-' + i }));
+    const birds = turns.some((m) => /鸟|bird|Audubon/i.test(m.text));
+    parsed.activeThreadId = 'first';
+    parsed.threads = [{ id: 'first', title: birds ? 'Birdwatching' : 'Conversation', turns }];
+    parsed.reflections = [];
+    parsed.activity = [];
+    parsed.reading = initialReading();
+    parsed.attempts.forEach((a, i) => {
+      a.id = 'legacy-attempt-' + i;
+    });
+    // Old open-answer bubbles duplicated the feedback verbatim. Only link exact matches.
+    for (const a of parsed.attempts) {
+      if (a.result.correct !== null) continue;
+      const message = parsed.tutor.find(
+        (m) =>
+          !m.reference &&
+          m.role === 'assistant' &&
+          m.text === a.result.feedback &&
+          m.source?.includes(a.card.prompt),
+      );
+      if (message) {
+        message.kind = 'observation';
+        message.reference = { kind: 'attempt', id: a.id, quote: a.answer, label: 'Practice' };
+        message.text = '';
+      }
+    }
+    delete parsed.chat;
+  }
+  parsed.reading.imports ??= [];
+  if (!parsed.annotationThreads) {
+    parsed.annotationThreads = parsed.reading.annotations.map((note) => ({
+      id: note.id,
+      anchor: anchorForQuote(parsed, 'read', note.documentId, note.paragraphId, note.quote),
+      messages: [{ role: 'user', text: note.text }],
+    }));
+    parsed.reading.annotations = [];
+    for (const reflection of parsed.reflections) {
+      reflection.takeaways = attachTakeaways(
+        parsed,
+        reflection.id,
+        reflection.threadId,
+        reflection.takeaways,
+      );
+    }
+  }
+  return parsed;
+}
+
+/**
+ * Reads a journal file without opening it for work: no background jobs, no
+ * writes. For reports over a live journal or a copy.
+ */
+export function readJournal(path: string) {
+  const db = new DatabaseSync(path, { readOnly: true });
+  try {
+    const row = db.prepare('SELECT body FROM journal WHERE id=1').get();
+    if (!row) throw new Error('No journal in ' + path);
+    const s = upgrade(String(row.body));
+    return { view: publicState(s, engine.mode), mediaDecisions: s.mediaDecisions, mediaJobs: s.mediaJobs };
+  } finally {
+    db.close();
+  }
+}
+
 export function openJournal(path: string, backend: Backend = engine) {
   const reviewImport = createImportReviewer(backend.importReading ?? importArticle, backend.mode === 'live' ? judgeImport : undefined);
   const db = new DatabaseSync(path);
@@ -743,56 +813,7 @@ export function openJournal(path: string, backend: Backend = engine) {
   db.prepare('INSERT OR IGNORE INTO journal VALUES (1,0,?)').run(JSON.stringify(initial()));
   function read() {
     const row = db.prepare('SELECT revision,body FROM journal WHERE id=1').get()!;
-    const parsed = JSON.parse(String(row.body)) as State & { chat?: Message[] };
-    parsed.wordIntakes ??= [];
-    withMediaDefaults(parsed);
-    if (!parsed.threads) {
-      const turns = (parsed.chat ?? []).map((turn, i) => ({ ...turn, id: 'legacy-turn-' + i }));
-      const birds = turns.some((m) => /鸟|bird|Audubon/i.test(m.text));
-      parsed.activeThreadId = 'first';
-      parsed.threads = [{ id: 'first', title: birds ? 'Birdwatching' : 'Conversation', turns }];
-      parsed.reflections = [];
-      parsed.activity = [];
-      parsed.reading = initialReading();
-      parsed.attempts.forEach((a, i) => {
-        a.id = 'legacy-attempt-' + i;
-      });
-      // Old open-answer bubbles duplicated the feedback verbatim. Only link exact matches.
-      for (const a of parsed.attempts) {
-        if (a.result.correct !== null) continue;
-        const message = parsed.tutor.find(
-          (m) =>
-            !m.reference &&
-            m.role === 'assistant' &&
-            m.text === a.result.feedback &&
-            m.source?.includes(a.card.prompt),
-        );
-        if (message) {
-          message.kind = 'observation';
-          message.reference = { kind: 'attempt', id: a.id, quote: a.answer, label: 'Practice' };
-          message.text = '';
-        }
-      }
-      delete parsed.chat;
-    }
-    parsed.reading.imports ??= [];
-    if (!parsed.annotationThreads) {
-      parsed.annotationThreads = parsed.reading.annotations.map((note) => ({
-        id: note.id,
-        anchor: anchorForQuote(parsed, 'read', note.documentId, note.paragraphId, note.quote),
-        messages: [{ role: 'user', text: note.text }],
-      }));
-      parsed.reading.annotations = [];
-      for (const reflection of parsed.reflections) {
-        reflection.takeaways = attachTakeaways(
-          parsed,
-          reflection.id,
-          reflection.threadId,
-          reflection.takeaways,
-        );
-      }
-    }
-    return { revision: Number(row.revision), s: parsed };
+    return { revision: Number(row.revision), s: upgrade(String(row.body)) };
   }
   let tail: Promise<unknown> = Promise.resolve();
   function enqueue<T>(operation: () => T | Promise<T>): Promise<T> {
