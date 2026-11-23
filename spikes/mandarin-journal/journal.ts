@@ -25,6 +25,7 @@ import {
 export { JournalConflict } from './annotations.ts';
 import { catalogue, demoFriend, demoTutor, type Card } from './practice.ts';
 import { friendTurn, tutorTurn, type TurnContext, type TutorResult } from './tutor.ts';
+import { validateTurn, type Reflection as TutorReflection, type SituationName, type SituationOutput, type TutorAction } from './situations/index.ts';
 
 import {
   addWord, addWordAction, clarifyWordAction, retryWordAction, resumeWord, reusableWord, finishWord, wordRequest,
@@ -212,6 +213,17 @@ function activeThread(s: State): Thread {
   if (!thread) throw new Error('Missing active conversation');
   return thread;
 }
+/**
+ * Asks the tutor in one situation and validates the result, whichever backend
+ * produced it, before the journal applies anything.
+ */
+async function consult<K extends SituationName>(
+  backend: Backend,
+  name: K,
+  ctx: TurnContext,
+): Promise<SituationOutput<K>> {
+  return validateTurn(name, await backend.tutor(ctx), ctx);
+}
 function logActivity(s: State, text: string, source: string, reference?: Reference) {
   s.activity.push({ id: randomUUID(), at: new Date().toISOString(), text, source, reference });
 }
@@ -257,14 +269,13 @@ function keep(s: State, kind: string, title: string, detail: string, src: string
     logActivity(s, 'Saved ' + kind.toLowerCase() + ' · ' + title, reference?.label ?? src, reference);
   }
 }
-function applyAction(s: State, response: TutorResult, ctx: TurnContext, reference?: Reference) {
-  const a = response.action;
+function applyAction(s: State, a: TutorAction | null, ctx: TurnContext, reference?: Reference) {
   if (!a) return;
   if (a.kind === 'stash' || a.kind === 'note') {
     keep(s, a.kind === 'stash' ? 'Word' : 'Note', a.title, a.detail, ctx.source, reference);
     return;
   }
-  const card = exerciseCard(response, ctx);
+  const card = exerciseCard(a, ctx);
   if (!card) return;
   if (
     !s.pending.some((c) => c.prompt === card.prompt) &&
@@ -274,18 +285,10 @@ function applyAction(s: State, response: TutorResult, ctx: TurnContext, referenc
     logActivity(s, 'Queued practice · ' + card.title, ctx.source, reference);
   }
 }
-function exerciseCard(response: TutorResult, ctx: TurnContext): QueuedCard | undefined {
-  const a = response.action;
+// The action has already passed its situation's validator.
+function exerciseCard(a: TutorAction | null, ctx: TurnContext): QueuedCard | undefined {
   if (a?.kind !== 'practice' || !a.exercise) return;
-  const e = a.exercise;
-  if (
-    !e.prompt.trim() ||
-    !e.explanation.trim() ||
-    (e.kind === 'choice' &&
-      (e.choices.length < 2 || new Set(e.choices).size !== e.choices.length || !e.choices.includes(e.answer)))
-  )
-    throw new Error('The tutor returned an incomplete exercise.');
-  return { ...e, id: randomUUID(), title: a.title, rationale: a.detail, source: ctx.source };
+  return { ...a.exercise, id: randomUUID(), title: a.title, rationale: a.detail, source: ctx.source };
 }
 function practiceSources(s: State, mode: string): string[] {
   const words = s.saved
@@ -365,8 +368,8 @@ async function startPractice(s: State, mode: string, backend: Backend, continuin
       if (savedWord?.word) ctx.practiceWord = { title: savedWord.title, ...savedWord.word };
       ctx.previousPrompts = [...previousPrompts, ...cards.map((c) => c.prompt)];
       try {
-        const response = await backend.tutor(ctx);
-        const fresh = exerciseCard(response, ctx);
+        const response = await consult(backend, 'practiceGen', ctx);
+        const fresh = exerciseCard(response.action, ctx);
         // A repeat of a served or queued prompt is skipped like an empty turn, not a failure.
         if (!fresh || ctx.previousPrompts.includes(fresh.prompt) || s.pending.some((c) => c.prompt === fresh.prompt))
           continue;
@@ -457,7 +460,7 @@ function attachTakeaways(
   s: State,
   reflectionId: string,
   chatId: string,
-  takeaways: NonNullable<TutorResult['reflection']>['takeaways'],
+  takeaways: TutorReflection['takeaways'],
 ): Reflection['takeaways'] {
   return takeaways.map((takeaway, index) => {
     const id = reflectionId + '-takeaway-' + index;
@@ -489,14 +492,13 @@ async function postAnnotation(
       thread.anchor.surface === 'chat' ? s.threads.find((t) => t.id === thread.anchor.ownerId) : undefined;
     const ctx = context(s, 'ask', message, thread.anchor.surface, source, selectedChat);
     if (thread.anchor.surface === 'read') ctx.readingContext = source;
-    const response = await backend.tutor(ctx);
-    if (!response.reply.trim()) throw new Error('Tutor returned no annotation reply.');
+    const response = await consult(backend, 'ask', ctx);
     thread.messages.push(
       { role: 'user', text: message, at },
       { role: 'assistant', text: response.reply, at: new Date().toISOString() },
     );
     // Persist the compact source link with any study action. The full discussion belongs to the annotation.
-    applyAction(s, response, { ...ctx, source: reference.label + ' · ' + reference.quote }, reference);
+    applyAction(s, response.action, { ...ctx, source: reference.label + ' · ' + reference.quote }, reference);
   } else {
     thread.messages.push({ role: 'user', text: message, at });
   }
@@ -516,18 +518,7 @@ async function reflect(s: State, backend: Backend, source: string) {
   if (!stretch.some((m) => m.role === 'user')) return;
   const ctx = context(s, 'reflect', 'Reflect on this stretch of the conversation.', 'chat', source);
   ctx.reflectionTurns = stretch.map((m) => ({ id: m.id, role: m.role, text: m.text }));
-  const { reflection } = await backend.tutor(ctx);
-  if (
-    !reflection?.overview.trim() ||
-    reflection.takeaways.some(
-      (t) =>
-        !t.quote.trim() ||
-        !t.text.trim() ||
-        !stretch.some((m) => m.role === 'user' && m.id === t.messageId && m.text.includes(t.quote)),
-    )
-  ) {
-    throw new Error('The reflection could not be anchored to the learner’s words.');
-  }
+  const { reflection } = await consult(backend, 'reflect', ctx);
   const reflectionId = randomUUID();
   const entry = {
     ...reflection,
@@ -645,16 +636,12 @@ async function mutate(s: State, a: Action, backend: Backend, reviewImport: Retur
       const anchor = a.referenceId ? resolveReference(s, a.referenceId, a.source) : undefined;
       const ctx = context(s, 'ask', a.message, a.surface, anchor?.source ?? a.source);
       if (anchor?.reference.kind === 'reading') ctx.readingContext = anchor.source;
-      const response = await backend.tutor(ctx);
-      s.tutor.push({ role: 'user', text: a.message, source: ctx.source, reference: anchor?.reference });
-      if (response.reply.trim())
-        s.tutor.push({
-          role: 'assistant',
-          text: response.reply,
-          source: ctx.source,
-          reference: anchor?.reference,
-        });
-      applyAction(s, response, ctx, anchor?.reference);
+      const response = await consult(backend, 'ask', ctx);
+      s.tutor.push(
+        { role: 'user', text: a.message, source: ctx.source, reference: anchor?.reference },
+        { role: 'assistant', text: response.reply, source: ctx.source, reference: anchor?.reference },
+      );
+      applyAction(s, response.action, ctx, anchor?.reference);
       return;
     }
     case 'saveReading': {
@@ -702,11 +689,11 @@ async function mutate(s: State, a: Action, backend: Backend, reviewImport: Retur
           }),
         );
         try {
-          const response = await backend.tutor(ctx);
+          const response = await consult(backend, 'feedback', ctx);
           if (response.reply.trim()) {
             result.feedback = c.kind === 'open' ? response.reply : c.explanation + '\n' + response.reply;
             // Keep the full reaction on the attempt; link the answer in the shared stream.
-            if (response.observation?.trim())
+            if (response.observation)
               s.tutor.push({
                 role: 'assistant',
                 kind: 'observation',
@@ -809,9 +796,7 @@ export function openJournal(path: string, backend: Backend = engine) {
       const reuse = !job.history.length && reusableWord(s.saved, job.text, job.context);
       try {
         if (!reuse) {
-          const result = await backend.tutor(ctx);
-          if (!result.wordDecision || result.action) throw new Error('Expected a word intake decision');
-          decision = result.wordDecision;
+          decision = (await consult(backend, 'wordIntake', ctx)).wordDecision;
         }
       } catch (error) {
         failure =
