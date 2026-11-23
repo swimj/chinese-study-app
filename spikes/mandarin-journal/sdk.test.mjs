@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-test('real SDK uses recall, validates the exercise contract and isolates casual chat', async () => {
+test('real SDK runs each situation with its own schema and instructions, uses recall and isolates casual chat', async () => {
   process.env.OPENAI_API_KEY = 'placeholder';
   process.env.OPENAI_BASE_URL = 'http://127.0.0.1:1/v1';
   process.env.OPENAI_AGENTS_DISABLE_TRACING = '1';
@@ -33,6 +33,7 @@ test('real SDK uses recall, validates the exercise contract and isolates casual 
     );
   };
   const { tutorTurn, friendTurn } = await import('./tutor.ts');
+  const { validateTurn, voice } = await import('./situations/index.ts');
   const input = {
     trigger: 'ask',
     message: 'fixture',
@@ -47,6 +48,8 @@ test('real SDK uses recall, validates the exercise contract and isolates casual 
     saved: [{ kind: 'Note', title: 'sample observation', detail: 'from a page' }],
     annotations: [{ role: 'user', text: 'my margin question', source: 'The river', quote: '河边' }],
   };
+  const required = (req) => req.text.format.schema.required.toSorted();
+  const userPayload = (req) => JSON.parse(req.input.find((item) => item.role === 'user').content);
   replies = [
     {
       type: 'function_call',
@@ -60,15 +63,12 @@ test('real SDK uses recall, validates the exercise contract and isolates casual 
   ];
   assert.deepEqual(await tutorTurn(input), { reply: 'One reply.', action: null });
   assert.equal(requests[0].text.format.type, 'json_schema');
-  assert.deepEqual(requests[0].text.format.schema.required.toSorted(), [
-    'action',
-    'observation',
-    'reflection',
-    'reply',
-    'wordDecision',
-  ]);
+  assert.deepEqual(required(requests[0]), ['action', 'reply']);
+  // Every situation speaks as the same tutor and carries only its own instructions.
+  assert.ok(requests[0].instructions.startsWith(voice));
+  assert.match(requests[0].instructions, /On ask, first answer/);
+  assert.doesNotMatch(requests[0].instructions, /On reflect|On wordIntake|On miss|On practice,/);
   assert.match(JSON.stringify(requests[1].input), /sample observation/);
-  const userPayload = (req) => JSON.parse(req.input.find((item) => item.role === 'user').content);
   const ask = userPayload(requests[0]);
   assert.deepEqual(ask.practiceStatus, input.practiceStatus);
   assert.equal(ask.readingContext, input.readingContext);
@@ -87,10 +87,12 @@ test('real SDK uses recall, validates the exercise contract and isolates casual 
   ];
   await tutorTurn(input);
   assert.match(JSON.stringify(requests.at(-1).input), /my margin question/);
-  replies = [structured({ reply: 'Inline feedback.', action: null, observation: 'Specific insight.' })];
-  assert.equal((await tutorTurn({ ...input, trigger: 'answer' })).observation, 'Specific insight.');
-  replies = [structured({ reply: 'Wrong trigger.', action: null, observation: 'Specific insight.' })];
-  await assert.rejects(tutorTurn(input), /Only exercise feedback/);
+  replies = [structured({ reply: 'Inline feedback.', observation: 'Specific insight.' })];
+  const answer = { ...input, trigger: 'answer' };
+  assert.equal(validateTurn('feedback', await tutorTurn(answer), answer).observation, 'Specific insight.');
+  assert.deepEqual(required(requests.at(-1)), ['observation', 'reply']);
+  assert.match(requests.at(-1).instructions, /On miss the learner is still practicing/);
+  assert.equal(userPayload(requests.at(-1)).practiceStatus, undefined);
   const reflectionTurns = Array.from({ length: 15 }, (_, i) => ({
     id: 'anchor-' + i,
     text: 'Learner message ' + i,
@@ -100,14 +102,13 @@ test('real SDK uses recall, validates the exercise contract and isolates casual 
     overview: 'Overview.',
     takeaways: [{ messageId: 'anchor-0', quote: 'Learner message 0', text: 'An observation.' }],
   };
-  replies = [structured({ reply: reflection.overview, action: null, reflection })];
-  const reflected = await tutorTurn({ ...input, trigger: 'reflect', reflectionTurns });
-  assert.deepEqual(reflected.reflection, reflection);
+  replies = [structured({ reflection })];
+  const reflectInput = { ...input, trigger: 'reflect', reflectionTurns };
+  assert.deepEqual(validateTurn('reflect', await tutorTurn(reflectInput), reflectInput).reflection, reflection);
+  assert.deepEqual(required(requests.at(-1)), ['reflection']);
   assert.deepEqual(userPayload(requests.at(-1)).reflectionTurns, reflectionTurns);
-  replies = [structured({ reply: 'Ordinary reply.', action: null, reflection })];
-  await assert.rejects(tutorTurn(input), /Only reflection turns/);
-  replies = [structured({ reply: '', action: null })];
-  assert.deepEqual(await tutorTurn({ ...input, trigger: 'miss' }), { reply: '', action: null });
+  replies = [structured({ reply: '', observation: null })];
+  assert.deepEqual(await tutorTurn({ ...input, trigger: 'miss' }), { reply: '', observation: null });
   replies = [
     structured({
       reply: 'Try this.',
@@ -125,7 +126,11 @@ test('real SDK uses recall, validates the exercise contract and isolates casual 
       },
     }),
   ];
-  await assert.rejects(tutorTurn({ ...input, trigger: 'practice' }), /invalid contrast/);
+  const practice = { ...input, trigger: 'practice' };
+  const invalid = await tutorTurn(practice);
+  assert.throws(() => validateTurn('practiceGen', invalid, practice), /invalid contrast/);
+  assert.deepEqual(required(requests.at(-1)), ['action', 'reply']);
+  assert.match(JSON.stringify(requests.at(-1).text.format.schema), /"const":"practice"|"enum":\["practice"\]/);
   assert.deepEqual(userPayload(requests.at(-1)).previousPrompts, input.previousPrompts);
   const silentCard = {
     kind: 'practice',
@@ -139,16 +144,17 @@ test('real SDK uses recall, validates the exercise contract and isolates casual 
       explanation: 'Give the location.',
     },
   };
-  replies = [structured({ reply: '', action: silentCard, reflection: null, observation: null })];
-  assert.deepEqual((await tutorTurn({ ...input, trigger: 'practice' })).action, silentCard);
+  replies = [structured({ reply: '', action: silentCard })];
+  assert.deepEqual(validateTurn('practiceGen', await tutorTurn(practice), practice).action, silentCard);
   const wordIntake = { text: '蜘', context: '蜘蛛', history: [], localWords: [] };
   const wordDecision = { kind: 'clarify', question: 'Study the whole word 蜘蛛?', suggestions: ['蜘蛛'] };
-  replies = [structured({ reply: '', action: null, wordDecision })];
-  assert.deepEqual((await tutorTurn({ ...input, trigger: 'wordIntake', wordIntake })).wordDecision, wordDecision);
+  replies = [structured({ wordDecision })];
+  const intake = { ...input, trigger: 'wordIntake', wordIntake };
+  assert.deepEqual(validateTurn('wordIntake', await tutorTurn(intake), intake).wordDecision, wordDecision);
+  assert.deepEqual(required(requests.at(-1)), ['wordDecision']);
   assert.deepEqual(userPayload(requests.at(-1)).wordIntake, wordIntake);
+  assert.equal(userPayload(requests.at(-1)).recentTutorTurns, undefined);
   assert.doesNotMatch(JSON.stringify(requests.at(-1).text.format.schema), /"oneOf"/);
-  replies = [structured({ reply: 'Wrong trigger.', action: null, wordDecision })];
-  await assert.rejects(tutorTurn(input), /Unexpected word intake/);
   replies = [plain('嗯。')];
   assert.equal(await friendTurn(input), '嗯。');
   assert(!JSON.stringify(requests.at(-1)).includes('sample observation'));

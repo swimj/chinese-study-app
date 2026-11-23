@@ -505,7 +505,7 @@ export function demoTutor(input: TurnContext): TutorResult {
     return response('I’ve kept your note.', {
       kind: 'note',
       title: note[1]!.trim(),
-      detail: input.source,
+      detail: input.source.trim() || note[1]!.trim(),
       exercise: null,
     });
   if (
@@ -540,7 +540,7 @@ export function demoTutor(input: TurnContext): TutorResult {
     return response(
       '散场 (sànchǎng) is when a performance ends and the crowd begins to leave. 散场以后 places the story in that little stretch of time afterwards.',
     );
-  if (/chat|reflect|聊天|回顾/i.test(text)) return response(reflect(input).reply);
+  if (/chat|reflect|聊天|回顾/i.test(text)) return response(reflect(input).reply ?? '');
   return response(
     'I don’t have an offline example for that expression. The live tutor can discuss it in context.',
   );
