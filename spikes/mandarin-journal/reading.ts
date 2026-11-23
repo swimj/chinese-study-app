@@ -2,7 +2,7 @@ type ReadingContent = {
   id: string;
   title: string;
   kind: string;
-  paragraphs: { id: string; text: string; phrases?: string[]; kind?: 'heading' }[];
+  paragraphs: { id: string; text: string; kind?: 'heading' }[];
 };
 
 export type WebReading = ReadingContent & { sourceUrl: string; importMethod?: 'paste' };
@@ -61,7 +61,6 @@ export const readingDocuments: ReadingDocument[] = [
       {
         id: 'street',
         text: '我本来只想出去透透气，听着听着，也跟着唱了起来。刚才在里面，隔着几排都看不清对方；现在走到街上，倒像是一群认识了很久的朋友。',
-        phrases: ['透透气'],
       },
     ],
   },

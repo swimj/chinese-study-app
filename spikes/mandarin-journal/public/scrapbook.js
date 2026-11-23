@@ -494,6 +494,23 @@ export function createScrapbook({ host, viewport, world, node, link, getState, r
       host.classList.toggle('empty', !clusters.some((c) => c.scraps.length));
       requestAnimationFrame(layout);
     },
+    showReading(id) {
+      const cluster = [...world.children].find(el => el.dataset.key === 'read:' + id);
+      if (!cluster) return;
+      layout();
+      const heading = cluster.querySelector('.cluster-title');
+      if (narrow.matches) {
+        heading.scrollIntoView({ block: 'center' });
+      } else {
+        const header = host.querySelector('.dock').getBoundingClientRect();
+        view.s = Math.max(view.s, .92);
+        view.x = (viewport.clientWidth - cluster.offsetWidth * view.s) / 2 - cluster.offsetLeft * view.s;
+        view.y = header.bottom + 24 - cluster.offsetTop * view.s;
+        apply();
+        remember();
+      }
+      heading.focus({ preventScroll: true });
+    },
     // The same scrapbook read top to bottom, with full word details.
     renderList(container) {
       const state = getState();

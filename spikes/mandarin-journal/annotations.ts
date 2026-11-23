@@ -15,7 +15,7 @@ export const anchorSchema = z.object({
 });
 export type Anchor = z.infer<typeof anchorSchema>;
 export type AnnotationMessage = { role: 'user' | 'assistant'; text: string; at?: string };
-export type AnnotationThread = { id: string; anchor: Anchor; messages: AnnotationMessage[] };
+export type AnnotationThread = { id: string; anchor: Anchor; messages: AnnotationMessage[]; capturedAt?: string };
 type Block = { id: string; text: string; role?: AnnotationMessage['role'] };
 type Conversation = { id: string; title: string; turns: Block[] };
 
@@ -113,6 +113,6 @@ export function readingNotes(threads: AnnotationThread[]): Annotation[] {
       documentId: anchor.ownerId,
       paragraphId: anchor.startId,
       quote: anchor.quote,
-      text: messages[0].text,
+      text: messages[0]?.text ?? '',
     }));
 }

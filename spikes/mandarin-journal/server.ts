@@ -33,6 +33,7 @@ const files = new Map([
   ['/annotations.css', ['annotations.css', 'text/css']],
   ['/pdf-import.js', ['pdf-import.js', 'text/javascript']],
   ['/reading.js', ['reading.js', 'text/javascript']],
+  ['/reader-lookup.js', ['reader-lookup.js', 'text/javascript']],
   ['/reading.css', ['reading.css', 'text/css']],
   ['/style.css', ['style.css', 'text/css']],
   ['/scrapbook.js', ['scrapbook.js', 'text/javascript']],

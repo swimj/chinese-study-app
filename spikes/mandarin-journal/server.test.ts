@@ -4,7 +4,7 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
-import { openJournal } from './journal.ts';
+import { actionSchema, openJournal } from './journal.ts';
 import { catalogue, demoFriend, demoTutor } from './practice.ts';
 import type { TurnContext } from './tutor.ts';
 const demo = {
@@ -451,6 +451,47 @@ test('reading ranges preserve paragraph boundaries and the source of a repeated 
     );
   } finally {
     journal.close();
+  }
+});
+
+test('reader captures save each exact occurrence once and reopen as a margin thread', async () => {
+  const folder = mkdtempSync(join(tmpdir(), 'journal-capture-'));
+  const path = join(folder, 'journal.db');
+  const backend = { ...demo, tutor: async () => { throw Error('Unexpected tutor call'); } };
+  let journal = openJournal(path, backend);
+  try {
+    const anchor = {
+      surface: 'read' as const, ownerId: 'after-the-show', startId: 'street', endId: 'street',
+      startOffset: 11, endOffset: 13, quote: '听着',
+    };
+    const capture = { id: randomUUID(), type: 'captureReading' as const, anchor };
+    assert.equal(actionSchema.safeParse({ ...capture, anchor: { ...anchor, surface: 'chat' } }).success, false);
+    await assert.rejects(journal.act({ ...capture, anchor: { ...anchor, quote: '听说' } }), /does not match/);
+    await Promise.all([journal.act(capture), journal.act({ ...capture, id: randomUUID() })]);
+    const second = { ...anchor, startOffset: anchor.startOffset + 2, endOffset: anchor.endOffset + 2 };
+    const note = {
+      id: randomUUID(), type: 'annotationPost' as const, anchor: second, message: 'The repeat', askTutor: false,
+    };
+    await journal.act(note);
+    await journal.act({ ...capture, id: randomUUID(), anchor: second });
+    journal.close();
+    journal = openJournal(path, backend);
+    const state = journal.get();
+    assert.deepEqual(state.annotationThreads.map(t => [t.id, t.anchor]), [[capture.id, anchor], [note.id, second]]);
+    assert.ok(state.annotationThreads.every(t => t.capturedAt));
+    assert.equal(state.activity.filter(entry => entry.reference?.id === capture.id).length, 1);
+    assert.deepEqual(state.reading.annotations.map(n => n.text), ['', 'The repeat']);
+    assert.deepEqual(state.annotationThreads[0].messages, []);
+    assert.deepEqual([state.saved, state.tutor, state.wordIntakes], [[], [], []]);
+    assert.equal(state.practice.card, null);
+    const reply = await journal.act({
+      id: randomUUID(), type: 'annotationPost', annotationId: capture.id, message: 'As I listened', askTutor: false,
+    });
+    assert.equal(reply.annotationThreads[0].messages[0].text, 'As I listened');
+    assert.equal(reply.annotationThreads[0].capturedAt, state.annotationThreads[0].capturedAt);
+  } finally {
+    journal.close();
+    rmSync(folder, { recursive: true });
   }
 });
 

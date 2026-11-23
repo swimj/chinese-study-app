@@ -73,6 +73,7 @@ export const actionSchema = z.discriminatedUnion('type', [
     fingerprint: z.string().regex(/^[a-f0-9]{64}$/), paragraphs: z.array(z.string()),
   }),
   z.object({ id, type: z.literal('readingPosition'), documentId: text, paragraphId: text }),
+  z.object({ id, type: z.literal('captureReading'), anchor: anchorSchema.extend({ surface: z.literal('read') }) }),
   z.object({
     id,
     type: z.literal('annotate'),
@@ -316,6 +317,7 @@ function practiceSources(s: State, mode: string): string[] {
       .map((m) => t.title + ' · ' + m.text),
   );
   const discussions = s.annotationThreads
+    .filter((thread) => thread.messages.length > 0)
     .slice(-8)
     .reverse()
     .map((t) => describeAnnotation(s, t));
@@ -618,6 +620,22 @@ async function mutate(s: State, a: Action, backend: Backend, reviewImport: Retur
     case 'readingPosition':
       applyReadingPosition(s.reading, a.documentId, a.paragraphId);
       return;
+    case 'captureReading': {
+      const { anchor } = a;
+      resolveAnchor(s, anchor);
+      const existing = s.annotationThreads.find(({ anchor: other }) =>
+        other.surface === anchor.surface && other.ownerId === anchor.ownerId &&
+        other.startId === anchor.startId && other.startOffset === anchor.startOffset &&
+        other.endId === anchor.endId && other.endOffset === anchor.endOffset
+      );
+      if (existing?.capturedAt) return;
+      const thread = existing ?? { id: a.id, anchor, messages: [] };
+      thread.capturedAt = new Date().toISOString();
+      if (!existing) s.annotationThreads.push(thread);
+      const reference = annotationReference(s, thread);
+      logActivity(s, 'Saved a passage from ' + reference.label, reference.label, reference);
+      return;
+    }
     case 'annotate': {
       const anchor = anchorForQuote(s, 'read', a.documentId, a.paragraphId, a.quote);
       return postAnnotation(

@@ -1,3 +1,5 @@
+import { passageLookups, characterLookup } from './reader-lookup.js';
+
 const sourceSelector = '[data-annotation-surface][data-annotation-owner][data-annotation-block]';
 
 function element(tag, className, text) {
@@ -83,9 +85,26 @@ function clamp(value, lo, hi) {
 }
 
 export function createAnnotations({ submit, getState, canSubmit }) {
-  const toolbar = button('an-quote-action', 'Quote');
+  const toolbar = element('div', 'an-quote-action');
   toolbar.hidden = true;
-  toolbar.setAttribute('aria-label', 'Quote');
+  toolbar.setAttribute('role', 'group');
+  toolbar.setAttribute('aria-label', 'Passage actions');
+  const dictionary = element('div', 'an-dictionary');
+  const termLine = element('div', 'an-term-line');
+  const spelling = element('span', 'an-term');
+  spelling.lang = 'zh';
+  const pronunciation = element('span', 'an-pronunciation');
+  const gloss = element('p', 'an-gloss');
+  gloss.id = 'reader-gloss';
+  termLine.append(spelling, pronunciation);
+  dictionary.append(termLine, gloss);
+  const quickActions = element('div', 'an-quick-actions');
+  const capture = button('an-capture', 'Save');
+  const compose = button('an-compose', 'Ask');
+  quickActions.append(capture, compose);
+  toolbar.append(dictionary, quickActions);
+  const confirmation = element('span', 'an-confirmation');
+  confirmation.setAttribute('role', 'status');
   const panel = element('section', 'an-panel');
   panel.hidden = true;
   panel.id = 'annotation-panel';
@@ -111,7 +130,7 @@ export function createAnnotations({ submit, getState, canSubmit }) {
   actions.append(save, ask);
   form.append(input, actions);
   panel.append(head, chooser, messages, form);
-  document.body.append(toolbar, panel);
+  document.body.append(toolbar, panel, confirmation);
 
   const sources = () => getState()?.annotationThreads || [];
   const draftKey = 'mandarin-journal.annotation-drafts.v1';
@@ -124,18 +143,31 @@ export function createAnnotations({ submit, getState, canSubmit }) {
     try { sessionStorage.setItem(draftKey, JSON.stringify([...drafts])); }
     catch { /* In-memory drafts remain available. */ }
   }
-  let current, candidate, inFlight, hoverTimer, frame;
+  let current, candidate, lookup, lookupTrigger, inFlight, hoverTimer, frame, confirmationTimer;
   const controls = new Map();
   const keyFor = (view) => view.id || anchorKey(view.anchor);
   const groupFor = (anchor) => sources().filter(t =>
     t.anchor.surface === anchor.surface && t.anchor.ownerId === anchor.ownerId && t.anchor.startId === anchor.startId);
   const startBlock = (anchor) => blocksOf(anchor.surface, anchor.ownerId).find(el => el.dataset.annotationBlock === anchor.startId);
 
+  const threadAt = anchor => sources().find(thread => anchorKey(thread.anchor) === anchorKey(anchor));
+
+  function updateCapture() {
+    const saved = candidate && threadAt(candidate)?.capturedAt;
+    capture.textContent = saved ? 'Saved' : 'Save';
+    capture.disabled = Boolean(saved) || !canSubmit();
+  }
+
   function updateButtons() {
     const disabled = !input.value.trim() || !!inFlight || !canSubmit();
     save.disabled = ask.disabled = disabled;
     input.readOnly = Boolean(inFlight && current && inFlight === keyFor(current));
     form.setAttribute('aria-busy', String(input.readOnly));
+  }
+
+  function paintLookup() {
+    if (!window.CSS?.highlights || !window.Highlight) return;
+    CSS.highlights.set('journal-lookup', new Highlight(...(lookup && candidate ? sourceRanges(candidate) : [])));
   }
 
   let rangesByBlock = new WeakMap();
@@ -158,11 +190,19 @@ export function createAnnotations({ submit, getState, canSubmit }) {
   function clearCandidate() {
     toolbar.hidden = true;
     candidate = undefined;
+    lookupTrigger = undefined;
+    if (lookup) {
+      lookup = undefined;
+      paintLookup();
+    }
   }
 
   function close(restore = false) {
     clearTimeout(hoverTimer);
+    const returnTo = lookupTrigger;
     clearCandidate();
+    if (restore) returnTo?.focus({ preventScroll: true });
+    confirmation.textContent = '';
     const active = current;
     current = undefined;
     panel.hidden = true;
@@ -179,13 +219,19 @@ export function createAnnotations({ submit, getState, canSubmit }) {
 
   function position() {
     const view = window.visualViewport;
-    const left = (view?.offsetLeft || 0) + 8;
-    const top = (view?.offsetTop || 0) + 8;
-    const right = left + (view?.width || innerWidth) - 16;
-    const bottom = top + (view?.height || innerHeight) - 16;
-    if (!toolbar.hidden && candidate) {
-      const rect = sourceRanges(candidate)[0]?.getClientRects()[0];
-      if (!rect || rect.bottom < top || rect.top > bottom) { toolbar.hidden = true; return; }
+    const source = candidate || current?.anchor;
+    const reader = source?.surface === 'read' && startBlock(source)?.closest('.reader-scroll')?.getBoundingClientRect();
+    const viewportLeft = view?.offsetLeft || 0;
+    const viewportTop = view?.offsetTop || 0;
+    const left = Math.max(viewportLeft, reader ? reader.left : viewportLeft) + 8;
+    const top = Math.max(viewportTop, reader ? reader.top : viewportTop) + 8;
+    const right = Math.min(viewportLeft + (view?.width || innerWidth), reader ? reader.right : Infinity) - 8;
+    const bottom = Math.min(viewportTop + (view?.height || innerHeight), reader ? reader.bottom : Infinity) - 8;
+    if (candidate) {
+      const rect = sourceRanges(candidate).flatMap(range => [...range.getClientRects()]).find(r => r.bottom >= top && r.top <= bottom);
+      if (!rect) { clearCandidate(); return; }
+      toolbar.hidden = false;
+      toolbar.style.maxHeight = Math.max(0, bottom - top) + 'px';
       toolbar.style.left = clamp(rect.left, left, right - toolbar.offsetWidth) + 'px';
       toolbar.style.top = clamp(rect.top - toolbar.offsetHeight - 5 >= top ? rect.top - toolbar.offsetHeight - 5 : rect.bottom + 5, top, bottom - toolbar.offsetHeight) + 'px';
     }
@@ -239,7 +285,7 @@ export function createAnnotations({ submit, getState, canSubmit }) {
       messages.scrollTop = messages.scrollHeight;
     }
     messages.hidden = !thread?.messages.length;
-    input.placeholder = thread ? 'Reply in the margin…' : 'Add a note or ask your tutor…';
+    input.placeholder = current.asking ? 'Ask about this passage…' : thread ? 'Reply in the margin…' : 'Add a note or ask your tutor…';
     input.setAttribute('aria-label', thread ? 'Reply to this note' : 'Note about the quoted text');
     save.textContent = thread ? 'Reply' : 'Save note';
     updateButtons();
@@ -250,14 +296,15 @@ export function createAnnotations({ submit, getState, canSubmit }) {
     if (!block?.getClientRects().length) return false;
     clearTimeout(hoverTimer);
     clearCandidate();
-    current = { anchor, id, trigger, preview: mode === 'hover' };
+    current = { anchor, id, trigger, preview: mode === 'hover', asking: mode === 'ask' };
+    form.classList.toggle('an-asking', current.asking);
     input.value = drafts.get(keyFor(current)) || '';
     panel.hidden = false;
     displayThread();
     for (const [el, { marker }] of controls) marker.setAttribute('aria-expanded', String(Boolean(id && el === block)));
     paint();
     position();
-    if (mode === 'edit') input.focus({ preventScroll: true });
+    if (mode === 'edit' || mode === 'ask') input.focus({ preventScroll: true });
     if (mode === 'inspect') panel.focus({ preventScroll: true });
     return true;
   }
@@ -270,15 +317,88 @@ export function createAnnotations({ submit, getState, canSubmit }) {
     return show(thread.anchor, id, controls.get(block)?.marker, 'inspect');
   }
 
-  function openBlock(surface, ownerId, blockId, excerpt) {
+  function openBlock(surface, ownerId, blockId) {
     const block = blocksOf(surface, ownerId).find(el => el.dataset.annotationBlock === blockId);
     if (!block) return false;
-    const text = block.textContent;
-    const quote = excerpt || text;
-    const startOffset = text.indexOf(quote);
-    if (startOffset < 0 || !quote.trim()) return false;
-    return show({ surface, ownerId, startId: blockId, endId: blockId, startOffset, endOffset: startOffset + quote.length, quote },
+    const quote = block.textContent;
+    if (!quote.trim()) return false;
+    return show({ surface, ownerId, startId: blockId, endId: blockId, startOffset: 0, endOffset: quote.length, quote },
       undefined, document.activeElement);
+  }
+
+  function offer(anchor, entry, whole, trigger) {
+    candidate = anchor;
+    lookup = entry;
+    lookupTrigger = trigger;
+    const reading = anchor.surface === 'read';
+    toolbar.removeAttribute('aria-describedby');
+    dictionary.hidden = !entry;
+    capture.hidden = !reading;
+    compose.textContent = reading ? 'Ask' : 'Quote';
+    toolbar.classList.toggle('has-gloss', Boolean(entry?.gloss));
+    if (entry) {
+      spelling.replaceChildren();
+      if (entry.gloss) toolbar.setAttribute('aria-describedby', gloss.id);
+      let offset = 0;
+      for (const glyph of entry.anchor.quote) {
+        const piece = characterLookup(entry, offset);
+        if (piece) {
+          const narrow = button('an-character', glyph);
+          narrow.setAttribute('aria-label', 'Look up ' + glyph);
+          narrow.onclick = () => {
+            offer(piece.anchor, piece, entry, trigger);
+            spelling.querySelector('button')?.focus({ preventScroll: true });
+          };
+          spelling.append(narrow);
+        } else spelling.append(glyph);
+        offset += glyph.length;
+      }
+      if (whole) {
+        const widen = button('an-whole', '↩ ' + whole.anchor.quote);
+        widen.setAttribute('aria-label', 'Back to ' + whole.anchor.quote);
+        widen.onclick = () => {
+          offer(whole.anchor, whole, undefined, trigger);
+          spelling.querySelector('button')?.focus({ preventScroll: true });
+        };
+        spelling.append(widen);
+      }
+      pronunciation.textContent = entry.pinyin || '';
+      gloss.textContent = entry.gloss || '';
+      gloss.hidden = !entry.gloss;
+    }
+    updateCapture();
+    toolbar.hidden = false;
+    paintLookup();
+    position();
+  }
+
+  function pointAt(block, event, entries) {
+    if (event.button !== 0 || !window.getSelection()?.isCollapsed) return;
+    // A caret is a boundary. Check the glyph on both sides so either half of a
+    // character points at that character, including at a wrapped line ending.
+    const caret = document.caretPositionFromPoint?.(event.clientX, event.clientY);
+    const range = !caret && document.caretRangeFromPoint?.(event.clientX, event.clientY);
+    const node = caret?.offsetNode || range?.startContainer;
+    if (!node || node !== block.firstChild || node.nodeType !== Node.TEXT_NODE) return;
+    const offset = caret?.offset ?? range.startOffset;
+    for (let startOffset of [offset, offset - 1]) {
+      if (startOffset < 0 || startOffset >= node.length) continue;
+      if (/[\uDC00-\uDFFF]/u.test(node.data[startOffset])) startOffset--;
+      const quote = String.fromCodePoint(node.data.codePointAt(startOffset));
+      if (!/\p{Script=Han}/u.test(quote)) continue;
+      const hit = document.createRange();
+      hit.setStart(node, startOffset);
+      hit.setEnd(node, startOffset + quote.length);
+      const within = [...hit.getClientRects()].some(r => event.clientX >= r.left && event.clientX <= r.right &&
+        event.clientY >= r.top && event.clientY <= r.bottom);
+      if (!within) continue;
+      const entry = entries.find(({ anchor }) => anchor.startOffset <= startOffset && anchor.endOffset > startOffset);
+      const { annotationOwner: ownerId, annotationBlock: blockId } = block.dataset;
+      const anchor = entry?.anchor || { surface: 'read', ownerId, startId: blockId, endId: blockId,
+        startOffset, endOffset: startOffset + quote.length, quote };
+      offer(anchor, entry || { anchor }, undefined, block.parentElement);
+      return;
+    }
   }
 
   function releasePreview() {
@@ -311,9 +431,22 @@ export function createAnnotations({ submit, getState, canSubmit }) {
       if (current?.trigger === marker && !current.preview) { close(true); return; }
       showGroup('inspect');
     };
+    if (surface === 'read') {
+      const entries = passageLookups(owner, id, block.textContent);
+      block.onclick = event => pointAt(block, event, entries);
+      for (const entry of entries) {
+        const inspect = button('an-shortcut', 'Look up ' + entry.anchor.quote);
+        inspect.onclick = () => {
+          close();
+          offer(entry.anchor, entry, undefined, inspect);
+          toolbar.querySelector('button:not([hidden]):enabled')?.focus({ preventScroll: true });
+        };
+        rail.append(inspect);
+      }
+    }
     marker.onpointerenter = e => {
       clearTimeout(hoverTimer);
-      if (e.pointerType === 'mouse' && (!current || current.preview))
+      if (surface !== 'read' && e.pointerType === 'mouse' && (!current || current.preview))
         hoverTimer = setTimeout(() => showGroup('hover'), 160);
     };
     marker.onpointerleave = releasePreview;
@@ -341,18 +474,37 @@ export function createAnnotations({ submit, getState, canSubmit }) {
       if (!startBlock(current.anchor)?.getClientRects().length) close();
       else displayThread();
     }
+    updateCapture();
     paint();
     schedulePosition();
   }
 
   toolbar.onpointerdown = e => e.preventDefault();
-  function quoteSelection() {
+  compose.onclick = () => {
+    if (!candidate) return;
     const anchor = candidate;
-    if (!anchor) return;
+    const trigger = lookupTrigger || controls.get(startBlock(anchor))?.shortcut;
+    const thread = anchor.surface === 'read' && threadAt(anchor);
     window.getSelection()?.removeAllRanges();
-    show(anchor, undefined, controls.get(startBlock(anchor))?.shortcut);
-  }
-  toolbar.onclick = quoteSelection;
+    show(anchor, thread?.id, trigger, anchor.surface === 'read' ? 'ask' : 'edit');
+  };
+  capture.onclick = async () => {
+    if (!candidate || capture.disabled) return;
+    const anchor = candidate;
+    const target = lookupTrigger || startBlock(anchor)?.parentElement;
+    const rect = toolbar.getBoundingClientRect();
+    const keyboard = toolbar.contains(document.activeElement);
+    if (!await submit({ type: 'captureReading', anchor })) return;
+    if (!candidate || anchorKey(candidate) !== anchorKey(anchor)) return;
+    window.getSelection()?.removeAllRanges();
+    clearCandidate();
+    if (keyboard) target?.focus({ preventScroll: true });
+    clearTimeout(confirmationTimer);
+    confirmation.style.left = rect.left + 'px';
+    confirmation.style.top = rect.top + 'px';
+    confirmation.textContent = 'Saved';
+    confirmationTimer = setTimeout(() => { confirmation.textContent = ''; }, 1100);
+  };
   dismiss.onclick = () => close(true);
   panel.onpointerenter = () => clearTimeout(hoverTimer);
   panel.onpointerleave = releasePreview;
@@ -362,7 +514,7 @@ export function createAnnotations({ submit, getState, canSubmit }) {
   input.onkeydown = e => {
     if (e.key === 'Enter' && (e.metaKey || e.ctrlKey) && !e.isComposing && !save.disabled) {
       e.preventDefault();
-      form.requestSubmit(save);
+      form.requestSubmit(current?.asking ? ask : save);
     }
   };
   form.onsubmit = async e => {
@@ -393,7 +545,9 @@ export function createAnnotations({ submit, getState, canSubmit }) {
   document.addEventListener('pointermove', event => {
     if (event.pointerType !== 'mouse' || event.buttons || (current && !current.preview) || candidate) return;
     if (panel.contains(event.target) || event.target.closest('.an-rail')) return;
-    const hits = rangesByBlock.get(sourceAt(event.target)) || [];
+    const block = sourceAt(event.target);
+    if (block?.dataset.annotationSurface === 'read') return;
+    const hits = rangesByBlock.get(block) || [];
     const hit = hits.find(({range}) => [...range.getClientRects()].some(rect =>
       event.clientX >= rect.left && event.clientX <= rect.right && event.clientY >= rect.top && event.clientY <= rect.bottom));
     if (!hit) { releasePreview(); return; }
@@ -403,33 +557,34 @@ export function createAnnotations({ submit, getState, canSubmit }) {
   });
 
   document.addEventListener('selectionchange', () => {
-    if (document.activeElement === toolbar) return;
+    if (toolbar.contains(document.activeElement)) return;
     const next = selectedAnchor();
-    if (!next) { clearCandidate(); return; }
+    if (!next) { if (!lookup) clearCandidate(); return; }
     if (current) close();
-    candidate = next;
-    toolbar.hidden = false;
-    position();
+    offer(next);
   });
   document.addEventListener('keydown', e => {
     if (e.key === 'Escape' && (current || candidate)) {
       e.preventDefault();
       if (candidate) window.getSelection()?.removeAllRanges();
       close(true);
-    } else if (candidate && !toolbar.hidden && e.key === 'Tab' && !e.shiftKey && document.activeElement !== toolbar) {
+    } else if (candidate && !toolbar.hidden && e.key === 'Tab' && !e.shiftKey && !toolbar.contains(document.activeElement)) {
       e.preventDefault();
-      toolbar.focus({ preventScroll: true });
+      ((lookup && spelling.querySelector('button')) || (capture.hidden || capture.disabled ? compose : capture)).focus({ preventScroll: true });
     }
   });
   document.addEventListener('pointerdown', e => {
-    if (!panel.contains(e.target) && !e.target.closest('.an-rail') && e.target !== toolbar) close();
+    if (!panel.contains(e.target) && !e.target.closest('.an-rail') && !toolbar.contains(e.target)) close();
   });
   document.addEventListener('focusin', e => {
+    if (candidate && toolbar.contains(e.relatedTarget) && !toolbar.contains(e.target) && e.target !== lookupTrigger) {
+      clearCandidate();
+    }
     if (current && !current.preview && !panel.contains(e.target) && !e.target.closest('.an-rail')) close();
   });
   window.addEventListener('resize', schedulePosition);
   window.addEventListener('scroll', schedulePosition, true);
   window.visualViewport?.addEventListener('resize', schedulePosition);
   window.visualViewport?.addEventListener('scroll', schedulePosition);
-  return { render, close, open, openBlock };
+  return { render, close, open };
 }

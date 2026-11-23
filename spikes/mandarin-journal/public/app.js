@@ -119,10 +119,8 @@ const wordInbox = createWordInbox({
 });
 const reader = createReading({
   openAnnotation: id => annotations.open(id),
-  quoteBlock: (...args) => annotations.openBlock(...args),
   refreshAnnotations: () => annotations.render(),
   host: document.querySelector('[data-page="read"]'),
-  getState: () => state,
   canSubmit: () => Boolean(state && !busy && !ui.pending),
   submit, discussInChinese,
   navigate: (dest, ref) => { location.hash = href(dest, ref ? 'source' : '', ref); },
@@ -479,6 +477,9 @@ async function navigate(initial = false) {
     if (heading) { heading.tabIndex = -1; heading.focus({ preventScroll: true }); }
   }
   if (!state) return;
+  if (page === 'home' && previous === 'read' && !target.kind) {
+    scrapbook.showReading(reader.documentId());
+  }
   if (page === 'home' && target.kind === 'words') {
     const first = get('word-items').querySelector('[data-status="clarify"] strong');
     focusTarget(first || get('word-heading'));
