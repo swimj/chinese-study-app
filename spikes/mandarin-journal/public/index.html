@@ -19,7 +19,7 @@
         >
         <nav aria-label="Journal">
           <a href="#home/words" id="word-attention" hidden></a>
-          <a href="#saved" id="saved-link">Saved</a>
+          <a href="#saved" id="saved-link">List</a>
         </nav>
       </header>
       <div id="notice" class="notice" role="alert" hidden>
@@ -50,6 +50,7 @@
               <span data-zoom-label aria-hidden="true">100%</span>
               <button type="button" data-zoom="in" aria-label="Zoom in">+</button>
               <button type="button" data-zoom="fit" class="fit">See everything</button>
+              <a href="#saved" class="fit">List</a>
             </div>
             <section class="capture" aria-labelledby="word-heading">
               <h2 id="word-heading" class="sr">Drop something</h2>
@@ -113,12 +114,8 @@
           </section>
           <section data-page="saved" hidden class="page">
             <a class="back" href="#home">← Journal</a>
-            <h1>Saved</h1>
-            <div id="saved-items" class="collection"></div>
-            <details id="margin-index" class="activity-disclosure" hidden>
-              <summary>Margin notes</summary>
-              <ul id="margin-notes"></ul>
-            </details>
+            <h1>Scrapbook</h1>
+            <div id="saved-items" class="scrap-list"></div>
             <details id="activity-disclosure" class="activity-disclosure">
               <summary>Journal activity</summary>
               <ol id="activity-list"></ol>
