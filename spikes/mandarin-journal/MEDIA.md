@@ -20,7 +20,8 @@ recognizable ways:
 - **Literalism:** an idiom drawn literally, such as 透透气 shown as a picture
   of air.
 - **Generic stock emotion:** a "distracted person" photo for 分心.
-- **Wrong sense:** a homonym, or a Western newsstand for 报刊亭.
+- **Wrong sense:** a homonym (an album called *Birdseed* for 鸟食), or a
+  picture from elsewhere for a term or context that is specifically Chinese.
 - **Tonal mismatch** with the conversation.
 - **A board that turns into a mood board:** images crowd out the learner's
   own words.
@@ -112,7 +113,9 @@ together.
 
 | Case | Judgments | Ceiling | Typical result |
 | --- | --- | --- | --- |
-| 报刊亭 noted in a reading | concrete · entity · cultural | placed | placed, unless that cluster already shows a system image |
+| 报刊亭 noted in a Chinese story about one riverside kiosk | concrete · entity · cultural | placed | placed, unless that cluster already shows a system image |
+| 报刊亭 saved as a bare word | concrete · entity · memory | latent | latent. Any newsstand is a fair picture: 报刊亭 is the general word, used by Chinese speakers abroad too. |
+| 糖葫芦 saved as a word | concrete · entity · cultural | placed | placed. The term is China-specific, so a Chinese example matters. |
 | 鸟食 saved as a word | concrete · entity · memory | latent | latent |
 | 芳华 discussed | named · entity · interest | placed (link card) | placed link card. A cleared period photo, if any, is latent. |
 | 透透气, 分心, 报备 | abstract | none | none |
@@ -262,8 +265,8 @@ A Graphite stack, each branch reviewable alone:
 - When generated illustrations arrive, they get their own `truthfulness`
   value and kind, and their own mix target. Which house style?
 - A Wikidata item's own image (P18) for a generic concept is often a Western
-  example. In the first live check, 报刊亭 resolved to a Paris newsagent's
-  shop and 鸟食 to a blue tit at a feeder, and the model rejected both as the
-  wrong sense or no help. Placed cultural pictures may need another source of
-  candidates, such as a Commons category for the Chinese variant, before the
-  worked examples above happen in practice.
+  example. Since the first live check, the rule is relaxed: for a general term
+  that's a fair picture. A Chinese example is preferred only when the term is
+  China-specific or its context is a particular Chinese place. For those
+  cases a more targeted source (a Commons category for the Chinese variant)
+  may still be needed. Later policy may also weigh per-learner preferences.
