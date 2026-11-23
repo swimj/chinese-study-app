@@ -31,6 +31,7 @@ import {
   addWord, addWordAction, clarifyWordAction, retryWordAction, resumeWord, reusableWord, finishWord, wordRequest,
   OfflineWordUnavailable, type WordIntake, type WordContent, type WordDecision,
 } from './word-intake.ts';
+import { withMediaDefaults, type MediaState } from './media/model.ts';
 
 const text = z.string().trim().min(1).max(8000);
 const source = z.string().max(12000);
@@ -140,7 +141,7 @@ type State = {
   pending: QueuedCard[];
   practice: Practice;
   notice: string;
-};
+} & MediaState;
 const initial = (): State => ({
   wordIntakes: [],
   tutor: [],
@@ -155,6 +156,9 @@ const initial = (): State => ({
   pending: [],
   practice: { mode: 'Daily mix', cards: [], index: 0, result: null },
   notice: '',
+  media: [],
+  mediaDecisions: [],
+  settings: { pictures: 'normal' },
 });
 export const live = !!process.env.OPENAI_API_KEY && process.env.JOURNAL_DEMO !== '1';
 type Backend = {
@@ -191,6 +195,8 @@ function publicState(s: State, mode: Backend['mode']) {
     },
     annotationThreads: s.annotationThreads,
     saved: s.saved,
+    media: s.media,
+    settings: s.settings,
     notice: s.notice,
     practice: {
       mode: p.mode,
@@ -724,6 +730,7 @@ export function openJournal(path: string, backend: Backend = engine) {
     const row = db.prepare('SELECT revision,body FROM journal WHERE id=1').get()!;
     const parsed = JSON.parse(String(row.body)) as State & { chat?: Message[] };
     parsed.wordIntakes ??= [];
+    withMediaDefaults(parsed);
     if (!parsed.threads) {
       const turns = (parsed.chat ?? []).map((turn, i) => ({ ...turn, id: 'legacy-turn-' + i }));
       const birds = turns.some((m) => /鸟|bird|Audubon/i.test(m.text));

@@ -1,6 +1,7 @@
 # Media on the board
 
-**Status: proposed. Nothing here is implemented yet.**
+**Status: being built.** The data model, the local policy and the composition
+policy are implemented (`media/`, `public/media-policy.js`).
 
 This document is for anyone deciding how pictures, and later other media,
 appear in the scrapbook without the learner asking for them. It explains the
@@ -89,8 +90,17 @@ rule can only demote, and each demotion records a reason code.
 
 Where a rule must choose which items keep `placed`, it prefers higher
 `addedValue` (`cultural` > `interest` > `recognition` > `memory`), then the
-newer anchor piece. The order is deterministic, so the board doesn't reshuffle
-between renders.
+newer anchor piece. The item's attachment time stands in for its anchor's age,
+because the media job runs right after the piece is created and saved words
+carry no time of their own. The order is deterministic, so the board doesn't
+reshuffle between renders.
+
+Two further demotions to `none` are not taste rules: `not-for-me` when the
+learner's latest reaction to the item was "Not for me", and `no-anchor` when
+its piece is no longer on the board. Items the learner brought or kept are
+excluded from every rule except `no-anchor`, and they don't count toward the
+caps. The per-cluster, mix and pacing caps count system images and link cards
+together.
 
 "Mix" is defined over media *kinds* (`text`, `image`, and later `link`,
 `audio`), so the same rules extend when other kinds arrive. v1 implements
@@ -140,15 +150,18 @@ type MediaItem = {
   kind: 'image' | 'link';
   origin: 'system' | 'learner';
   anchor: { kind: 'word' | 'annotation' | 'reading'; id: string };   // the piece it belongs to
-  source: { provider: 'wikidata-commons'; entityId?: string; pageUrl: string; thumbUrl?: string; width?: number; height?: number; title?: string };
+  caption: string;                                                    // the anchor term
+  source: { provider: 'wikidata-commons'; entityId?: string; pageUrl: string; thumbUrl?: string; width?: number; height?: number; title?: string; year?: string };
   license?: { code: 'PD' | 'CC0' | 'CC-BY' | 'CC-BY-SA'; url: string };
   credit?: { author: string; text: string };   // rendered credit line
   judgment?: Judgment;                          // absent for learner media
   ceiling: 'latent' | 'placed';                 // from the local policy; 'none' is never stored
   createdAt: string;
-  reactions: { kept?: string; dismissed?: string; notForMe?: string };   // ISO times
+  reactions: { kept?: string; notForMe?: string };   // ISO times; the later one wins
 };
 type MediaDecision = { at: string; anchor: MediaItem['anchor']; judgment: Judgment; ceiling: 'none' | 'latent' | 'placed'; mediaId?: string };
+// Judgment holds the five categorical values plus reasons: { referent, senseMatch, addedValue, truthfulness, tone }.
+// "Not for me" is the dismissal the taste rule counts; there is no separate dismissed reaction.
 // State gains: media: MediaItem[]; mediaDecisions: MediaDecision[] (newest 200 kept); settings.pictures: 'off' | 'quiet' | 'normal'
 ```
 
