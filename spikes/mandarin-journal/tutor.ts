@@ -66,7 +66,7 @@ const recall = tool<typeof recallInput, TurnContext>({
   },
 });
 
-const model = process.env.JOURNAL_MODEL || 'gpt-6-sol';
+const model = process.env.JOURNAL_MODEL || 'gpt-6.2-sol';
 const runner = new Runner({ tracingDisabled: true });
 const agents = new Map<SituationName, Agent<TurnContext, z.ZodObject>>();
 function agentFor(name: SituationName) {
