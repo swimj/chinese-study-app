@@ -16,12 +16,13 @@ const offline = {
 type Journal = ReturnType<typeof openJournal>;
 type State = Awaited<ReturnType<Journal['act']>>;
 
-async function settleWords(j: Journal) {
+// Waits for background word preparation and picture considerations.
+async function settle(j: Journal) {
   for (let i = 0; i < 100; i++) {
-    if (!j.get().wordIntakes.some((w: { status: string }) => w.status === 'pending')) return;
+    if (!j.busy()) return;
     await new Promise((r) => setTimeout(r, 30));
   }
-  throw new Error('Fixture words did not finish preparing.');
+  throw new Error('Fixture background work did not finish.');
 }
 
 export async function buildFixture(path: string) {
@@ -41,20 +42,21 @@ export async function buildFixture(path: string) {
       await act({ type: 'chat', message, source: '', threadId: library });
     await act({ type: 'reflect', source: '', threadId: library });
 
-    for (const [text, context] of [['透透气', '图书馆太闷了'], ['报备', '朋友说出去玩要跟男朋友报备'], ['分心', '']]) {
+    for (const [text, context] of [['透透气', '图书馆太闷了'], ['报备', '朋友说出去玩要跟男朋友报备'], ['分心', ''], ['鸟食', '我最近在阳台上放了一些鸟食。']]) {
       await act({ type: 'addWord', text, ...(context ? { context } : {}) });
-      await settleWords(j);
+      await settle(j);
     }
 
     s = j.get();
     const doc = s.reading.documents[0];
     const first = doc.paragraphs[0];
     await act({ type: 'readingPosition', documentId: doc.id, paragraphId: doc.paragraphs[1].id });
-    for (const [quote, message, askTutor] of [['青绿色的铁皮被雨冲得发白', '冲得发白 — washed pale by rain. 得 + result, nice image', false], ['我总觉得亭子在等什么人', 'Why 什么人 and not 谁 here?', true]] as const) {
+    for (const [quote, message, askTutor] of [['旧报刊亭', 'The green newspaper kiosks by the road — mostly gone now', false], ['青绿色的铁皮被雨冲得发白', '冲得发白 — washed pale by rain. 得 + result, nice image', false], ['我总觉得亭子在等什么人', 'Why 什么人 and not 谁 here?', true]] as const) {
       const start = first.text.indexOf(quote);
       const anchor = { surface: 'read', ownerId: doc.id, startId: first.id, endId: first.id, startOffset: start, endOffset: start + quote.length, quote };
       await act({ type: 'annotationPost', anchor, message, askTutor });
     }
+    await settle(j);
     await act({ type: 'practice', mode: 'Daily mix' });
     return j.get();
   } finally {

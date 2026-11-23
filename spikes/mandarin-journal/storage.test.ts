@@ -98,7 +98,7 @@ test('the fixture is a realistic week that opens like any journal', async () => 
     const state = await buildFixture(path);
     assert.equal(state.threads.length, 2);
     assert.equal(state.reflections.length, 2);
-    assert.deepEqual(state.saved.filter((w: { kind: string }) => w.kind === 'Word').map((w: { title: string }) => w.title).sort(), ['分心', '报备', '透透气'].sort());
+    assert.deepEqual(state.saved.filter((w: { kind: string }) => w.kind === 'Word').map((w: { title: string }) => w.title).sort(), ['分心', '报备', '透透气', '鸟食'].sort());
     assert.ok(state.annotationThreads.some((t: { anchor: { surface: string } }) => t.anchor.surface === 'read'));
     assert.ok(state.practice.card, 'practice is underway');
     const reopened = openJournal(path);

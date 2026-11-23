@@ -28,6 +28,7 @@ const demoWords: Record<string, { title: string } & WordContent> = Object.fromEn
       'If you have visitors this weekend, you need to notify the property manager in advance.',
     ],
     ['蜘蛛', 'zhīzhū', 'A spider.', '窗台上有一只蜘蛛。', 'There is a spider on the windowsill.'],
+    ['鸟食', 'niǎoshí', 'Bird food, such as seed put out for birds.', '我在阳台上放了一些鸟食。', 'I put some bird food out on the balcony.'],
     [
       '散场',
       'sànchǎng',

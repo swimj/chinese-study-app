@@ -4,12 +4,13 @@ import { feedback } from './feedback.ts';
 import { practiceGen } from './practice.ts';
 import { reflect } from './reflect.ts';
 import { wordIntake } from './word-intake.ts';
+import { mediaConsider } from './media.ts';
 
 import { voice } from './core.ts';
 export { voice, type TutorAction } from './core.ts';
 export type { Reflection } from './reflect.ts';
 
-export const situations = { ask, wordIntake, reflect, feedback, practiceGen };
+export const situations = { ask, wordIntake, reflect, feedback, practiceGen, mediaConsider };
 export type SituationName = keyof typeof situations;
 export type SituationOutput<K extends SituationName> = ReturnType<(typeof situations)[K]['validate']>;
 
@@ -26,11 +27,14 @@ export function situationFor(trigger: TurnContext['trigger']): SituationName {
       return 'reflect';
     case 'wordIntake':
       return 'wordIntake';
+    case 'mediaConsider':
+      return 'mediaConsider';
   }
 }
 
 export function instructionsFor(name: SituationName): string {
-  return voice + '\n\n' + situations[name].instructions;
+  const situation: { instructions: string; standalone?: boolean } = situations[name];
+  return situation.standalone ? situation.instructions : voice + '\n\n' + situation.instructions;
 }
 
 const validators: { [K in SituationName]: (result: TutorResult, input: TurnContext) => SituationOutput<K> } = {
@@ -39,6 +43,7 @@ const validators: { [K in SituationName]: (result: TutorResult, input: TurnConte
   reflect: reflect.validate,
   feedback: feedback.validate,
   practiceGen: practiceGen.validate,
+  mediaConsider: mediaConsider.validate,
 };
 
 /** Validates a live or demo tutor result against one situation's contract. */

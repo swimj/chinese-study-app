@@ -1,7 +1,8 @@
 # Media on the board
 
-**Status: being built.** The data model, the local policy and the composition
-policy are implemented (`media/`, `public/media-policy.js`).
+**Status: being built.** The data model, both policies, `find_image`, the
+`mediaConsider` situation and the media job are implemented (`media/`,
+`situations/media.ts`, `public/media-policy.js`).
 
 This document is for anyone deciding how pictures, and later other media,
 appear in the scrapbook without the learner asking for them. It explains the
@@ -174,10 +175,10 @@ Old journals open with empty arrays and `pictures: 'normal'`.
 | `media/judgment.ts`: zod schema for `Judgment` and the candidate pick | server | schema |
 | `media/local-policy.ts`: `ceilingFor(judgment)` | shared pure function | policy |
 | `public/media-policy.js`: `compose(state, now)` returns `{ mediaId → { level, reasons[] } }` | shared pure module, tested in Node like `scrapbook.js` | policy |
-| `media/find-image.ts`: read tool. Wikidata search (`wbsearchentities`, zh then en) → entity image (P18) → Commons `imageinfo` with `extmetadata` (license, artist) and a thumbnail. Returns ≤ 3 candidates, already filtered to the allowlist. | server | read tool |
+| `media/find-image.ts`: read tool. Wikidata search (`wbsearchentities`, zh then en) → entity image (P18) → Commons `imageinfo` with `extmetadata` (license, artist) and a thumbnail. Returns ≤ 3 candidates, already filtered to the allowlist. The model passes the Chinese term and an English phrase for the same sense; the English search runs only when the Chinese one finds nothing. An item with a publication date (P577) is treated as a named work and yields a link card to its zh or en Wikipedia article instead of its image. | server | read tool |
 | `situations/media.ts`: back-office situation `mediaConsider`. Input is the anchor piece and its context. Tool: `find_image`. Output: `{ pick: candidateIndex \| null, judgment }`. It never speaks to the learner. | server | situation |
-| Validator for `mediaConsider`: license on the allowlist; `senseMatch: entity` requires the picked candidate's `entityId`; `truthfulness: real` only | server | validation |
-| Media job: queued when a word is saved or a reading note is created. Runs outside the learner's request, in the same pattern as word intake, at most one job at a time and 20 per day. It records a `MediaDecision`; when the ceiling isn't `none`, it attaches a `MediaItem`. | server | effect |
+| Validator for `mediaConsider`: license on the allowlist; `senseMatch: entity` requires the picked candidate's `entityId`; `truthfulness: real` only. These checks apply to a picked candidate. With `pick: null` the judgment is recorded as a decision with ceiling `none`, so an honest "illustration only" or "abstract" report is kept rather than rejected. A reply addressed to the learner is rejected. | server | validation |
+| Media job: queued when a word is saved (by word intake or a tutor stash) or a note is created on a reading. Runs outside the learner's request, in the same pattern as word intake, at most one job at a time and 20 model turns per UTC day. Jobs over the limit wait for the next day's activity. With `pictures: off` a job is skipped without a model turn. It records a `MediaDecision`; when the ceiling isn't `none`, it attaches a `MediaItem`. Jobs live in `mediaJobs` in the journal state; the newest 200 finished jobs are kept. | server | effect |
 | Offline/demo provider: canned candidates for a few fixture words (报刊亭, 鸟食), so the fixture shows one placed and one latent item | server | test support |
 | `npm run journal:media-report`: lists recent decisions, ceilings, composed levels, reasons and reactions | CLI | observability |
 

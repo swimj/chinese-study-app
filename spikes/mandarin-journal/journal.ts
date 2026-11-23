@@ -32,6 +32,9 @@ import {
   OfflineWordUnavailable, type WordIntake, type WordContent, type WordDecision,
 } from './word-intake.ts';
 import { withMediaDefaults, type MediaState } from './media/model.ts';
+import { anchorIds, applyOutcome, DAILY_LIMIT, finishJob, mediaRequestFor, queueMediaJobs, ranToday } from './media/job.ts';
+import { OfflineMediaUnavailable } from './media/demo.ts';
+import type { MediaOutcome } from './situations/media.ts';
 
 const text = z.string().trim().min(1).max(8000);
 const source = z.string().max(12000);
@@ -158,6 +161,7 @@ const initial = (): State => ({
   notice: '',
   media: [],
   mediaDecisions: [],
+  mediaJobs: [],
   settings: { pictures: 'normal' },
 });
 export const live = !!process.env.OPENAI_API_KEY && process.env.JOURNAL_DEMO !== '1';
@@ -787,8 +791,6 @@ export function openJournal(path: string, backend: Backend = engine) {
   }
 
   let closed = false;
-  let working = false;
-  let wakeRequested = false;
   // Model work runs outside the user action queue. Only its short commit joins
   // the queue, so it sees intervening actions and cannot overwrite a user turn.
   async function prepareWords() {
@@ -823,7 +825,9 @@ export function openJournal(path: string, backend: Backend = engine) {
               intake.savedIds = [reuse.id];
             } else if (decision) {
               try {
+                const before = anchorIds(latest);
                 finishWord(intake, latest.saved, decision);
+                queueMediaJobs(latest, before);
               } catch {
                 failure = 'The tutor returned an incomplete word. Try again.';
               }
@@ -842,28 +846,87 @@ export function openJournal(path: string, backend: Backend = engine) {
           throw error;
         }
       });
+      wakeMedia();
     }
   }
-  function wakeWords() {
-    if (closed) return;
-    wakeRequested = true;
-    if (working) return;
-    working = true;
-    setImmediate(async () => {
-      try {
-        do {
-          wakeRequested = false;
-          await prepareWords();
-        } while (wakeRequested && !closed);
-      } catch {
-        // A storage failure leaves the pending request durable. Retry after a
-        // short delay without logging learner input or trapping the request loop.
-        setTimeout(wakeWords, 1000).unref();
-      } finally {
-        working = false;
+  // One background consideration at a time, at most DAILY_LIMIT model turns a
+  // day. Jobs over the limit stay pending until activity wakes the worker again.
+  async function prepareMedia() {
+    while (!closed) {
+      const { s } = read();
+      const job = s.mediaJobs.find((item) => item.status === 'pending');
+      if (!job) return;
+      const request = mediaRequestFor(s, job.anchor);
+      let outcome: MediaOutcome | undefined;
+      let skipped: string | undefined;
+      let failure: string | undefined;
+      if (s.settings.pictures === 'off') skipped = 'pictures-off';
+      else if (!request) skipped = 'anchor-gone';
+      else if (ranToday(s) >= DAILY_LIMIT) return;
+      else {
+        const ctx = context(s, 'mediaConsider', request.term, 'media', request.context ?? '');
+        ctx.media = request;
+        try {
+          outcome = await consult(backend, 'mediaConsider', ctx);
+        } catch (error) {
+          if (error instanceof OfflineMediaUnavailable) skipped = 'offline';
+          else failure = 'failed: ' + String((error as Error)?.message ?? error).slice(0, 200);
+        }
       }
-    });
+      await enqueue(() => {
+        if (closed) return;
+        db.exec('BEGIN IMMEDIATE');
+        try {
+          const { s: latest } = read();
+          const current = latest.mediaJobs.find((item) => item.id === job.id);
+          if (current?.status === 'pending') {
+            const now = new Date();
+            if (outcome && request && mediaRequestFor(latest, job.anchor)) {
+              applyOutcome(latest, request, outcome, now);
+              finishJob(latest, current, 'done', now);
+            } else if (outcome) finishJob(latest, current, 'skipped', now, 'anchor-gone');
+            else if (failure) finishJob(latest, current, 'failed', now, failure);
+            else finishJob(latest, current, 'skipped', now, skipped);
+            db.prepare('UPDATE journal SET body=?,revision=revision+1 WHERE id=1').run(JSON.stringify(latest));
+          }
+          db.exec('COMMIT');
+        } catch (error) {
+          db.exec('ROLLBACK');
+          throw error;
+        }
+      });
+    }
   }
+  // Model work runs outside the user action queue; see prepareWords.
+  function worker(task: () => Promise<void>) {
+    let running = false;
+    let again = false;
+    const wake = () => {
+      if (closed) return;
+      again = true;
+      if (running) return;
+      running = true;
+      setImmediate(async () => {
+        try {
+          do {
+            again = false;
+            await task();
+          } while (again && !closed);
+        } catch {
+          // A storage failure leaves the pending request durable. Retry after a
+          // short delay without logging learner input or trapping the request loop.
+          setTimeout(wake, 1000).unref();
+        } finally {
+          running = false;
+        }
+      });
+    };
+    return { wake, busy: () => running };
+  }
+  const words = worker(prepareWords);
+  const media = worker(prepareMedia);
+  const wakeWords = words.wake;
+  const wakeMedia = media.wake;
 
   async function perform(a: Action) {
     const hash = createHash('sha256').update(JSON.stringify(a)).digest('hex');
@@ -874,7 +937,9 @@ export function openJournal(path: string, backend: Backend = engine) {
         throw new JournalConflict('This action ID already identifies a different request.');
       return publicState(s, backend.mode);
     }
+    const before = anchorIds(s);
     await mutate(s, a, backend, reviewImport);
+    queueMediaJobs(s, before);
     db.exec('BEGIN IMMEDIATE');
     try {
       if (
@@ -890,11 +955,22 @@ export function openJournal(path: string, backend: Backend = engine) {
       throw error;
     }
     if (a.type === 'addWord' || a.type === 'clarifyWord' || a.type === 'retryWord') wakeWords();
+    if (s.mediaJobs.some((job) => job.status === 'pending')) wakeMedia();
     return publicState(s, backend.mode);
   }
   wakeWords();
+  wakeMedia();
   return {
     get: () => publicState(read().s, backend.mode),
+    /** Whether background word or media work is pending or running. */
+    busy() {
+      const { s } = read();
+      return (
+        words.busy() || media.busy() ||
+        s.wordIntakes.some((item) => item.status === 'pending') ||
+        (s.mediaJobs.some((job) => job.status === 'pending') && ranToday(s) < DAILY_LIMIT && s.settings.pictures !== 'off')
+      );
+    },
     act(a: Action) {
       return enqueue(() => perform(a));
     },
