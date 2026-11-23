@@ -44,8 +44,7 @@ test('real SDK uses recall, validates the exercise contract and isolates casual 
     practiceStatus: { pending: [{ title: 'An exercise', prompt: 'queued example' }], active: [] },
     previousPrompts: ['previous exercise'],
     readingContext: 'selected paragraph',
-    saved: [],
-    learning: [{ text: 'sample observation', source: 'from a page' }],
+    saved: [{ kind: 'Note', title: 'sample observation', detail: 'from a page' }],
     annotations: [{ role: 'user', text: 'my margin question', source: 'The river', quote: '河边' }],
   };
   replies = [
@@ -54,7 +53,7 @@ test('real SDK uses recall, validates the exercise contract and isolates casual 
       call_id: 'call_1',
       id: 'fc_1',
       name: 'recall',
-      arguments: JSON.stringify({ query: 'sample', from: 'learning' }),
+      arguments: JSON.stringify({ query: 'sample', from: 'saved' }),
       status: 'completed',
     },
     structured({ reply: 'One reply.', action: null }),
@@ -172,7 +171,6 @@ test('offline reflection anchors scoped learner lines and practice respects the 
     chatHistory: [],
     tutorHistory: [],
     saved: [],
-    learning: [],
   };
   const first = demoFriend(input);
   assert.match(first, /麻雀/);

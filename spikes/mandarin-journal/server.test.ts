@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
 import { openJournal } from './journal.ts';
-import { demoFriend, demoTutor } from './practice.ts';
+import { catalogue, demoFriend, demoTutor } from './practice.ts';
 import type { TurnContext } from './tutor.ts';
 const demo = {
   mode: 'demo' as const,
@@ -28,7 +28,6 @@ test('a real journal carries chat into practice and retains the served exercise 
     await assert.rejects(j.act({ ...request, message: 'different' }), /different request/);
     const practice = await j.act({ id: randomUUID(), type: 'practice', mode: 'Daily mix' });
     assert.equal(practice.practice.card?.kind, 'open');
-    assert.equal(practice.learning.length, 1);
     const cardId = practice.practice.card!.id;
     await assert.rejects(j.act({ id: randomUUID(), type: 'next', cardId }), /Answer before/);
     await j.act({ id: randomUUID(), type: 'answer', cardId, answer: '我本来想整理照片，结果刷起视频来了。' });
@@ -567,5 +566,104 @@ test('a reflection with an invalid takeaway leaves the previous stretch availabl
     assert.equal(result.annotationThreads[0].id, result.reflections[0].takeaways[0].annotationId);
   } finally {
     journal.close();
+  }
+});
+
+test('a tutor’s practice rationale stays with its card and never returns as learner evidence', async () => {
+  const folder = mkdtempSync(join(tmpdir(), 'journal-rationale-'));
+  const path = join(folder, 'journal.db');
+  const rationale = 'The learner probably confuses scope words.';
+  const inputs: TurnContext[] = [];
+  let generated = 0;
+  const backend = {
+    ...demo,
+    tutor: async (ctx: TurnContext) => {
+      inputs.push(ctx);
+      if (ctx.trigger === 'answer') return { reply: 'Clear.', action: null };
+      return {
+        reply: 'Ready.',
+        action: {
+          kind: 'practice' as const,
+          title: 'Only while waiting',
+          detail: rationale,
+          exercise: {
+            kind: 'open' as const,
+            prompt: 'Say you are just waiting ' + ++generated,
+            choices: [],
+            answer: '我只是在等。',
+            explanation: 'Limit the activity.',
+          },
+        },
+      };
+    },
+  };
+  const { DatabaseSync } = await import('node:sqlite');
+  const body = () => {
+    const db = new DatabaseSync(path);
+    const parsed = JSON.parse(String(db.prepare('SELECT body FROM journal').get()!.body));
+    db.close();
+    return parsed;
+  };
+  let j = openJournal(path, backend);
+  try {
+    await j.act({ id: randomUUID(), type: 'chat', source: '', message: '我只在等。' });
+    await j.act({ id: randomUUID(), type: 'tutor', surface: 'home', source: '只是', message: 'Queue practice on 只是.' });
+    j.close();
+    // An existing journal may still hold rationales copied by earlier versions.
+    const legacy = body();
+    legacy.learning = [{ text: 'Legacy rationale — an earlier guess.', source: '只是' }];
+    const raw = new DatabaseSync(path);
+    raw.prepare('UPDATE journal SET body=?').run(JSON.stringify(legacy));
+    raw.close();
+    j = openJournal(path, backend);
+    const start = await j.act({ id: randomUUID(), type: 'practice', mode: 'Daily mix' });
+    const cardId = start.practice.card!.id;
+    await j.act({ id: randomUUID(), type: 'answer', cardId, answer: '我只是在等。' });
+    await j.act({ id: randomUUID(), type: 'next', cardId });
+    const continued = await j.act({ id: randomUUID(), type: 'practice', mode: 'Daily mix', continue: true });
+    assert.ok(continued.practice.card);
+    assert.ok(inputs.some((ctx) => ctx.trigger === 'practice'));
+    for (const ctx of inputs) assert.doesNotMatch(JSON.stringify(ctx), /probably confuses|Legacy rationale/);
+    assert.equal('learning' in j.get(), false);
+    j.close();
+    const stored = body();
+    assert.deepEqual(stored.learning, legacy.learning);
+    assert.equal(stored.attempts[0].card.rationale, rationale);
+    j = openJournal(path, backend);
+  } finally {
+    j.close();
+    rmSync(folder, { recursive: true });
+  }
+});
+
+test('a generated exercise matching a card from the replaced session is served, not reported as a failure', async () => {
+  const catalogueCard = catalogue[0]!;
+  const j = openJournal(':memory:', {
+    ...demo,
+    tutor: async (ctx) => {
+      if (ctx.trigger !== 'practice') return demoTutor(ctx);
+      const { kind, prompt, choices, answer, explanation } = catalogueCard;
+      return {
+        reply: '修复 restores what was damaged.',
+        action: {
+          kind: 'practice',
+          title: 'Restoring data',
+          detail: 'Collocation.',
+          exercise: { kind, prompt, choices, answer, explanation },
+        },
+      };
+    },
+  });
+  try {
+    // A fresh journal serves the starter catalogue.
+    const starter = await j.act({ id: randomUUID(), type: 'practice', mode: 'Daily mix' });
+    assert.equal(starter.practice.card?.id, catalogueCard.id);
+    await j.act({ id: randomUUID(), type: 'chat', source: '', message: '数据坏了，要修复。' });
+    const next = await j.act({ id: randomUUID(), type: 'practice', mode: 'Build vocabulary' });
+    assert.equal(next.notice, '');
+    assert.equal(next.practice.card?.prompt, catalogueCard.prompt);
+    assert.notEqual(next.practice.card?.id, catalogueCard.id);
+  } finally {
+    j.close();
   }
 });

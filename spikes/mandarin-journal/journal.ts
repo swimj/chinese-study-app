@@ -116,7 +116,9 @@ type Reflection = {
 };
 type Attempt = { id: string; card: Card; answer: string; result: Result };
 type Activity = { id: string; at: string; text: string; source: string; reference?: Reference };
-type QueuedCard = Card & { title?: string; introduction?: string };
+// rationale is the tutor's reason for choosing this exercise. It stays with the
+// card and is never treated as evidence about the learner.
+type QueuedCard = Card & { title?: string; introduction?: string; rationale?: string };
 type Item = { word?: WordContent; id: string; kind: string; title: string; detail: string; source: string; reference?: Reference };
 type Result = { correct: boolean | null; feedback: string };
 type Practice = { started?: boolean; mode: string; cards: QueuedCard[]; index: number; result: Result | null };
@@ -130,7 +132,9 @@ type State = {
   activity: Activity[];
   reading: ReadingState;
   saved: Item[];
-  learning: { text: string; source: string }[];
+  // Earlier versions copied the tutor's practice rationales here and fed them
+  // back as learner evidence. Existing entries are retained but no longer read.
+  learning?: { text: string; source: string }[];
   attempts: Attempt[];
   pending: QueuedCard[];
   practice: Practice;
@@ -146,7 +150,6 @@ const initial = (): State => ({
   activity: [],
   reading: initialReading(),
   saved: [],
-  learning: [],
   attempts: [],
   pending: [],
   practice: { mode: 'Daily mix', cards: [], index: 0, result: null },
@@ -187,7 +190,6 @@ function publicState(s: State, mode: Backend['mode']) {
     },
     annotationThreads: s.annotationThreads,
     saved: s.saved,
-    learning: s.learning,
     notice: s.notice,
     practice: {
       mode: p.mode,
@@ -243,7 +245,6 @@ function context(
         .map((c) => ({ title: c.title ?? c.source, prompt: c.prompt })),
     },
     saved: s.saved,
-    learning: s.learning,
   };
 }
 function keep(s: State, kind: string, title: string, detail: string, src: string, reference?: Reference) {
@@ -263,7 +264,19 @@ function applyAction(s: State, response: TutorResult, ctx: TurnContext, referenc
     keep(s, a.kind === 'stash' ? 'Word' : 'Note', a.title, a.detail, ctx.source, reference);
     return;
   }
-  if (!a.exercise) return;
+  const card = exerciseCard(response, ctx);
+  if (!card) return;
+  if (
+    !s.pending.some((c) => c.prompt === card.prompt) &&
+    !ctx.practiceStatus?.active.some((c) => c.prompt === card.prompt)
+  ) {
+    s.pending.push(card);
+    logActivity(s, 'Queued practice · ' + card.title, ctx.source, reference);
+  }
+}
+function exerciseCard(response: TutorResult, ctx: TurnContext): QueuedCard | undefined {
+  const a = response.action;
+  if (a?.kind !== 'practice' || !a.exercise) return;
   const e = a.exercise;
   if (
     !e.prompt.trim() ||
@@ -272,16 +285,7 @@ function applyAction(s: State, response: TutorResult, ctx: TurnContext, referenc
       (e.choices.length < 2 || new Set(e.choices).size !== e.choices.length || !e.choices.includes(e.answer)))
   )
     throw new Error('The tutor returned an incomplete exercise.');
-  const observation = { text: a.title + ' — ' + a.detail, source: ctx.source };
-  if (!s.learning.some((x) => x.text === observation.text && x.source === observation.source))
-    s.learning.push(observation);
-  if (
-    !s.pending.some((c) => c.prompt === e.prompt) &&
-    !ctx.practiceStatus?.active.some((c) => c.prompt === e.prompt)
-  ) {
-    s.pending.push({ ...e, id: randomUUID(), title: a.title, source: ctx.source });
-    if (ctx.trigger !== 'practice') logActivity(s, 'Queued practice · ' + a.title, ctx.source, reference);
-  }
+  return { ...e, id: randomUUID(), title: a.title, rationale: a.detail, source: ctx.source };
 }
 function practiceSources(s: State, mode: string): string[] {
   const words = s.saved
@@ -308,15 +312,17 @@ function practiceSources(s: State, mode: string): string[] {
   const places = Object.entries(s.reading.positions).map(
     ([doc, paragraph]) => 'Encountered in reading: ' + readingSource(s.reading, doc + '/' + paragraph),
   );
-  const notes = s.learning
+  // The learner's own requests to the tutor, with what they were looking at.
+  const requests = s.tutor
+    .filter((m) => m.role === 'user')
     .slice(-4)
     .reverse()
-    .map((item) => item.text);
+    .map((m) => 'Asked the tutor · ' + m.text + (m.source ? ' · about: ' + m.source.slice(0, 600) : ''));
   return [
     ...new Set(
       mode === 'Build vocabulary'
-        ? [...words, ...discussions, ...turns, ...readings, ...places, ...notes]
-        : [...turns, ...discussions, ...words, ...readings, ...places, ...notes],
+        ? [...words, ...discussions, ...turns, ...readings, ...places, ...requests]
+        : [...turns, ...discussions, ...words, ...readings, ...places, ...requests],
     ),
   ];
 }
@@ -360,11 +366,10 @@ async function startPractice(s: State, mode: string, backend: Backend, continuin
       ctx.previousPrompts = [...previousPrompts, ...cards.map((c) => c.prompt)];
       try {
         const response = await backend.tutor(ctx);
-        if (!response.action?.exercise || ctx.previousPrompts.includes(response.action.exercise.prompt))
+        const fresh = exerciseCard(response, ctx);
+        // A repeat of a served or queued prompt is skipped like an empty turn, not a failure.
+        if (!fresh || ctx.previousPrompts.includes(fresh.prompt) || s.pending.some((c) => c.prompt === fresh.prompt))
           continue;
-        applyAction(s, response, ctx);
-        const fresh = s.pending.shift();
-        if (!fresh) throw new Error('Missing generated card');
         if (mode === 'Build vocabulary') fresh.introduction = response.reply.trim();
         cards.push(fresh);
       } catch {
