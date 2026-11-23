@@ -12,7 +12,6 @@ export interface TurnContext {
   tutorHistory: { role: 'user' | 'assistant'; text: string; source?: string }[];
   chatHistory: { role: 'user' | 'assistant'; text: string; source?: string }[];
   saved: { kind: string; title: string; detail: string }[];
-  learning: { text: string; source: string }[];
   annotations?: { role: 'user' | 'assistant'; text: string; source: string; quote: string }[];
   reflectionTurns?: { id: string; role: 'user' | 'assistant'; text: string }[];
   topic?: string;
@@ -62,13 +61,13 @@ const recallInput = z.object({
   query: z
     .string()
     .describe('Exact expression, short phrase, or keyword. Use an empty string for recent records.'),
-  from: z.enum(['learning', 'saved', 'tutor', 'chat', 'annotations']),
+  from: z.enum(['saved', 'tutor', 'chat', 'annotations']),
 });
 
 const recall = tool<typeof recallInput, TurnContext>({
   name: 'recall',
   description:
-    'Look up prior exchanges, annotations on reading passages or chat lines, saved items and learning observations in this learner’s journal. Results include their source or speaker. Inspect before making claims about prior study.',
+    'Look up this learner’s journal: tutor exchanges and the tutor’s own observations on attempts and reflections (tutor), casual-chat lines from any conversation (chat), annotations on reading passages or chat lines (annotations), and saved words, notes and readings (saved). Results include their source or speaker. Tutor observations are the tutor’s interpretations, not the learner’s words. Inspect before making claims about prior study.',
   parameters: recallInput,
   execute({ query, from }, runContext) {
     if (!runContext) throw new Error('Journal context is required for recall');

@@ -322,10 +322,6 @@ function recentEvidence(input: TurnContext): string[] {
       .slice(-3)
       .reverse()
       .map((item) => item.title),
-    ...input.learning
-      .slice(-3)
-      .reverse()
-      .map((item) => item.text),
   ];
 }
 
