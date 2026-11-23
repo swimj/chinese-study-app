@@ -95,7 +95,7 @@ const wordInbox = createWordInbox({
     const kind = captureKind(text);
     if (kind === 'link') {
       importUrl = text;
-      location.hash = 'read/import';
+      location.hash = 'home/import';
       return true;
     }
     if (kind === 'passage') {
@@ -121,11 +121,22 @@ const reader = createReading({
   openAnnotation: id => annotations.open(id),
   refreshAnnotations: () => annotations.render(),
   host: document.querySelector('[data-page="read"]'),
+  importPanel: get('home-import'),
   canSubmit: () => Boolean(state && !busy && !ui.pending),
   submit, discussInChinese,
   navigate: (dest, ref) => { location.hash = href(dest, ref ? 'source' : '', ref); },
 });
 let importUrl = '';
+let importReturnFocus;
+const importDialog = get('home-import');
+const notice = get('notice');
+function dismissImport() {
+  const repairId = route().id;
+  location.hash = repairId ? href('read', 'source', repairId) : '#home';
+}
+get('close-import').onclick = dismissImport;
+importDialog.oncancel = event => { event.preventDefault(); dismissImport(); };
+
 // A drop is a word unless it is plainly a link or a whole sentence.
 function captureKind(text) {
   const value = text.trim();
@@ -449,7 +460,15 @@ function focusTarget(el) {
 }
 async function navigate(initial = false) {
   const previous = page;
+  if (location.hash === '#read/import' || location.hash === '#read/import/') {
+    history.replaceState(null, '', '#home/import');
+  }
   const target = route();
+  if (importDialog.open && !(target.page === 'home' && target.kind === 'import')) {
+    reader.closeImport();
+    get('layout').before(notice);
+    if (target.page === 'home' && !target.kind) importReturnFocus?.focus({ preventScroll: true });
+  }
   annotations.close();
   page = target.page;
   if (previous === 'read' && page !== 'read') reader.leave();
@@ -480,6 +499,14 @@ async function navigate(initial = false) {
   if (page === 'home' && previous === 'read' && !target.kind) {
     scrapbook.showReading(reader.documentId());
   }
+  if (page === 'home' && target.kind === 'import') {
+    if (!importDialog.open) {
+      importReturnFocus = importUrl ? get('word-text') : get('dock-menu').querySelector('summary');
+      importDialog.append(notice);
+      reader.openImport(importUrl, target.id);
+      importUrl = '';
+    }
+  }
   if (page === 'home' && target.kind === 'words') {
     const first = get('word-items').querySelector('[data-status="clarify"] strong');
     focusTarget(first || get('word-heading'));
@@ -495,7 +522,6 @@ async function navigate(initial = false) {
       : target.kind === 'source' && target.id ? target.id : state.reading.documentId;
     if (!reader.openReference(requested)) showError('This reading location could not be found.');
     reader.enter();
-    if (target.kind === 'import') { reader.openImport(importUrl); importUrl = ''; }
   }
   if (note) {
     if (page === 'chat' && note.anchor.ownerId !== state.activeThreadId) {
@@ -533,10 +559,7 @@ async function navigate(initial = false) {
     if (!target.kind && !state.practice.card && !state.practice.done && !ui.pending && !busy) startPractice(state.practice.mode);
   }
 }
-window.addEventListener('hashchange', () => {
-  reader.resetImportFeedback();
-  navigate();
-});
+window.addEventListener('hashchange', () => navigate());
 // An already-open bookmark still brings its source back into view.
 document.addEventListener('click', (e) => {
   const a = e.target.closest('a[href^="#"]');
@@ -587,7 +610,9 @@ async function runAction(action) {
   if (busy || !state) return false;
   ++requestRevision;
   const startingHash = location.hash;
-  const currentImport = action.type === 'importReading' && reader.trackImport(action.url);
+  const isImport = action.type === 'importReading' || action.type === 'importPdf';
+  const tracksImport = isImport && reader.trackImport(action.url);
+  const currentImport = () => tracksImport && tracksImport() && location.hash === startingHash;
   ui.pending = action;
   persist();
   markBusy(true);
@@ -608,23 +633,15 @@ async function runAction(action) {
     delete ui.pending;
     persist();
     renderState();
-    if (action.type === 'importPdf' && page === 'read' && location.hash === startingHash) reader.imported(undefined, true);
-    if (currentImport && currentImport() && location.hash === startingHash) reader.imported(action.url, page === 'read');
+    if (currentImport()) reader.imported();
     return true;
   } catch (err) {
-    if (action.type === 'importPdf' && err.status) {
+    if (isImport && err.status) {
       delete ui.pending;
       persist();
-      if (page === 'read' && location.hash === startingHash) reader.pdfMessage(err.message);
-      else showError(err.message);
-      return false;
-    }
-    if (action.type === 'importReading' && err.status) {
-      delete ui.pending;
-      persist();
-      if (currentImport() && startingHash === location.hash) {
-        if (page === 'read') reader.importError(action.url, err.message, err.preview, err.canPaste, action.pastedText);
-        else showError(err.message);
+      if (currentImport()) {
+        if (action.type === 'importPdf') reader.pdfMessage(err.message);
+        else reader.importError(action.url, err.message, err.preview, err.canPaste, action.pastedText);
       }
       return false;
     }

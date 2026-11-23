@@ -80,6 +80,10 @@ function anchorKey(anchor) {
   return JSON.stringify([anchor.surface, anchor.ownerId, anchor.startId, anchor.startOffset, anchor.endId, anchor.endOffset]);
 }
 
+function savedPassage(thread) {
+  return thread?.capturedAt && !thread.messages.some(message => message.role === 'assistant');
+}
+
 function clamp(value, lo, hi) {
   return Math.max(lo, Math.min(value, hi));
 }
@@ -101,7 +105,8 @@ export function createAnnotations({ submit, getState, canSubmit }) {
   const quickActions = element('div', 'an-quick-actions');
   const capture = button('an-capture', 'Save');
   const compose = button('an-compose', 'Ask');
-  quickActions.append(capture, compose);
+  const withNote = button('an-with-note', 'Add note');
+  quickActions.append(capture, withNote, compose);
   toolbar.append(dictionary, quickActions);
   const confirmation = element('span', 'an-confirmation');
   confirmation.setAttribute('role', 'status');
@@ -129,7 +134,11 @@ export function createAnnotations({ submit, getState, canSubmit }) {
   save.type = ask.type = 'submit';
   actions.append(save, ask);
   form.append(input, actions);
-  panel.append(head, chooser, messages, form);
+  const savedActions = element('div', 'an-actions');
+  const appendNote = button('an-ask', 'Add note');
+  const discuss = button('an-ask', 'Ask');
+  savedActions.append(appendNote, discuss);
+  panel.append(head, chooser, messages, savedActions, form);
   document.body.append(toolbar, panel, confirmation);
 
   const sources = () => getState()?.annotationThreads || [];
@@ -145,7 +154,7 @@ export function createAnnotations({ submit, getState, canSubmit }) {
   }
   let current, candidate, lookup, lookupTrigger, inFlight, hoverTimer, frame, confirmationTimer;
   const controls = new Map();
-  const keyFor = (view) => view.id || anchorKey(view.anchor);
+  const keyFor = view => (view.mode === 'capture' ? 'capture:' : '') + (view.id || anchorKey(view.anchor));
   const groupFor = (anchor) => sources().filter(t =>
     t.anchor.surface === anchor.surface && t.anchor.ownerId === anchor.ownerId && t.anchor.startId === anchor.startId);
   const startBlock = (anchor) => blocksOf(anchor.surface, anchor.ownerId).find(el => el.dataset.annotationBlock === anchor.startId);
@@ -155,6 +164,7 @@ export function createAnnotations({ submit, getState, canSubmit }) {
   function updateCapture() {
     const saved = candidate && threadAt(candidate)?.capturedAt;
     capture.textContent = saved ? 'Saved' : 'Save';
+    withNote.textContent = saved ? 'Add note' : 'Save with note';
     capture.disabled = Boolean(saved) || !canSubmit();
   }
 
@@ -173,17 +183,19 @@ export function createAnnotations({ submit, getState, canSubmit }) {
   let rangesByBlock = new WeakMap();
   function paint() {
     rangesByBlock = new WeakMap();
-    const all = [];
+    const notes = [];
+    const saves = [];
     for (const thread of sources()) {
       for (const range of sourceRanges(thread.anchor)) {
         const block = range.startContainer.parentElement;
         if (!rangesByBlock.has(block)) rangesByBlock.set(block, []);
         rangesByBlock.get(block).push({range, thread});
-        all.push(range);
+        (savedPassage(thread) ? saves : notes).push(range);
       }
     }
     if (!window.CSS?.highlights || !window.Highlight) return;
-    CSS.highlights.set('journal-note', new Highlight(...all));
+    CSS.highlights.set('journal-note', new Highlight(...notes));
+    CSS.highlights.set('journal-saved', new Highlight(...saves));
     CSS.highlights.set('journal-open-note', new Highlight(...(current ? sourceRanges(current.anchor) : [])));
   }
 
@@ -271,7 +283,21 @@ export function createAnnotations({ submit, getState, canSubmit }) {
     const group = thread ? groupFor(thread.anchor) : [];
     chooser.hidden = group.length < 2;
     if (!chooser.hidden) {
-      chooser.replaceChildren(...group.map((t, index) => new Option((index + 1) + ' · ' + t.anchor.quote, t.id)));
+      chooser.replaceChildren();
+      if (group.some(savedPassage)) {
+        for (const [label, items] of [
+          ['Saved passages', group.filter(savedPassage)],
+          ['Margin notes', group.filter(t => !savedPassage(t))],
+        ]) {
+          if (!items.length) continue;
+          const section = document.createElement('optgroup');
+          section.label = label;
+          section.append(...items.map(t => new Option(t.anchor.quote, t.id)));
+          chooser.append(section);
+        }
+      } else {
+        chooser.append(...group.map((t, index) => new Option((index + 1) + ' · ' + t.anchor.quote, t.id)));
+      }
       chooser.value = current.id;
     }
     const stamp = JSON.stringify(thread?.messages || []);
@@ -285,9 +311,17 @@ export function createAnnotations({ submit, getState, canSubmit }) {
       messages.scrollTop = messages.scrollHeight;
     }
     messages.hidden = !thread?.messages.length;
-    input.placeholder = current.asking ? 'Ask about this passage…' : thread ? 'Reply in the margin…' : 'Add a note or ask your tutor…';
-    input.setAttribute('aria-label', thread ? 'Reply to this note' : 'Note about the quoted text');
-    save.textContent = thread ? 'Reply' : 'Save note';
+    const capturing = current.mode === 'capture';
+    const compact = current.mode === 'inspect' && savedPassage(thread);
+    form.hidden = Boolean(compact);
+    savedActions.hidden = !compact;
+    ask.hidden = capturing;
+    panel.classList.toggle('an-saved-passage', Boolean(compact));
+    panel.setAttribute('aria-label', compact ? 'Saved passage' : capturing ? 'Save with a note' : 'Margin note');
+    input.placeholder = capturing ? 'Add a note…' : current.mode === 'ask' ? 'Ask about this passage…'
+      : thread ? 'Reply in the margin…' : 'Add a note or ask your tutor…';
+    input.setAttribute('aria-label', capturing ? 'Note for this save' : thread ? 'Reply to this note' : 'Note about the quoted text');
+    save.textContent = capturing ? 'Save note' : thread ? 'Reply' : 'Save note';
     updateButtons();
   }
 
@@ -296,15 +330,15 @@ export function createAnnotations({ submit, getState, canSubmit }) {
     if (!block?.getClientRects().length) return false;
     clearTimeout(hoverTimer);
     clearCandidate();
-    current = { anchor, id, trigger, preview: mode === 'hover', asking: mode === 'ask' };
-    form.classList.toggle('an-asking', current.asking);
+    current = { anchor, id, trigger, preview: mode === 'hover', mode };
+    form.classList.toggle('an-asking', mode === 'ask');
     input.value = drafts.get(keyFor(current)) || '';
     panel.hidden = false;
     displayThread();
     for (const [el, { marker }] of controls) marker.setAttribute('aria-expanded', String(Boolean(id && el === block)));
     paint();
     position();
-    if (mode === 'edit' || mode === 'ask') input.focus({ preventScroll: true });
+    if (mode === 'edit' || mode === 'ask' || mode === 'capture') input.focus({ preventScroll: true });
     if (mode === 'inspect') panel.focus({ preventScroll: true });
     return true;
   }
@@ -333,7 +367,7 @@ export function createAnnotations({ submit, getState, canSubmit }) {
     const reading = anchor.surface === 'read';
     toolbar.removeAttribute('aria-describedby');
     dictionary.hidden = !entry;
-    capture.hidden = !reading;
+    capture.hidden = withNote.hidden = !reading;
     compose.textContent = reading ? 'Ask' : 'Quote';
     toolbar.classList.toggle('has-gloss', Boolean(entry?.gloss));
     if (entry) {
@@ -466,7 +500,11 @@ export function createAnnotations({ submit, getState, canSubmit }) {
       marker.hidden = !group.length;
       count.textContent = group.length > 1 ? String(group.length) : '';
       if (group.length) {
-        marker.setAttribute('aria-label', group.length === 1 ? 'Open note on “' + group[0].anchor.quote + '”' : 'Open ' + group.length + ' margin notes');
+        const onlySaved = group.every(savedPassage);
+        marker.classList.toggle('an-bookmark', onlySaved);
+        const label = onlySaved ? 'saved passage' : 'note';
+        marker.setAttribute('aria-label', group.length === 1 ? 'Open ' + label + ' on “' + group[0].anchor.quote + '”' :
+          'Open ' + group.length + (onlySaved ? ' saved passages' : ' margin items'));
         marker.setAttribute('aria-expanded', String(Boolean(current?.id && group.some(t => t.id === current.id))));
       }
     }
@@ -480,14 +518,18 @@ export function createAnnotations({ submit, getState, canSubmit }) {
   }
 
   toolbar.onpointerdown = e => e.preventDefault();
-  compose.onclick = () => {
+  function openCandidate(mode) {
     if (!candidate) return;
     const anchor = candidate;
     const trigger = lookupTrigger || controls.get(startBlock(anchor))?.shortcut;
     const thread = anchor.surface === 'read' && threadAt(anchor);
     window.getSelection()?.removeAllRanges();
-    show(anchor, thread?.id, trigger, anchor.surface === 'read' ? 'ask' : 'edit');
-  };
+    show(anchor, thread?.id, trigger, anchor.surface === 'read' ? mode : 'edit');
+  }
+  compose.onclick = () => openCandidate('ask');
+  withNote.onclick = () => openCandidate('capture');
+  appendNote.onclick = () => show(current.anchor, current.id, current.trigger, 'capture');
+  discuss.onclick = () => show(current.anchor, current.id, current.trigger, 'ask');
   capture.onclick = async () => {
     if (!candidate || capture.disabled) return;
     const anchor = candidate;
@@ -514,7 +556,7 @@ export function createAnnotations({ submit, getState, canSubmit }) {
   input.onkeydown = e => {
     if (e.key === 'Enter' && (e.metaKey || e.ctrlKey) && !e.isComposing && !save.disabled) {
       e.preventDefault();
-      form.requestSubmit(current?.asking ? ask : save);
+      form.requestSubmit(current?.mode === 'ask' ? ask : save);
     }
   };
   form.onsubmit = async e => {
@@ -528,7 +570,10 @@ export function createAnnotations({ submit, getState, canSubmit }) {
     updateButtons();
     try {
       const source = view.id ? { annotationId: view.id } : { anchor: view.anchor };
-      if (!await submit({ type: 'annotationPost', ...source, message: input.value.trim(), askTutor })) return;
+      const message = input.value.trim();
+      const action = view.mode === 'capture' ? { type: 'captureReading', anchor: view.anchor, note: message }
+        : { type: 'annotationPost', ...source, message, askTutor };
+      if (!await submit(action)) return;
       setDraft(key, '');
       if (current !== view) return;
       const id = view.id || sources().find(t => !existing.has(t.id) && anchorKey(t.anchor) === anchorKey(view.anchor))?.id;

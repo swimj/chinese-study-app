@@ -39,6 +39,7 @@ test('material clusters by what it is about, takeaways once, words where they ap
   assert.deepEqual(c['chat:birds'].scraps.map((s) => s.kind), ['takeaway', 'word']);
   assert.equal(c['chat:birds'].overview, 'You talked about watching birds.');
   assert.equal(c['chat:birds'].scraps[0].href, '#chat/reflection/r1');
+  assert.equal(c['read:encore'].title, '散场以后', 'unopened stories stay reachable from the table');
   const note = c['read:kiosk'].scraps.find((s) => s.kind === 'note');
   assert.deepEqual([note.quote, note.voice, note.replies], ['等什么人', 'yours', 1]);
   assert.deepEqual(c['read:kiosk'].progress, { at: 2, of: 2 });

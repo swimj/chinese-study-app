@@ -51,6 +51,24 @@
   inset: 6px 6px auto 3px;
   border-block-start: 1px solid;
 }
+.an-bookmark .an-glyph {
+  width: 9px;
+  height: 13px;
+  border: 0;
+  border-radius: 1px;
+  color: var(--quiet);
+  background: currentColor;
+  clip-path: polygon(0 0, 100% 0, 100% 100%, 50% 75%, 0 100%);
+  transform: none;
+}
+.an-bookmark .an-glyph::before,
+.an-bookmark .an-glyph::after { content: none; }
+.an-bookmark .an-count { color: var(--quiet); }
+.an-saved-passage .an-author { display: none; }
+.an-saved-passage .an-quote { border-color: var(--line); }
+::highlight(journal-saved) {
+  text-decoration: underline dotted color-mix(in srgb, var(--quiet) 55%, transparent);
+}
 .an-count:empty {
   display: none;
 }
@@ -243,7 +261,7 @@
   border-radius: 9px;
   box-shadow: 0 2px 8px #172a221e;
 }
-.an-quick-actions { display: flex; align-items: center; gap: 2px; }
+.an-quick-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 2px; }
 .an-quick-actions button { min-height: 36px; padding: 4px 12px; color: var(--solid); }
 .an-capture { font-weight: 600; }
 .an-dictionary { padding: 5px 6px 0; }

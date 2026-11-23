@@ -48,7 +48,7 @@ function sourceFor(document, paragraph) {
 }
 
 export function createReading({
-  host, submit, canSubmit, discussInChinese, navigate, openAnnotation, refreshAnnotations,
+  host, importPanel, submit, canSubmit, discussInChinese, navigate, openAnnotation, refreshAnnotations,
 }) {
   let state;
   let documentView;
@@ -67,24 +67,14 @@ export function createReading({
   let extractingPdf = false;
 
   const back = node('a', 'Home', 'reader-home');
-  const seal = node('span', '记', 'seal');
-  seal.lang = 'zh';
-  seal.setAttribute('aria-hidden', 'true');
-  back.prepend(seal);
+  const arrow = node('span', '←');
+  arrow.setAttribute('aria-hidden', 'true');
+  back.prepend(arrow);
   back.href = '#home';
   const title = node('h1');
   title.lang = 'zh';
   title.tabIndex = -1;
   const kind = node('p', '', 'small folio');
-  const picker = node('select');
-  picker.id = 'reader-document';
-  picker.onchange = () => {
-    closeMenu();
-    navigate('read', picker.value);
-  };
-  const pickerLabel = node('label', 'Reading');
-  pickerLabel.htmlFor = picker.id;
-  const pickerGroup = node('div', undefined, 'reader-picker');
   const pdfFile = node('input');
   pdfFile.type = 'file';
   pdfFile.accept = 'application/pdf,.pdf';
@@ -101,7 +91,7 @@ export function createReading({
     const file = pdfFile.files[0];
     pdfFile.value = '';
     if (!file || !canSubmit()) return;
-    setImportOpen(false);
+    resetImportFeedback();
     const revision = importRevision;
     extractingPdf = true;
     uploadPdf.disabled = true;
@@ -127,17 +117,6 @@ export function createReading({
   };
   const importForm = node('form', undefined, 'reader-import');
   importForm.id = 'reader-import-form';
-  importForm.hidden = true;
-  const importToggle = button('Import URL', () => setImportOpen(importForm.hidden), 'text-button');
-  importToggle.setAttribute('aria-expanded', 'false');
-  importToggle.setAttribute('aria-controls', importForm.id);
-  function setImportOpen(open) {
-    importForm.hidden = !open;
-    pasteHistorical.hidden = open || !documentView?.canPaste;
-    importToggle.setAttribute('aria-expanded', String(open));
-    if (open) { menu.open = true; url.focus(); }
-    else resetImportFeedback();
-  }
   const url = node('input');
   url.id = 'reader-url';
   url.type = 'url';
@@ -185,7 +164,6 @@ export function createReading({
     if (pasteUrl !== source) pastedText.value = '';
     pasteUrl = source;
     url.value = source;
-    setImportOpen(true);
     pasteBox.hidden = false;
     importButton.hidden = true;
     pasteToggle.hidden = true;
@@ -229,29 +207,9 @@ export function createReading({
   };
   pastedText.oninput = () => pastedText.setCustomValidity('');
   url.oninput = resetImportFeedback;
-  pickerGroup.append(pickerLabel, picker, importToggle, uploadPdf, pdfFile);
-  const header = node('div', undefined, 'reader-header');
-  const menu = node('details', undefined, 'reader-menu');
-  const menuToggle = node('summary', 'Readings');
-  const menuPanel = node('div', undefined, 'reader-menu-panel');
-  menu.append(menuToggle, menuPanel);
-  header.append(back, menu);
-  function closeMenu() {
-    menu.open = false;
-    menuToggle.focus({ preventScroll: true });
-  }
-  menu.addEventListener('keydown', event => {
-    if (event.key === 'Escape' && menu.open) {
-      event.preventDefault();
-      closeMenu();
-    }
-  });
-  document.addEventListener('pointerdown', event => {
-    if (menu.open && !menu.contains(event.target)) menu.open = false;
-  });
-  menu.addEventListener('focusout', event => {
-    if (event.relatedTarget && !menu.contains(event.relatedTarget)) menu.open = false;
-  });
+  const pdfTools = node('div', undefined, 'home-import-pdf');
+  pdfTools.append(uploadPdf, pdfFile, pdfStatus);
+  importPanel.append(importForm, pdfTools);
 
   const save = button('Save reading', () => {
     if (!documentView) return;
@@ -270,20 +228,16 @@ export function createReading({
     });
   });
   const resume = button('Go to saved place', () => {
-    closeMenu();
     focusPassage(state.reading.positions[documentView.id]);
   }, 'reader-resume');
   resume.hidden = true;
   const tools = node('div', undefined, 'tools reader-tools');
-  tools.append(discuss, save);
+  tools.append(discuss, save, resume);
   const passage = node('div', undefined, 'passage reader-passage');
   const importWarning = node('p', '', 'notice');
   importWarning.hidden = true;
-  const pasteHistorical = button('Paste article text', () => {
-    if (documentView.canPaste) openPaste(documentView.sourceUrl);
-  }, 'secondary');
+  const pasteHistorical = node('a', 'Paste article text', 'secondary');
   pasteHistorical.hidden = true;
-  menuPanel.append(pickerGroup, importForm, resume, tools);
   const progress = node('progress', undefined, 'reader-progress');
   progress.max = 1;
   progress.value = 0;
@@ -293,10 +247,11 @@ export function createReading({
   scroller.setAttribute('role', 'region');
   scroller.setAttribute('aria-label', 'Reading passage');
   const sheet = node('article', undefined, 'reader-sheet');
-  sheet.append(kind, title, importWarning, pasteHistorical, passage);
+  sheet.append(kind, title, importWarning, pasteHistorical, passage, tools);
   scroller.append(sheet);
-  header.append(progress);
-  host.replaceChildren(header, pdfStatus, scroller);
+  const returnControl = node('div', undefined, 'reader-return');
+  returnControl.append(back, progress);
+  host.replaceChildren(returnControl, scroller);
   function updateProgress() {
     if (!active) return;
     const distance = scroller.scrollHeight - scroller.clientHeight;
@@ -331,8 +286,8 @@ export function createReading({
     kind.textContent = nextDocument.kind;
     importWarning.textContent = nextDocument.importWarning || '';
     importWarning.hidden = !nextDocument.importWarning;
-    pasteHistorical.hidden = !importForm.hidden || !nextDocument.canPaste;
-    picker.value = nextDocument.id;
+    pasteHistorical.hidden = !nextDocument.canPaste;
+    if (nextDocument.canPaste) pasteHistorical.href = '#home/import/' + encodeURIComponent(nextDocument.id);
     passage.replaceChildren(...nextDocument.paragraphs.map((paragraph) => buildParagraph(nextDocument.id, paragraph)));
   }
 
@@ -349,10 +304,9 @@ export function createReading({
     importButton.disabled = busy;
     uploadPdf.disabled = busy || extractingPdf;
     accept.disabled = busy;
-    pasteToggle.disabled = pasteHistorical.disabled = busy;
+    pasteToggle.disabled = busy;
     pastedText.readOnly = busy;
     pasteSave.disabled = busy;
-    picker.disabled = state.reading.documents.length < 2;
   }
 
   function focusPassage(paragraphId) {
@@ -440,29 +394,28 @@ export function createReading({
     render(nextState) {
       state = nextState;
       if (!state.reading) return;
-      if (picker.options.length !== state.reading.documents.length) {
-        picker.replaceChildren();
-        for (const entry of state.reading.documents) {
-          const option = node('option', entry.title);
-          option.value = entry.id;
-          option.lang = 'zh';
-          picker.append(option);
-        }
-        if (documentView) picker.value = documentView.id;
-      }
       if (!documentView) mount(lookup(state, state.reading.documentId).document);
       applyEntry();
       update();
     },
-    openImport(prefill = '') {
-      setImportOpen(true);
-      if (prefill) url.value = prefill;
+    openImport(prefill, repairId) {
+      if (!importPanel.open) importPanel.showModal();
+      const repair = repairId && lookup(state, repairId)?.document;
+      if (repair?.canPaste) openPaste(repair.sourceUrl);
+      else {
+        if (prefill) url.value = prefill;
+        url.focus();
+      }
     },
-    resetImportFeedback,
+    closeImport() {
+      if (importPanel.open) importPanel.close();
+      resetImportFeedback();
+    },
     pdfMessage,
     trackImport(submittedUrl) {
       const revision = importRevision;
-      return () => revision === importRevision && (!url.value || url.value.trim() === submittedUrl);
+      return () => importPanel.open && revision === importRevision &&
+        (submittedUrl === undefined || !url.value || url.value.trim() === submittedUrl);
     },
     importError(submittedUrl, message, candidate, canPaste, submittedText) {
       if (submittedText !== undefined) {
@@ -477,7 +430,6 @@ export function createReading({
       url.value = submittedUrl;
       importError.textContent = message;
       importError.hidden = false;
-      setImportOpen(true);
       if (candidate) {
         preview = { url: submittedUrl, token: candidate.token };
         previewTitle.textContent = candidate.title;
@@ -486,16 +438,9 @@ export function createReading({
         previewTitle.focus();
       }
     },
-    imported(submittedUrl, follow) {
-      if (url.value.trim() === submittedUrl) url.value = '';
-      resetImportFeedback();
-      if (follow) {
-        setImportOpen(false);
-        window.clearTimeout(positionTimer);
-        positionTimer = undefined;
-        menu.open = false;
-        navigate('read', state.reading.documentId);
-      }
+    imported() {
+      url.value = '';
+      navigate('read', state.reading.documentId);
     },
     documentId: () => documentView?.id,
     title: () => documentView?.title || 'Reading',
@@ -523,7 +468,6 @@ export function createReading({
       window.clearTimeout(positionTimer);
       positionTimer = undefined;
       flushPosition();
-      menu.open = false;
     },
     setBusy(value) {
       busy = value;

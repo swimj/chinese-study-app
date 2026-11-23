@@ -73,7 +73,10 @@ export const actionSchema = z.discriminatedUnion('type', [
     fingerprint: z.string().regex(/^[a-f0-9]{64}$/), paragraphs: z.array(z.string()),
   }),
   z.object({ id, type: z.literal('readingPosition'), documentId: text, paragraphId: text }),
-  z.object({ id, type: z.literal('captureReading'), anchor: anchorSchema.extend({ surface: z.literal('read') }) }),
+  z.object({
+    id, type: z.literal('captureReading'), anchor: anchorSchema.extend({ surface: z.literal('read') }),
+    note: z.string().trim().min(1).max(1600).optional(),
+  }),
   z.object({
     id,
     type: z.literal('annotate'),
@@ -628,12 +631,15 @@ async function mutate(s: State, a: Action, backend: Backend, reviewImport: Retur
         other.startId === anchor.startId && other.startOffset === anchor.startOffset &&
         other.endId === anchor.endId && other.endOffset === anchor.endOffset
       );
-      if (existing?.capturedAt) return;
-      const thread = existing ?? { id: a.id, anchor, messages: [] };
-      thread.capturedAt = new Date().toISOString();
+      if (existing?.capturedAt && !a.note) return;
+      const activity = existing?.capturedAt ? 'Added a note to a passage from ' : 'Saved a passage from ';
+      const thread: AnnotationThread = existing ?? { id: a.id, anchor, messages: [] };
+      const at = new Date().toISOString();
+      thread.capturedAt ??= at;
+      if (a.note) thread.messages.push({ role: 'user', text: a.note, at });
       if (!existing) s.annotationThreads.push(thread);
       const reference = annotationReference(s, thread);
-      logActivity(s, 'Saved a passage from ' + reference.label, reference.label, reference);
+      logActivity(s, activity + reference.label, reference.label, reference);
       return;
     }
     case 'annotate': {

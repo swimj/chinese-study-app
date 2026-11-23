@@ -495,6 +495,56 @@ test('reader captures save each exact occurrence once and reopen as a margin thr
   }
 });
 
+test('saving a passage with a freeform note retains its context for later practice', async () => {
+  const folder = mkdtempSync(join(tmpdir(), 'journal-capture-notes-'));
+  const path = join(folder, 'journal.db');
+  const prompts: TurnContext[] = [];
+  const backend = {
+    ...demo,
+    tutor: async (ctx: TurnContext) => { prompts.push(ctx); return demoTutor(ctx); },
+  };
+  let journal = openJournal(path, backend);
+  try {
+    const doc = journal.get().reading.documents.find(doc => doc.id === 'after-the-show')!;
+    const [opening, street] = doc.paragraphs;
+    const startOffset = opening.text.indexOf('旁边');
+    const endOffset = street.text.indexOf('唱了起来') + '唱了起来'.length;
+    const anchor = {
+      surface: 'read' as const, ownerId: doc.id, startId: opening.id, endId: street.id, startOffset, endOffset,
+      quote: opening.text.slice(startOffset) + '\n' + street.text.slice(0, endOffset),
+    };
+    const capture = {
+      id: randomUUID(), type: 'captureReading' as const, anchor,
+      note: 'I want to practice how 听着听着 leads into the next action.',
+    };
+    assert.equal(actionSchema.safeParse({ ...capture, note: '   ' }).success, false);
+    assert.equal(actionSchema.safeParse({ ...capture, note: 'a'.repeat(1601) }).success, false);
+    const first = await journal.act(capture);
+    const another = { ...capture, id: randomUUID(), note: 'Use a different verb in the exercise.' };
+    await Promise.all([journal.act(another), journal.act(another)]);
+    await journal.act({ id: randomUUID(), type: 'captureReading', anchor });
+    journal.close();
+    journal = openJournal(path, backend);
+    const state = await journal.act(capture);
+    assert.equal(state.annotationThreads.length, 1);
+    const [thread] = state.annotationThreads;
+    assert.equal(thread.capturedAt, first.annotationThreads[0].capturedAt);
+    assert.deepEqual(thread.anchor, anchor);
+    assert.deepEqual(thread.messages.map(m => [m.role, m.text]), [['user', capture.note], ['user', another.note]]);
+    assert.equal(state.reading.annotations[0].text, capture.note);
+    assert.equal(state.activity.length, 2);
+    assert.equal(prompts.length, 0);
+    await journal.act({ id: randomUUID(), type: 'practice', mode: 'Daily mix' });
+    assert.equal(prompts.length, 1);
+    assert.ok(prompts[0].source.includes('Selected text: ' + anchor.quote));
+    assert.ok(prompts[0].source.includes('Learner annotation: ' + capture.note));
+    assert.ok(prompts[0].source.includes('Learner annotation: ' + another.note));
+  } finally {
+    journal.close();
+    rmSync(folder, { recursive: true });
+  }
+});
+
 test('old reading notes and reflection takeaways become stable, replyable threads without replaying history', async () => {
   const { DatabaseSync } = await import('node:sqlite');
   const folder = mkdtempSync(join(tmpdir(), 'journal-annotations-'));

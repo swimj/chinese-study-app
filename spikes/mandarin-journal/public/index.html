@@ -37,6 +37,7 @@
                 <summary aria-label="Journal menu"><span class="seal" lang="zh" aria-hidden="true">记</span></summary>
                 <nav class="dock-panel places" aria-label="Journal">
                   <a href="#read">Read</a>
+                  <a href="#home/import">Import reading</a>
                   <a href="#chat">Talk</a>
                   <a href="#practice">Practice</a>
                   <a href="#saved">List</a>
@@ -56,6 +57,12 @@
               <p class="dateline" id="today" hidden></p>
               <div id="recent" class="recent" hidden><a id="recent-link" href="#read"></a></div>
             </div>
+            <dialog class="home-import-panel" id="home-import" aria-labelledby="home-import-title">
+              <div class="home-import-head">
+                <h2 id="home-import-title">Import reading</h2>
+                <button class="home-import-close" id="close-import" type="button" aria-label="Close import">×</button>
+              </div>
+            </dialog>
             <section class="capture" aria-labelledby="word-heading">
               <h2 id="word-heading" class="sr">Drop something</h2>
               <ul id="word-items" class="word-items"></ul>
