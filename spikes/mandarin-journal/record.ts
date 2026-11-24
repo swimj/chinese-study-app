@@ -5,8 +5,13 @@
 import type { DatabaseSync } from 'node:sqlite';
 
 /** Kinds of learner activity. Production kinds carry the learner's own language. */
-export type EventKind = 'chat' | 'ask' | 'annotation' | 'answer' | 'addWord' | 'capture';
-export const productionKinds: readonly EventKind[] = ['chat', 'ask', 'annotation', 'answer'];
+export type EventKind = 'chat' | 'ask' | 'annotation' | 'answer' | 'addWord' | 'capture' | 'reflect';
+/**
+ * Events the judgment reads: language the tutor has already responded to. Chat
+ * lines are read through their reflection, which carries the learner's lines
+ * from that stretch and the takeaways they were shown.
+ */
+export const productionKinds: readonly EventKind[] = ['reflect', 'ask', 'annotation', 'answer'];
 
 export type NewEvent = {
   id: string;

@@ -40,7 +40,7 @@ const hosted = (over: Partial<HostedExport['words'][number]> & { hanzi: string }
   dueAt: null, intervalHours: null, attempts: 0, incorrect: 0, lastIncorrectAt: null, recentMistakes: [], ...over,
 });
 
-test('learner language is logged as events and read once, so a reach links to the word already held', async () => {
+test('chat is read through its reflection, so a reach the learner was shown links to the word already held', async () => {
   const box = sandbox();
   const db = new DatabaseSync(box.path);
   importHosted(db, {
@@ -53,9 +53,14 @@ test('learner language is logged as events and read once, so a reach links to th
   try {
     await j.act({ id: randomUUID(), type: 'chat', message: '我在图书馆老是 get distracted。', source: '' });
     await settle(j);
-    const [event] = read(box.path, events);
-    assert.equal(event.kind, 'chat');
+    assert.equal(read(box.path, judgments).length, 0, 'a chat line waits for its reflection');
+    await j.act({ id: randomUUID(), type: 'reflect', source: '' });
+    await settle(j);
+    const [chat, event] = read(box.path, events);
+    assert.equal(chat.kind, 'chat');
+    assert.equal(event.kind, 'reflect');
     assert.equal(event.text, '我在图书馆老是 get distracted。');
+    assert.match(String(event.context.tutorSaid), /分心/, 'the judgment sees the takeaways the learner read');
     const [judgment] = read(box.path, judgments);
     assert.equal(judgment.eventId, event.id);
     assert.equal(judgment.source, 'demo:notice-v1');

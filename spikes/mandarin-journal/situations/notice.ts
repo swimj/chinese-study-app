@@ -4,7 +4,7 @@ import { rejectOtherEffects, type Situation } from './core.ts';
 
 /** One piece of the learner's own language, as the record holds it. */
 export type NoticeRequest = {
-  kind: 'chat' | 'ask' | 'annotation' | 'answer';
+  kind: 'reflect' | 'ask' | 'annotation' | 'answer';
   /** The learner's words, verbatim. */
   text: string;
   /** What they were responding to: the partner's last line, a quoted passage, an exercise prompt. */
@@ -62,7 +62,7 @@ export const notice: Situation<typeof schema, Notice> = {
   tools: [],
   instructions: `You read one piece of an adult Mandarin learner's own language and record what it shows. Nothing you write is shown to the learner. The journal uses your notes to decide what is worth practicing next, so a false need costs a wasted exercise and a missed need costs a missed chance. The learner is intermediate to advanced; there is always more to learn, so record what this text actually shows rather than everything that could be taught.
 
-The text may be a casual chat line, a question to the tutor, a note on a reading passage, or an answer to an exercise. respondingTo is what they were responding to; it is evidence about context, not the learner's words. Judge only the learner's text.
+The text may be the learner's lines from one stretch of casual conversation (kind reflect, one line per row), a question to the tutor, a note on a reading passage, or an answer to an exercise. respondingTo is what they were responding to; it is evidence about context, not the learner's words. Judge only the learner's text.
 
 uses: expressions in the learner's text worth tracking at this level, cited as a dictionary or grammar would cite them: 透透气, 本来想…结果…, 只是. Skip basic vocabulary such as 我, 今天, 很, 是, 去. A construction such as 越来越 or 一…就… counts as one use. quality is natural when a native speaker would accept it in this context; flawed when the meaning, collocation, word order or register is off. Credit a natural alternative to what you would have said. Expressions listed in knownInText are already in the learner's journal; cite them in exactly that form when the text uses them.
 
@@ -71,6 +71,8 @@ needs: places where the text shows the learner reaching for something they did n
 intended: for an exercise answer with intended forms, say for each whether the answer used it naturally, used it with a flaw, or avoided it. Avoided means the answer communicated without that form; that is not an error. For the exercise, an answer like 我只是看了一眼 for a prompt about merely glancing uses 只是 naturally even if the reference answer differs.
 
 tutorSaid, when present, is what the tutor already told the learner about this text. The learner hears one tutor, so stay consistent with it: if the tutor accepted a phrasing, do not record it as flawed, and expressions the tutor offered are not additional needs; a need still comes only from the learner's own words, as when they asked how to say something. If you are confident the tutor was wrong, keep your own judgment and begin that entry's note with "Disagrees with tutor:" and the reason.
+
+For kind reflect, tutorSaid holds the tutor's reflection on that stretch: an overview and takeaways quoting the learner. The learner has just read them. Record flaws and needs only where those takeaways addressed them, so practice follows what the learner was shown; leave other problems for the tutor to raise another time. Uses may come from any line.
 
 communicated: whether the Mandarin got the intended meaning across: clear, partial or unclear. null when the text contains no Mandarin.
 

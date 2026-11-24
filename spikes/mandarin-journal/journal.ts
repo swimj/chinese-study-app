@@ -586,7 +586,7 @@ async function postAnnotation(
   logActivity(s, activity + reference.label, reference.label, reference);
 }
 
-async function reflect(s: State, backend: Backend, source: string) {
+async function reflect(s: State, backend: Backend, source: string, outbox: Outbox) {
   const thread = activeThread(s);
   const previous = s.reflections.findLast((r) => r.threadId === thread.id);
   const stretch = thread.turns.slice(previous?.end ?? 0);
@@ -618,6 +618,19 @@ async function reflect(s: State, backend: Backend, source: string) {
     reference,
   });
   logActivity(s, 'Reflected on ' + thread.title, thread.title, reference);
+  // The judgment reads chat through its reflection, so what it records is what the learner was shown.
+  outbox.events.push({
+    id: reflectionId,
+    at: new Date().toISOString(),
+    kind: 'reflect',
+    surface: 'chat',
+    ref: thread.id,
+    text: stretch.filter((m) => m.role === 'user').map((m) => m.text).join('\n'),
+    context: {
+      topic: thread.title,
+      tutorSaid: [entry.overview, ...entry.takeaways.map((t) => '“' + t.quote + '”: ' + t.text)].join('\n'),
+    },
+  });
 }
 type CaptureResult = { id: string; kind: 'reading'; url: string } | { id: string; kind: 'word' | 'tutor' };
 function isReadingLink(text: string) {
@@ -798,7 +811,7 @@ async function mutate(
       const source = thread.source || a.source;
       const imported = s.reading.imports.find(entry => entry.id === source);
       const discussion = imported ? readingSource(s.reading, imported.id) : undefined;
-      if (a.type === 'reflect') return reflect(s, backend, discussion ?? a.source);
+      if (a.type === 'reflect') return reflect(s, backend, discussion ?? a.source, outbox);
       const reply = await backend.friend(context(s, 'ask', a.message, 'chat', discussion ?? source));
       outbox.events.push({
         id: a.id, at: now, kind: 'chat', surface: 'chat', ref: thread.id, text: a.message,
