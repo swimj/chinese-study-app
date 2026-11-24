@@ -9,7 +9,7 @@ import { importHosted, type HostedExport } from './hosted-import.ts';
 import { openJournal } from './journal.ts';
 import { demoFriend, demoTutor } from './practice.ts';
 import { rank, signalsFrom, type Signal } from './priority.ts';
-import { events, judgments, targets, type Target } from './record.ts';
+import { events, judgments, targets, type RecordedEvent, type Target } from './record.ts';
 import { notice } from './situations/notice.ts';
 import type { TurnContext } from './tutor.ts';
 
@@ -111,7 +111,7 @@ test('converted history becomes events without times, and the model never reads 
   }
 });
 
-test('daily mix asks for the top target, and a choice answer on it is judged by rule', async () => {
+test('daily mix asks for the top target, and a typed recall on it is judged by rule', async () => {
   const box = sandbox();
   const j = openJournal(box.path, demo);
   try {
@@ -122,13 +122,13 @@ test('daily mix asks for the top target, and a choice answer on it is judged by 
     const s = await j.act({ id: randomUUID(), type: 'practice', mode: 'Daily mix' });
     const card = s.practice.card!;
     assert.ok(card, 'a card was generated');
-    const answer = card.kind === 'choice' ? card.choices[0] : '我想出去透透气。';
-    await j.act({ id: randomUUID(), type: 'answer', cardId: card.id, answer });
+    assert.equal(card.kind, 'recall', 'a taught word is checked by recall, never by a choice');
+    await j.act({ id: randomUUID(), type: 'answer', cardId: card.id, answer: '透透气' });
     await settle(j);
     const answerEvent = read(box.path, events).find((e) => e.kind === 'answer')!;
     assert.deepEqual(answerEvent.targets, ['透透气'], 'the card carries the target it was asked to practice');
     const sources = read(box.path, judgments).filter((x) => x.eventId === answerEvent.id).map((x) => x.source);
-    assert.deepEqual(sources, [card.kind === 'choice' ? 'rule:choice-v1' : 'demo:notice-v1']);
+    assert.deepEqual(sources, ['rule:recall-v1']);
     assert.match(j.priority().find((r) => r.target.form === '透透气')?.reasons.join() ?? 'practiced today', /practiced today|graduated/);
   } finally {
     j.close();
@@ -226,6 +226,52 @@ test('a weakness gets a bounded number of clean days, then graduates', () => {
   assert.equal(sameDay.length, 1, 'repeats on one day count once');
 });
 
+test('a correct choice is recognition and never counts toward graduation; a wrong one is still a miss', () => {
+  const event = (id: string, day: number, kind: 'choice' | 'recall'): [string, RecordedEvent] =>
+    [id, { id, seq: day, at: at(day), kind: 'answer', surface: 'practice', ref: null, text: '修复', context: { kind }, targets: ['修复'] }];
+  const rule = (eventId: string, kind: 'choice' | 'recall', correct: boolean) =>
+    ({ id: 'j-' + eventId, eventId, at: at(23), source: 'rule:' + kind + '-v1', body: { correct, targets: ['修复'] } });
+  const evs = new Map([event('c1', 19, 'choice'), event('c2', 20, 'choice'), event('c3', 21, 'choice'), event('r1', 19, 'recall'), event('r2', 21, 'recall')]);
+  const roles = signalsFrom([rule('c1', 'choice', true), rule('c3', 'choice', false), rule('r1', 'recall', true)], evs).map((s) => s.role);
+  assert.deepEqual(roles, ['recognized', 'missed', 'correct']);
+  const need: Signal = { form: '修复', role: 'needed', at: at(18), eventId: 'n' };
+  const choices = signalsFrom([rule('c1', 'choice', true), rule('c2', 'choice', true)], evs);
+  const afterChoices = rank([target('修复')], [need, ...choices], now);
+  assert.equal(afterChoices.length, 1, 'two correct choices on two days retire nothing');
+  assert.doesNotMatch(afterChoices[0].reasons.join(), /clean day/);
+  const recalls = signalsFrom([rule('r1', 'recall', true), rule('r2', 'recall', true)], evs);
+  assert.equal(rank([target('修复')], [need, ...recalls], now).length, 0, 'two correct recalls on two days do');
+});
+
+test('target use in an open answer is a signal for priority, never for graduation', () => {
+  const need: Signal = { form: '体面', role: 'needed', at: at(18), eventId: 'n' };
+  const openUse = (day: number): Signal => ({ form: '体面', role: 'used', at: at(day), eventId: 'o' + day, practice: true });
+  const prompted = rank([target('体面')], [need, openUse(19), openUse(21)], now);
+  assert.equal(prompted.length, 1, 'natural use in open answers does not retire a weakness');
+  const ownUse = (day: number): Signal => ({ form: '体面', role: 'used', at: at(day), eventId: 'u' + day });
+  assert.equal(rank([target('体面')], [need, ownUse(19), ownUse(21)], now).length, 0, 'the learner’s own use elsewhere still does');
+  const avoided: Signal = { form: '潜台词', role: 'avoided', at: at(20), eventId: 'a', practice: true };
+  assert.equal(rank([target('潜台词')], [avoided], now).length, 0, 'an open answer that did without the expression is no weakness');
+  const flawed: Signal = { form: '人家', role: 'flawed', at: at(20), eventId: 'f', practice: true };
+  const raised = rank([target('人家')], [flawed], now);
+  assert.equal(raised[0]?.pressing, true, 'a flawed use in an open answer raises the target');
+  assert.equal(raised[0].purpose, 'weakness');
+});
+
+test('a choice is allowed only for a contrast the learner has demonstrably confused', () => {
+  const slip: Signal = { form: '有意', role: 'needed', at: at(18), eventId: 's', evidence: '有意思的避开下乡' };
+  const fresh = rank([target('有意')], [slip], now)[0];
+  assert.equal(fresh.purpose, 'weakness');
+  assert.equal(fresh.contrast, undefined, 'a slip comes back first as recall');
+  const recalled: Signal = { form: '有意', role: 'correct', at: at(19), eventId: 'r', practice: true };
+  assert.equal(rank([target('有意')], [slip, recalled], now)[0].contrast, true, 'after a recall, the confused contrast may be a choice');
+  const miss = (day: number): Signal => ({ form: '修复', role: 'missed', at: at(day), eventId: 'm' + day, practice: true });
+  assert.equal(rank([target('修复')], [miss(19)], now)[0].contrast, undefined);
+  const twice = rank([target('修复')], [miss(19), miss(20)], now)[0];
+  assert.equal(twice.contrast, true, 'a repeated miss is a demonstrated confusion');
+  assert.equal(twice.purpose, 'review');
+});
+
 test('new signals outweigh the old app, whose misses still order its due words', () => {
   const due = { mode: 'practice', inStash: true, dismissed: false, addedAt: null, lastPractisedAt: null, dueAt: at(10), intervalHours: 240, lastIncorrectAt: null, recentMistakes: [] };
   const ranked = rank(
@@ -235,7 +281,7 @@ test('new signals outweigh the old app, whose misses still order its due words',
       target('透透气'),
       target('报备', { origin: 'imported', hosted: { ...due, dismissed: true, attempts: 3, incorrect: 3 } }),
     ],
-    [{ form: '透透气', role: 'avoided', at: at(5), eventId: 'e' }],
+    [{ form: '透透气', role: 'flawed', at: at(5), eventId: 'e' }],
     now,
   );
   assert.deepEqual(ranked.map((r) => r.target.form), ['透透气', '修复', '稳']);

@@ -2,9 +2,13 @@
 
 **Status: direction settled with Justin on Nov 23–24, 2026; first implementation
 merged in PRs #623 (record and priority) and #624 (practice sessions, teaching,
-typed recall).** Thresholds and weights are policy and expected to change
-through dogfooding. The principles below are product decisions: change them
-only with Justin, and update this document when they change.
+typed recall).** After dogfooding a live session on Nov 24, Justin settled what
+practice measures, the new-word lifecycle, and how intake relates to practice.
+Those decisions are recorded below as direction; the
+[README](README.md#the-record-and-priority) says which parts are built.
+Thresholds and weights are policy and expected to change through dogfooding.
+The principles below are product decisions: change them only with Justin, and
+update this document when they change.
 
 This document is for anyone changing how the journal decides what the learner
 practices, how it records learner activity, how it teaches, or how the hosted
@@ -29,6 +33,10 @@ agent-managed set of things to train, organized around the learner's own
 language rather than around fighting forgetting. The spike is where the model
 is shaped while iteration is cheap; the hosted build is planned separately once
 it holds.
+
+The north star, not built yet, is a holistic tutor that forms a map of the
+learner's abilities from everything they give it, including strengths that
+show up in open answers, not only from exercises aimed at one target.
 
 ## Vocabulary
 
@@ -62,8 +70,11 @@ annotations: a margin note is a piece and also produces record entries.
 2. **Priority, not memory.** The app does not exist to fight forgetting; with
    an explosion of possible targets that framing becomes a burden. Forgetting is
    fine while the overall trend rises. Priority comes from everything the
-   learner does. *Rules out:* SRS-style maintenance of every target on a
-   schedule, and validating that everything cycles back.
+   learner does. Priority can motivate memory practice over a bounded span, as
+   an athlete's strength block serves the season: some memory improvement is
+   essential, but it stays subordinate to priority. *Rules out:* SRS-style
+   maintenance of every target on a schedule, lifetime maintenance, and
+   validating that everything cycles back.
 3. **Production is the product.** The strongest signal is the learner's
    produced language, especially where they reached for something they lacked.
    The experience is keyed off speaking and writing (writing is the early proxy
@@ -82,22 +93,83 @@ annotations: a margin note is a piece and also produces record entries.
 6. **Targets are hazy and agent-managed.** The agent creates and merges targets;
    near-duplicates and messy data are expected. Identity is the exact form for
    now.
-7. **One practice surface; form follows purpose.** An exercise has an origin
-   and a grader. A new word is taught, then checked lightly; a weakness from the
-   learner's own language gets open production; a review is typed recall, as on
-   the hosted flashcards, which is harder than choosing. What matters is a good
-   exercise in front of the learner, generated or reserved. Exercises start
-   per-learner and disposable; quality improves mainly through generation, and
-   a bad exercise never counts against the learner.
-8. **The encounter starts teaching; it doesn't limit it.** Teaching may widen to
-   a word's fundamental uses beyond where it was met ("vegetables"). Teaching
-   keeps the hosted design: beats the learner steps through, depth chosen per
-   word.
-9. **New words have backpressure.** A daily limit and a cap on open work keep
-   new words from crowding out practice, and a newly taught word settles before
-   it graduates, as the hosted app's Solidify did.
+7. **One practice surface; form follows what it measures.** An exercise has an
+   origin and a grader, and each form measures something different. Real
+   production is set off by an intention or by the words already said, like
+   predicting the next word; nothing on the page offers the answer.
+   - **Bounded exercises test targets.** Typed recall, judged by rule, is the
+     default for any target: a new word, a word being reviewed or settling, and
+     a weakness from the learner's own language. A weakness comes back first as
+     recall: the slip 有意思的避开下乡 returns as a recall of 有意. Other
+     deterministically judged forms, such as comprehension checks, are to be
+     tried later.
+   - **Choice is recognition, not recall.** Reading options pages the answer
+     into mind. A choice is used only for a contrast the learner has
+     demonstrably confused (their own slip, or a repeated miss), partly for
+     product discovery, and never as the check after teaching. A correct choice
+     is never evidence of strength: it is not a clean day and not growth. A
+     wrong choice is still a miss.
+   - **Open production is conversation, not a test.** Someone says something, a
+     conversation is under way, or a moment invites a reaction, and the learner
+     replies as themselves. The lead-in may draw on targeted material but never
+     specifies a required word, frame or content. It is judged holistically on
+     贴切 (aptness): it landed or it didn't, and the tutor decides the reaction.
+     A good answer that drifted from the material, or did without its
+     expression, is not flagged. Target use in an open answer is an optional
+     signal that feeds priority and never graduation, since the card steered the
+     learner toward it.
+
+   What matters is a good exercise in front of the learner, generated or
+   reserved. Exercises start per-learner and disposable; quality improves
+   mainly through generation, and an exercise flagged as bad never counts for
+   or against the learner. *Rules out:* open production as the test of whether
+   a target has landed, and a choice as evidence of learning.
+8. **The encounter starts teaching; it doesn't limit it.** Teaching keeps the
+   hosted design: beats the learner steps through, depth chosen per word. It
+   opens with a scene, not a definition, and is narrow to the learner's need by
+   default. The tutor may judge that a word needs a second example of the same
+   sense, another useful sense, or proper background ("vegetables"), but it
+   does not cover every default sense. When the learner's own saved context
+   carries a situation, that situation is the scene: the visible link between
+   open-ended gathering and structured training. A saved example without a
+   situation is not shown verbatim just because it exists. Exercises are
+   generated from where the word is in its lifecycle.
+9. **New words have backpressure and a bounded lifecycle.** A daily limit and a
+   cap on open work keep new words from crowding out practice. A new word is
+   checked lightly, but not immediately after teaching: it returns as typed
+   recall later in the same session, after a few other cards. The session's
+   time box is rough rather than a cap. The session tries to finish open work
+   such as that recall unless the learner leaves, and does not start teaching
+   near its end. A word whose recall was missed by leaving is first in line next
+   session. The word then settles on a bounded recall schedule and graduates,
+   as the hosted app's Solidify did. Graduation is an experiment: each newly
+   taught word is randomly assigned one policy, recorded with its version, and
+   all policies are also scored in shadow. Only bounded evidence counts: no
+   choice, no open-production use.
+
+   | Policy | Recalls after teaching | Graduates after |
+   | --- | --- | --- |
+   | A | 1 day, then at least 1 day | 2 clean |
+   | B | 1 day, then 3 days | 2 clean |
+   | C | 1, 3 and 7 days | 3 clean |
+
+   A miss resets the schedule. Fourteen days after graduation, one typed recall
+   checks every policy the same way. It is measurement, not maintenance, and a
+   miss reopens the word like any miss. Due recalls are best effort: they
+   compete by priority, ranked high, and a backlog never takes over a session.
+   Each policy reports its check-up pass rate and the recalls spent to
+   graduate. Lifecycle state is derived from the record (principle 1).
 10. **Old structure is scaffolding.** It stays only while new policies are
     missing; what earns its keep is promoted, the rest retires and is archived.
+11. **Intake explains; admission is a separate judgment.** A reply to something
+    the learner brought in explains it first, in the context they supplied, and
+    mentions practice only afterwards, and only if the item was admitted. An
+    item asked about becomes a piece; a separate, rerunnable judgment in the
+    record decides whether it also becomes a target to teach. An explicit save
+    always admits, trusting the learner's intent for now ("the coach sometimes
+    says no" is a later stage). Pieces that are not admitted stay quietly, with
+    no interface for now. *Rules out:* machinery that assumes every item is
+    admitted.
 
 ## What the hosted app contributes
 
@@ -129,10 +201,15 @@ publication pipeline.
 - **Tutor interpretations as judgments.** Reflection takeaways and feedback
   observations could feed the judgment as evidence; how, and in what order.
 - **Avoidance.** Whether working around a target matters beyond situations that
-  needed it; communicative success and target use are recorded separately.
-- **Teaching breadth** and the share of vegetables.
+  needed it; communicative success and target use are recorded separately. An
+  open answer that does without an expression is not a weakness.
+- **Teaching breadth**: how often the tutor's judgment should reach beyond the
+  learner's need.
 - **Target deduplication**: when the agent merges or splits, and how messy is
   acceptable. Saved passages are events but not yet targets.
+- **Pieces gaining weight.** Not admitted now is not never: the same thing asked
+  about in four situations shows an emerging theme worth teaching properly.
+  The current admission judgment need not realize this yet.
 - **Dictionary and targets.** How a target's uses relate to dictionary senses,
   and whether one should seed the other.
 - **Lookups as evidence.** Reader lookups live in their own ledger, not the

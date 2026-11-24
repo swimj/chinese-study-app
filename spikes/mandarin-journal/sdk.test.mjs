@@ -105,10 +105,12 @@ test('real SDK runs each situation with its own schema and instructions, uses re
   ];
   await tutorTurn(input);
   assert.match(JSON.stringify(requests.at(-1).input), /my margin question/);
-  replies = [structured({ reply: 'Inline feedback.', observation: 'Specific insight.' })];
+  replies = [structured({ reply: 'Inline feedback.', observation: 'Specific insight.', landed: true })];
   const answer = { ...input, trigger: 'answer' };
-  assert.equal(validateTurn('feedback', await tutorTurn(answer), answer).observation, 'Specific insight.');
-  assert.deepEqual(required(requests.at(-1)), ['observation', 'reply']);
+  const judged = validateTurn('feedback', await tutorTurn(answer), answer);
+  assert.equal(judged.observation, 'Specific insight.');
+  assert.equal(judged.landed, true);
+  assert.deepEqual(required(requests.at(-1)), ['landed', 'observation', 'reply']);
   assert.match(requests.at(-1).instructions, /On miss the learner is still practicing/);
   assert.equal(userPayload(requests.at(-1)).practiceStatus, undefined);
   const reflectionTurns = Array.from({ length: 15 }, (_, i) => ({
@@ -125,8 +127,8 @@ test('real SDK runs each situation with its own schema and instructions, uses re
   assert.deepEqual(validateTurn('reflect', await tutorTurn(reflectInput), reflectInput).reflection, reflection);
   assert.deepEqual(required(requests.at(-1)), ['reflection']);
   assert.deepEqual(userPayload(requests.at(-1)).reflectionTurns, reflectionTurns);
-  replies = [structured({ reply: '', observation: null })];
-  assert.deepEqual(await tutorTurn({ ...input, trigger: 'miss' }), { reply: '', observation: null });
+  replies = [structured({ reply: '', observation: null, landed: null })];
+  assert.deepEqual(await tutorTurn({ ...input, trigger: 'miss' }), { reply: '', observation: null, landed: null });
   replies = [
     structured({
       reply: 'Try this.',

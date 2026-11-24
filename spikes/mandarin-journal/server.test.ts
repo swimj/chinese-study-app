@@ -106,11 +106,11 @@ test('stash and past mistakes use this learner’s own actions', async () => {
     assert.equal(s.practice.card, null);
     s = await j.act({ id: randomUUID(), type: 'practice', mode: 'Build vocabulary' });
     const c = s.practice.card!;
-    assert.match(c.prompt, /分心/);
-    await j.act({ id: randomUUID(), type: 'answer', cardId: c.id, answer: c.choices[1] });
+    assert.equal(c.kind, 'recall', 'a word taught from material is checked by recall');
+    await j.act({ id: randomUUID(), type: 'answer', cardId: c.id, answer: '放心' });
     s = await j.act({ id: randomUUID(), type: 'practice', mode: 'Past mistakes' });
     assert.equal(s.practice.card?.id, c.id);
-    await j.act({ id: randomUUID(), type: 'answer', cardId: c.id, answer: c.choices[0] });
+    await j.act({ id: randomUUID(), type: 'answer', cardId: c.id, answer: '分心' });
     await j.act({ id: randomUUID(), type: 'next', cardId: c.id });
     s = await j.act({ id: randomUUID(), type: 'practice', mode: 'Past mistakes' });
     assert.equal(s.practice.card, null);
@@ -207,7 +207,7 @@ test('the tutor can confirm a queued exercise, discuss its exact attempt and con
     tutor: async (ctx) => {
       inputs.push(ctx);
       if (ctx.trigger === 'answer')
-        return { reply: '只放在地点前，很清楚。', observation: '只 limits the location here.', action: null };
+        return { reply: '只放在地点前，很清楚。', observation: '只 limits the location here.', landed: true, action: null };
       if (ctx.message === 'Already queued?' || ctx.message === 'Why there?')
         return { reply: 'Yes.', action: null };
       const prompt =
@@ -785,14 +785,15 @@ test('a generated exercise matching a card from the replaced session is served, 
     ...demo,
     tutor: async (ctx) => {
       if (ctx.trigger !== 'practice') return demoTutor(ctx);
-      const { kind, prompt, choices, answer, explanation } = catalogueCard;
+      // The same prompt as a typed recall: its full-width blank is not a cloze slot.
+      const { prompt, answer, explanation } = catalogueCard;
       return {
         reply: '修复 restores what was damaged.',
         action: {
           kind: 'practice',
           title: 'Restoring data',
           detail: 'Collocation.',
-          exercise: { kind, prompt, choices, answer, explanation, accepted: [] },
+          exercise: { kind: 'recall', prompt, choices: [], answer, explanation, accepted: [] },
         },
       };
     },

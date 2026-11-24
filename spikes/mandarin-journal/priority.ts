@@ -3,6 +3,13 @@
 // New signals from the learner's journal dominate; the hosted app's SRS state
 // is a weaker input. A weakness gets a small, bounded repetition budget and
 // then graduates; nothing is maintained on a schedule forever.
+//
+// What counts toward graduation: a correct typed recall, and natural use in the
+// learner's own language outside practice. A correct choice is recognition, not
+// recall, so it is recorded but counts for nothing; a wrong one is still a miss.
+// Target use in an open-production answer is an optional signal: a flawed use
+// raises priority, but a natural use never counts as clean, because the card
+// itself steered the learner toward the expression.
 import type { Notice } from './situations/notice.ts';
 import type { JudgmentRecord, RecordedEvent, Target } from './record.ts';
 
@@ -21,14 +28,21 @@ export const NEW_PER_DAY = 5;
 /** With this many weaknesses and newly taught words still open, nothing new is taught. */
 export const PRESSING_LIMIT = 8;
 
-export type Role = 'needed' | 'flawed' | 'missed' | 'avoided' | 'used' | 'correct' | 'taught';
+/**
+ * correct: a correct typed recall. recognized: a correct choice, which shows
+ * recognition only. avoided: an open answer that did without an intended form,
+ * which is not a weakness: an open card requires no word.
+ */
+export type Role = 'needed' | 'flawed' | 'missed' | 'avoided' | 'used' | 'correct' | 'recognized' | 'taught';
 // A newly taught word settles like a weakness: it stays pressing until two clean
 // days after teaching, the journal's version of the hosted app's Solidify.
-const weakness: Partial<Record<Role, number>> = { needed: 3, flawed: 2, missed: 2, taught: 2, avoided: 1 };
+const weakness: Partial<Record<Role, number>> = { needed: 3, flawed: 2, missed: 2, taught: 2 };
+/** Evidence that a weakness has resolved: recall from memory, or the learner's own natural use outside practice. */
+const clean = (s: Signal) => s.role === 'correct' || (s.role === 'used' && !s.practice);
 /** practice marks signals from an exercise answer, as opposed to the learner's own use elsewhere. */
 export type Signal = { form: string; role: Role; at: string | null; eventId: string; evidence?: string; practice?: boolean };
 
-/** A choice answer's outcome, judged by rule with no model call. */
+/** A choice or typed recall answer's outcome, judged by rule with no model call. */
 export type ChoiceJudgment = { correct: boolean; targets: string[] };
 
 /** Flattens judgments into per-form signals. Each judgment dates from its event. */
@@ -50,7 +64,8 @@ export function signalsFrom(judgmentList: JudgmentRecord[], eventsById: Map<stri
     const push = (form: string, role: Role, evidence?: string) => out.push({ form, role, at, eventId: event.id, evidence, practice });
     if (j.source.startsWith('rule:')) {
       const body = j.body as ChoiceJudgment;
-      for (const form of body.targets) push(form, body.correct ? 'correct' : 'missed', event.text);
+      const right: Role = j.source.startsWith('rule:choice') ? 'recognized' : 'correct';
+      for (const form of body.targets) push(form, body.correct ? right : 'missed', event.text);
       continue;
     }
     const n = j.body as Notice;
@@ -66,16 +81,21 @@ export function signalsFrom(judgmentList: JudgmentRecord[], eventsById: Map<stri
 
 /**
  * pressing: an open weakness or a word still settling. fresh: chosen and never taught.
- * purpose: what a card on this target is for. A new word is taught; a flaw, need or
- * avoidance in the learner's own Chinese asks for production; anything else (a miss
- * on a choice, a word still settling after teaching, the hosted app's due words) is a
- * quick review.
+ * purpose: what a card on this target is for. A new word is taught; a flaw or need in
+ * the learner's own Chinese is a weakness; anything else (a miss, a word still settling
+ * after teaching, the hosted app's due words) is a review. All three are tested by
+ * typed recall (session.ts formsFor).
+ * contrast: the learner has demonstrably confused this target with another form: a
+ * miss on it twice, or a slip in their own Chinese followed by a bounded exercise on
+ * it. Only then may a card be a choice.
  */
 export type Ranked = {
   target: Target; score: number; reasons: string[]; signals: number; pressing?: boolean; fresh?: boolean;
-  purpose: 'teach' | 'review' | 'weakness';
+  purpose: 'teach' | 'review' | 'weakness'; contrast?: boolean;
 };
-const production = new Set<Role>(['needed', 'flawed', 'avoided']);
+const production = new Set<Role>(['needed', 'flawed']);
+/** Signals from a rule-judged (bounded) exercise. */
+const bounded = new Set<Role>(['correct', 'recognized', 'missed']);
 
 const day = (at: string) => at.slice(0, 10);
 const ageDays = (at: string | null, now: number) => (at ? Math.max(0, (now - Date.parse(at)) / DAY) : UNKNOWN_AGE_DAYS);
@@ -116,19 +136,23 @@ export function rank(targetList: Target[], signals: Signal[], nowDate = new Date
     let pressing = false;
     let fresh = false;
     let purpose: Ranked['purpose'] = 'review';
+    let contrast = false;
 
     const weak = own.filter((s) => weakness[s.role]);
     if (weak.length) {
       const lastWeak = Math.min(...weak.map((s) => ageDays(s.at, now)));
-      const cleanDays = new Set(
-        own.filter((s) => (s.role === 'used' || s.role === 'correct') && ageDays(s.at, now) < lastWeak).map((s) => (s.at ? day(s.at) : '?')),
-      ).size;
+      const cleanDays = new Set(own.filter((s) => clean(s) && ageDays(s.at, now) < lastWeak).map((s) => (s.at ? day(s.at) : '?'))).size;
       if (cleanDays >= GRADUATE_AFTER) reasons.push(`graduated after ${cleanDays} clean days`);
       else {
         const sum = weak.reduce((total, s) => total + weakness[s.role]! * decay(ageDays(s.at, now)), 0);
         score += sum * (1 - 0.35 * cleanDays);
         pressing = true;
-        if (weak.some((s) => production.has(s.role))) purpose = 'weakness';
+        const slips = weak.filter((s) => production.has(s.role));
+        if (slips.length) purpose = 'weakness';
+        const lastSlip = Math.min(...slips.map((s) => ageDays(s.at, now)));
+        contrast =
+          weak.filter((s) => s.role === 'missed').length >= 2 ||
+          (slips.length > 0 && own.some((s) => bounded.has(s.role) && ageDays(s.at, now) < lastSlip));
         const latest = weak[weak.length - 1];
         reasons.push(
           `${latest.role}${latest.evidence ? ` in “${latest.evidence.slice(0, 40)}”` : ''}` +
@@ -156,7 +180,7 @@ export function rank(targetList: Target[], signals: Signal[], nowDate = new Date
       score *= 0.3;
       reasons.push('practiced today');
     }
-    if (score > 0) ranked.push({ target: t, score, reasons, signals: own.length, pressing, fresh, purpose });
+    if (score > 0) ranked.push({ target: t, score, reasons, signals: own.length, pressing, fresh, purpose, ...(contrast ? { contrast } : {}) });
   }
   ranked.sort((a, b) => b.score - a.score);
   // Backpressure on new words: a daily limit, and none while too much is still open.

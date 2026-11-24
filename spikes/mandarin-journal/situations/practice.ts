@@ -10,7 +10,7 @@ const schema = z.object({
 
 // One personalized exercise for a practice session, or none.
 export const practiceGen: Situation<typeof schema, { reply: string; action: TutorAction | null }> = {
-  instructions: `On practice, select one teachable intention anchored to the source or learner evidence. If nothing warrants a follow-up, keep action null and reply empty. Honor the requested mode and the concrete target in the supplied source, including a saved word, a past mistake, a selected takeaway or the learner’s own phrasing. previousPrompts are exercises already served: vary both the scene and the expressive task, keeping the actual learning intention. Never repeat one. Merely changing a name or swapping a noun does not make a new task. Consult recall if history would inform that choice. ${exerciseDesign} For practice supply a complete exercise. Honor the limited output contract: no schedule changes, fabricated identities, or promise of ongoing work.`,
+  instructions: `On practice, select one teachable intention anchored to the source or learner evidence. If nothing warrants a follow-up, keep action null and reply empty. Honor the requested mode and the concrete target in the supplied source, including a saved word, a past mistake, a selected takeaway or the learner’s own phrasing. previousPrompts are exercises already served: vary both the scene and the expressive task, keeping the actual learning intention. Never repeat one. Merely changing a name or swapping a noun does not make a new task. Consult recall if history would inform that choice. allowedForms lists the exercise forms this card may take, chosen by the journal from what the card is for; use one of them, and when several are allowed pick the one this intention calls for. ${exerciseDesign} For practice supply a complete exercise. Honor the limited output contract: no schedule changes, fabricated identities, or promise of ongoing work.`,
   schema,
   buildInput: (input) => ({
     trigger: input.trigger,
@@ -22,11 +22,16 @@ export const practiceGen: Situation<typeof schema, { reply: string; action: Tuto
     topic: input.topic,
     readingContext: input.readingContext,
     previousPrompts: input.previousPrompts,
+    allowedForms: input.exerciseForms,
     message: input.message,
   }),
-  validate(result) {
+  validate(result, input) {
     rejectOtherEffects(result, ['action']);
     if (result.action && result.action.kind !== 'practice') throw new Error('Tutor returned no practice');
-    return { reply: result.reply ?? '', action: checkAction(result.action) };
+    const action = checkAction(result.action);
+    const kind = action?.exercise?.kind;
+    if (kind && input.exerciseForms && !input.exerciseForms.includes(kind))
+      throw new Error('This card cannot take the ' + kind + ' form');
+    return { reply: result.reply ?? '', action };
   },
 };

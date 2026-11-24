@@ -10,7 +10,7 @@ import { openJournal } from './journal.ts';
 import { catalogue, demoFriend, demoTutor } from './practice.ts';
 import { events } from './record.ts';
 import {
-  AHEAD, cardSeconds, cardTime, CHUNK_SECONDS, extend, finishCard, freshAllowed, needsCard, newSession, noteFailure, resume,
+  AHEAD, cardSeconds, cardTime, CHUNK_SECONDS, extend, finishCard, formsFor, freshAllowed, needsCard, newSession, noteFailure, resume,
   SESSION_SECONDS, stale,
   type Purpose, type Session,
 } from './session.ts';
@@ -46,15 +46,15 @@ function body(path: string, change?: (b: Stored) => void): Stored {
   }
 }
 let made = 0;
-/** A practice card the tutor would return; each prompt is new. */
-function choiceCard(label = 'Pick'): TutorResult {
+/** A practice card the tutor would return, a typed recall that any purpose allows; each prompt is new. */
+function recallCard(label = 'Pick'): TutorResult {
   return {
     reply: 'Intro.',
     action: {
       kind: 'practice',
       title: label,
       detail: 'Fits.',
-      exercise: { kind: 'choice', prompt: label + ' ' + ++made + '：他＿＿去。', accepted: [], choices: ['也', '又'], answer: '也', explanation: 'e' },
+      exercise: { kind: 'recall', prompt: label + ' ' + ++made + ': also, too.', accepted: [], choices: [], answer: '也', explanation: 'e' },
     },
   };
 }
@@ -120,6 +120,16 @@ test('one new word per four session cards', () => {
   assert.equal(freshAllowed([card('choice', 'teach'), card('open'), card('open'), card('open')]), 1);
 });
 
+test('the purpose decides the forms: recall for any target, a choice only for a confused contrast and never after teaching', () => {
+  assert.deepEqual(formsFor('teach'), ['recall']);
+  assert.deepEqual(formsFor('teach', true), ['recall'], 'never a choice right after teaching');
+  assert.deepEqual(formsFor('review'), ['recall']);
+  assert.deepEqual(formsFor('weakness'), ['recall']);
+  assert.deepEqual(formsFor('weakness', true), ['recall', 'choice']);
+  assert.deepEqual(formsFor('review', true), ['recall', 'choice']);
+  assert.deepEqual(formsFor('material'), ['recall', 'open'], 'open production comes from material, not from a target');
+});
+
 test('an ended session is put away after an hour', () => {
   const now = new Date('2026-11-24T12:00:00Z');
   const s = newSession(new Date('2026-11-24T10:00:00Z'));
@@ -133,7 +143,7 @@ test('the first card arrives in the action, the rest are prepared ahead, and the
   let calls = 0;
   const j = openJournal(box.path, {
     ...demo,
-    tutor: async (ctx) => (ctx.trigger === 'practice' ? (calls++, choiceCard()) : demoTutor(ctx)),
+    tutor: async (ctx) => (ctx.trigger === 'practice' ? (calls++, recallCard()) : demoTutor(ctx)),
   });
   try {
     await j.act({ id: randomUUID(), type: 'chat', message: '我想去外面透透气。', source: '' });
@@ -145,7 +155,7 @@ test('the first card arrives in the action, the rest are prepared ahead, and the
     assert.equal(s.practice.session?.ready, 2);
     assert.equal(calls, 3);
     const first = s.practice.card!;
-    await j.act({ id: randomUUID(), type: 'answer', cardId: first.id, answer: first.choices[0] });
+    await j.act({ id: randomUUID(), type: 'answer', cardId: first.id, answer: '也' });
     // Nearly all the session's time is spent, and this card has been up for half a minute.
     body(box.path, (b) => {
       b.practice.session.spent = SESSION_SECONDS - 20;
@@ -166,7 +176,7 @@ test('the first card arrives in the action, the rest are prepared ahead, and the
     assert.equal(s.practice.session?.finished, 0);
     body(box.path, (b) => (b.practice.session.spent = SESSION_SECONDS + 20));
     const current = j.get().practice.card!;
-    await j.act({ id: randomUUID(), type: 'answer', cardId: current.id, answer: current.choices[0] });
+    await j.act({ id: randomUUID(), type: 'answer', cardId: current.id, answer: '也' });
     s = await j.act({ id: randomUUID(), type: 'next', cardId: current.id });
     assert.equal(s.practice.session?.ended, true);
     s = await j.act({ id: randomUUID(), type: 'practice', mode: 'Daily mix', continue: true });
@@ -190,7 +200,7 @@ test('a card prepared in the background never overwrites an answer given meanwhi
     tutor: async (ctx) => {
       if (ctx.trigger !== 'practice') return demoTutor(ctx);
       await gate;
-      return choiceCard('Gate');
+      return recallCard('Gate');
     },
   });
   try {
@@ -204,7 +214,7 @@ test('a card prepared in the background never overwrites an answer given meanwhi
     gate = new Promise<void>((r) => (release = r));
     await new Promise((r) => setTimeout(r, 30));
     assert.equal(j.busy(), true);
-    await j.act({ id: randomUUID(), type: 'answer', cardId: first.id, answer: first.choices[1] });
+    await j.act({ id: randomUUID(), type: 'answer', cardId: first.id, answer: '又' });
     s = await j.act({ id: randomUUID(), type: 'next', cardId: first.id });
     assert.equal(s.practice.card, null);
     assert.equal(s.practice.session?.waiting, true, 'the learner waits calmly for the next card');
@@ -213,7 +223,7 @@ test('a card prepared in the background never overwrites an answer given meanwhi
     await settle(j);
     s = j.get();
     assert.equal(s.attempts.length, 1, 'the answer given during generation survives');
-    assert.equal(s.attempts[0].answer, first.choices[1]);
+    assert.equal(s.attempts[0].answer, '又');
     assert.ok(s.practice.card, 'the prepared card reaches the waiting learner');
     assert.equal(s.practice.session?.waiting, false);
     assert.ok(body(box.path).practice.session.shownAt, 'its time counts from when it appeared');
@@ -223,7 +233,7 @@ test('a card prepared in the background never overwrites an answer given meanwhi
     // A card prepared for a session the learner has left is dropped.
     gate = new Promise<void>((r) => (release = r));
     const current = s.practice.card!;
-    await j.act({ id: randomUUID(), type: 'answer', cardId: current.id, answer: current.choices[0] });
+    await j.act({ id: randomUUID(), type: 'answer', cardId: current.id, answer: '也' });
     await j.act({ id: randomUUID(), type: 'next', cardId: current.id });
     await new Promise((r) => setTimeout(r, 30));
     await j.act({ id: randomUUID(), type: 'practice', mode: 'Past mistakes' });
@@ -246,7 +256,7 @@ test('failing generation stops the session instead of trapping it, and Keep goin
     tutor: async (ctx) => {
       if (ctx.trigger !== 'practice') return demoTutor(ctx);
       if (failing) throw new Error('offline');
-      return choiceCard();
+      return recallCard();
     },
   });
   try {
@@ -279,7 +289,7 @@ const hosted = (over: Partial<HostedExport['words'][number]> & { hanzi: string }
   dueAt: null, intervalHours: null, attempts: 0, incorrect: 0, lastIncorrectAt: null, recentMistakes: [], ...over,
 });
 
-test('each card carries its purpose, and the request asks for the form that fits it', async () => {
+test('each card carries its purpose, and every target is tested by typed recall, never a choice or open production', async () => {
   const box = sandbox();
   const db = new DatabaseSync(box.path);
   importHosted(db, {
@@ -291,13 +301,13 @@ test('each card carries its purpose, and the request asks for the form that fits
     ],
   });
   db.close();
-  const asked: { form: string; message: string }[] = [];
+  const asked: { form: string; message: string; forms?: string[] }[] = [];
   const j = openJournal(box.path, {
     ...demo,
     tutor: async (ctx) => {
       if (ctx.trigger !== 'practice') return demoTutor(ctx);
-      asked.push({ form: ctx.source.match(/^Target: (\S+)/)?.[1] ?? 'material', message: ctx.message });
-      return choiceCard();
+      asked.push({ form: ctx.source.match(/^Target: (\S+)/)?.[1] ?? 'material', message: ctx.message, forms: ctx.exerciseForms });
+      return recallCard();
     },
   });
   try {
@@ -317,9 +327,10 @@ test('each card carries its purpose, and the request asks for the form that fits
     );
     assert.ok(cards[1].teaching?.length || cards[1].introduction, 'a taught card is taught');
     const message = Object.fromEntries(asked.map((a) => [a.form, a.message]));
-    assert.match(message['分心'], /open exercise/);
-    assert.match(message['透透气'], /^Teach .*light check/);
+    assert.match(message['分心'], /typed recall/);
+    assert.match(message['透透气'], /^Teach .*typed recall/);
     assert.match(message["修复"], /recall exercise/);
+    for (const a of asked.filter((x) => x.form !== 'material')) assert.deepEqual(a.forms, ['recall'], a.form + ' may only be recalled');
   } finally {
     j.close();
     box.done();
@@ -353,7 +364,7 @@ test('a session that keeps getting nothing new stops after a few tries and says 
 
 test('a deck saved before sessions existed is put away, and the next visit starts a session from current material', async () => {
   const box = sandbox();
-  const j0 = openJournal(box.path, { ...demo, tutor: async (ctx) => (ctx.trigger === 'practice' ? choiceCard() : demoTutor(ctx)) });
+  const j0 = openJournal(box.path, { ...demo, tutor: async (ctx) => (ctx.trigger === 'practice' ? recallCard() : demoTutor(ctx)) });
   await j0.act({ id: randomUUID(), type: 'chat', message: '我想去外面透透气。', source: '' });
   await settle(j0);
   j0.close();
@@ -362,7 +373,7 @@ test('a deck saved before sessions existed is put away, and the next visit start
   body(box.path, (b) => {
     b.practice = { started: true, mode: 'Daily mix', cards: [...catalogue.slice(0, 3), personal], index: 0, result: null } as unknown as Stored['practice'];
   });
-  const j = openJournal(box.path, { ...demo, tutor: async (ctx) => (ctx.trigger === 'practice' ? choiceCard() : demoTutor(ctx)) });
+  const j = openJournal(box.path, { ...demo, tutor: async (ctx) => (ctx.trigger === 'practice' ? recallCard() : demoTutor(ctx)) });
   try {
     let s = j.get();
     assert.equal(s.practice.card, null, 'the stale deck is not served as if current');

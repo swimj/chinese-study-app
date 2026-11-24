@@ -3,7 +3,7 @@ import { randomUUID } from 'node:crypto';
 import test from 'node:test';
 import { openJournal } from './journal.ts';
 import { demoFriend, demoTutor } from './practice.ts';
-import { situationFor, validateTurn } from './situations/index.ts';
+import { situationFor, situations, validateTurn } from './situations/index.ts';
 import type { TurnContext, TutorResult } from './tutor.ts';
 
 const base: TurnContext = {
@@ -23,6 +23,7 @@ const open = {
   answer: '我只是在等。',
   explanation: '只是 frames waiting as all you are doing.',
 };
+const situationInput = (name: 'practiceGen', ctx: TurnContext) => situations[name].buildInput(ctx) as { allowedForms?: string[] };
 const practice = { kind: 'practice' as const, title: 'Just waiting', detail: 'Scope of 只.', exercise: open };
 
 test('ask requires a reply and a complete action, and owns no other effect', () => {
@@ -54,11 +55,33 @@ test('ask requires a reply and a complete action, and owns no other effect', () 
 
 test('feedback may be silent, may carry one nonempty observation, and cannot change the journal', () => {
   const miss = { ...base, trigger: 'miss' as const };
-  assert.deepEqual(validateTurn('feedback', { reply: '', action: null }, miss), { reply: '', observation: null });
+  assert.deepEqual(validateTurn('feedback', { reply: '', action: null }, miss), { reply: '', observation: null, landed: null });
   const answer = { ...base, trigger: 'answer' as const };
-  assert.equal(validateTurn('feedback', { reply: 'Clear.', observation: 'Scope.' }, answer).observation, 'Scope.');
-  assert.throws(() => validateTurn('feedback', { reply: 'Clear.', observation: ' ' }, answer), /empty observation/);
-  assert.throws(() => validateTurn('feedback', { reply: 'Clear.', action: practice }, answer), /cannot change the journal/);
+  assert.equal(validateTurn('feedback', { reply: 'Clear.', observation: 'Scope.', landed: true }, answer).observation, 'Scope.');
+  assert.throws(() => validateTurn('feedback', { reply: 'Clear.', observation: ' ', landed: true }, answer), /empty observation/);
+  assert.throws(() => validateTurn('feedback', { reply: 'Clear.', action: practice, landed: true }, answer), /cannot change the journal/);
+});
+
+test('feedback on an open answer judges whether it landed; a miss is not judged that way', () => {
+  const answer = { ...base, trigger: 'answer' as const };
+  assert.equal(validateTurn('feedback', { reply: 'That works.', landed: true }, answer).landed, true);
+  assert.equal(validateTurn('feedback', { reply: 'A listener would hear…', landed: false }, answer).landed, false);
+  assert.throws(() => validateTurn('feedback', { reply: 'Clear.' }, answer), /judges whether it landed/);
+  const miss = { ...base, trigger: 'miss' as const };
+  assert.throws(() => validateTurn('feedback', { reply: '', landed: false }, miss), /Only an open answer/);
+  assert.throws(() => validateTurn('ask', { reply: 'Hi.', action: null, landed: true }, base), /Only exercise feedback can judge/);
+});
+
+test('practice generation keeps to the forms its purpose allows', () => {
+  const recallOnly = { ...base, trigger: 'practice' as const, exerciseForms: ['recall' as const] };
+  const recall = { ...open, kind: 'recall' as const, prompt: 'Just; merely.', answer: '只是' };
+  assert.equal(validateTurn('practiceGen', { reply: '', action: { ...practice, exercise: recall } }, recallOnly).action?.exercise?.kind, 'recall');
+  assert.throws(() => validateTurn('practiceGen', { reply: '', action: practice }, recallOnly), /cannot take the open form/);
+  const choice = { ...open, kind: 'choice' as const, prompt: '我＿＿在等人。', choices: ['只是', '才刚'], answer: '只是' };
+  assert.throws(() => validateTurn('practiceGen', { reply: '', action: { ...practice, exercise: choice } }, recallOnly), /cannot take the choice form/);
+  const confused = { ...recallOnly, exerciseForms: ['recall' as const, 'choice' as const] };
+  assert.equal(validateTurn('practiceGen', { reply: '', action: { ...practice, exercise: choice } }, confused).action?.exercise?.kind, 'choice');
+  assert.equal(JSON.stringify(situationInput('practiceGen', confused).allowedForms), '["recall","choice"]');
 });
 
 test('practice generation returns at most one complete practice action', () => {
