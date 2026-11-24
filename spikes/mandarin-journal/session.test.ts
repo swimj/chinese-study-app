@@ -397,6 +397,38 @@ test('a deck saved before sessions existed is put away, and the next visit start
   }
 });
 
+test('an ended session left past the stale window shows no card, and its prepared card returns in the next session', async () => {
+  const box = sandbox();
+  const tutor = async (ctx: TurnContext) => (ctx.trigger === 'practice' ? recallCard() : demoTutor(ctx));
+  const j0 = openJournal(box.path, { ...demo, tutor });
+  await j0.act({ id: randomUUID(), type: 'chat', message: '我想去外面透透气。', source: '' });
+  await settle(j0);
+  j0.close();
+  // The live journal on 2026-11-24: the time ran out after card 10 while card 11 was already prepared.
+  const prepared = { id: 'prepared-1', kind: 'open', source: 'Reading', prompt: '用「况且」说一句。', accepted: [], choices: [], answer: 'a', explanation: 'e', purpose: 'material' };
+  const done = { ...prepared, id: 'done-1', prompt: '做完的。' };
+  const lastAt = new Date(Date.now() - 2 * 60 * 60_000).toISOString();
+  body(box.path, (b) => {
+    b.practice = {
+      started: true, mode: 'Daily mix', cards: [done, prepared], index: 1, result: null,
+      session: { ...newSession(new Date(lastAt)), spent: 640, budget: 600, ended: true, lastAt, shownAt: null },
+    } as unknown as Stored['practice'];
+  });
+  const j = openJournal(box.path, { ...demo, tutor });
+  try {
+    let s = j.get();
+    assert.equal(s.practice.card, null, 'the put-away session serves no card the server would reject');
+    assert.equal(s.practice.done, false, 'the practice page starts a fresh session on its own');
+    s = await j.act({ id: randomUUID(), type: 'practice', mode: 'Daily mix' });
+    assert.equal(s.practice.card?.id, prepared.id, 'the prepared card comes back first');
+    s = await j.act({ id: randomUUID(), type: 'answer', cardId: prepared.id, answer: '周二人少，况且便宜。' });
+    assert.ok(s.practice.result, 'the answer is accepted');
+  } finally {
+    j.close();
+    box.done();
+  }
+});
+
 test('a stored Build vocabulary session is put away on open, and its cards that taught on the exercise are dropped', async () => {
   const box = sandbox();
   const tutor = async (ctx: TurnContext) => (ctx.trigger === 'practice' ? recallCard() : demoTutor(ctx));
