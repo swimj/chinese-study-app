@@ -152,7 +152,7 @@ test('daily mix teaches a saved word on a lesson card that asks nothing, and fin
     assert.ok(['A', 'B', 'C'].includes(graduation.policy), 'one policy is assigned at random');
     assert.equal(graduation.version, 'graduation-v1');
     assert.ok((lesson.context.sentences as string[]).length, 'the taught sentences stay with the lesson');
-    assert.equal(read(box.path, judgments).length, 0, 'the assignment is part of the event, not a rerunnable judgment');
+    assert.deepEqual(read(box.path, judgments).map((x) => x.source), ['rule:admit-v1'], 'the assignment is part of the event, not a rerunnable judgment; only the save’s admission is judged');
     const ranked = j.priority().find((r) => r.target.form === '报备')!;
     assert.equal(ranked.purpose, 'settle');
     assert.equal(ranked.stage, 'first');
@@ -322,14 +322,16 @@ test('a notice quotes the learner exactly and answers for every intended form', 
 
 test('new words wait behind a daily limit and behind open work, and a taught word settles before it graduates', () => {
   const fresh = Array.from({ length: 7 }, (_, i) => target('新' + i, { origin: 'saved', createdAt: at(22) }));
-  assert.equal(rank(fresh, [], now).length, 5, 'five new words a day, as the hosted default');
+  const all = new Map([...fresh, ...['甲', '乙', '丙'].map((f) => target(f))].map((t) => [t.form, 'explicit save']));
+  assert.equal(rank(fresh, [], now, all).length, 5, 'five new words a day, as the hosted default');
+  assert.equal(rank(fresh, [], now).length, 0, 'nothing unadmitted is taught');
   const taught = (form: string, day: number): Signal => ({ form, role: 'taught', at: at(day), eventId: 'e-' + form, practice: true });
   const taughtToday = ['甲', '乙', '丙'].map((form) => taught(form, 23));
-  const afterTeaching = rank([...fresh, ...['甲', '乙', '丙'].map((f) => target(f, { origin: 'saved' }))], taughtToday, now);
+  const afterTeaching = rank([...fresh, ...['甲', '乙', '丙'].map((f) => target(f, { origin: 'saved' }))], taughtToday, now, all);
   assert.equal(afterTeaching.filter((r) => r.fresh).length, 2, 'three taught today leave room for two');
   assert.ok(afterTeaching.find((r) => r.target.form === '甲')?.pressing, 'a word taught today is still settling');
   const busy = Array.from({ length: 8 }, (_, i) => ({ form: '弱' + i, role: 'needed' as const, at: at(20), eventId: 'n' + i }));
-  const blocked = rank([...fresh, ...busy.map((s) => target(s.form))], busy, now);
+  const blocked = rank([...fresh, ...busy.map((s) => target(s.form))], busy, now, all);
   assert.equal(blocked.filter((r) => r.fresh).length, 0, 'eight open weaknesses hold back new words');
   const settled = rank([target('甲')], [taught('甲', 18), { form: '甲', role: 'correct', at: at(19), eventId: 'c1' }, { form: '甲', role: 'used', at: at(21), eventId: 'c2' }], now);
   assert.equal(settled.length, 0, 'two clean days after teaching retire it');

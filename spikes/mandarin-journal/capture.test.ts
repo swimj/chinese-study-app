@@ -83,7 +83,7 @@ test('a learner can clarify a grammar question conversationally in the demo tuto
 
 test('an inferred target absent from the evidence produces a tutor question', async () => {
   const j = openJournal(':memory:', {
-    ...demo, tutor: async () => ({ capture: { kind: 'word', target: '别人' } }),
+    ...demo, tutor: async () => ({ capture: { kind: 'word', target: '别人', intent: 'ask' } }),
   });
   try {
     const a = capture('有意思', '别人告诉我的');
