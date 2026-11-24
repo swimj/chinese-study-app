@@ -758,20 +758,7 @@ export function createAnnotations({ submit, getState, canSubmit, getPending, ret
       input.value = '';
       setDraft(key, '');
       input.focus({ preventScroll: true });
-      const request = submit(action);
-      const threadId = view.id;
-      if (!await request && !pendingAsk()) {
-        const id = savedThreads().some(t => t.id === threadId) ? threadId : undefined;
-        const restoredKey = keyFor({ ...view, id });
-        const draft = drafts.get(threadId) || drafts.get(restoredKey) || message;
-        if (threadId && restoredKey !== threadId) setDraft(threadId, '');
-        setDraft(restoredKey, draft);
-        if (current && current.id === threadId && anchorKey(current.anchor) === anchorKey(view.anchor)) {
-          current.id = id;
-          input.value = draft;
-          render();
-        }
-      }
+      await submit(action);
       return;
     }
     const existing = new Set(sources().map(t => t.id));
@@ -839,5 +826,16 @@ export function createAnnotations({ submit, getState, canSubmit, getPending, ret
   window.addEventListener('scroll', schedulePosition, true);
   window.visualViewport?.addEventListener('resize', schedulePosition);
   window.visualViewport?.addEventListener('scroll', schedulePosition);
-  return { render, close, open };
+  function restore(action) {
+    const id = action.annotationId || action.id;
+    const key = action.annotationId || anchorKey(action.anchor);
+    const draft = [action.message, drafts.get(id)].filter(Boolean).join('\n');
+    if (key !== id) setDraft(id, '');
+    setDraft(key, draft);
+    if (current?.id === id && current.mode !== 'capture') {
+      current.id = action.annotationId;
+      input.value = draft;
+    }
+  }
+  return { render, close, open, restore };
 }
