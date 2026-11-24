@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
 import { openReaderCatalog } from './reader-catalog.ts';
-import { dictionaryReport } from './reader-catalog-report.ts';
+import { dictionaryPage, dictionaryReport } from './reader-catalog-report.ts';
 import { startReaderGrowth } from './reader-growth-queue.ts';
 import { readerLedger } from './reader-ledger.ts';
 
@@ -14,6 +14,10 @@ test('operator report is read-only, shows pending work and follows catalog recei
   const db = join(dir, 'test.sqlite');
   assert.match(dictionaryReport(db, ['还']), /give something back/);
   assert.equal(JSON.parse(dictionaryReport(db, ['--changes', '--json'])).length, 0);
+  const page = dictionaryPage(db, new URLSearchParams({ q: '"><script>', view: 'changes' }));
+  assert.ok(!page.includes('<script>'));
+  assert.match(page, /&quot;&gt;&lt;script&gt;/);
+  assert.match(page, /No matching lookup decisions/);
   assert.deepEqual(readdirSync(dir), []);
   const ledger = readerLedger(db);
   const id = ledger.record({ documentId:'test', blockId:'one', endBlockId:'one', sourceEnd:1,

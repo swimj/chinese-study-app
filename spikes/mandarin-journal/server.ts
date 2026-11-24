@@ -11,6 +11,7 @@ import { actionSchema, engine, JournalConflict, openJournal } from './journal.ts
 import { buildFixture } from './fixture.ts';
 import { resolveStorage } from './storage.ts';
 import { createLookupService } from './reader-lookup-service.ts';
+import { dictionaryPage } from './reader-catalog-report.ts';
 import { openReaderCatalog } from './reader-catalog.ts';
 import { startReaderGrowth } from './reader-growth-queue.ts';
 import { readerWorkflow, ReaderRequestError } from './reader-workflow.ts';
@@ -110,6 +111,14 @@ const server = createServer(async (req, res) => {
       throw new RequestError(403, 'Local access only.');
     if (req.headers.origin && req.headers.origin !== 'http://' + host)
       throw new RequestError(403, 'Unexpected request origin.');
+    if (req.method === 'GET' && req.url?.split('?')[0] === '/operator/dictionary') {
+      const params = new URL(req.url, 'http://localhost').searchParams;
+      const page = dictionaryPage(storage, params);
+      res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store',
+        'Content-Security-Policy': "default-src 'none'; style-src 'unsafe-inline'; form-action 'self'; frame-ancestors 'none'" });
+      res.end(page);
+      return;
+    }
     if (req.method === 'GET' && req.url === '/api/state') {
       json(200, journal.get());
       return;

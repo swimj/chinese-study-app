@@ -88,7 +88,9 @@ npm run --silent journal:lookups > .local/lookup-decisions.jsonl
 
 ### Inspect the growing dictionary
 
-Run these commands from the journal directory. The first shows the available readings and senses for a spelling. Omit the spelling to list the whole catalog. The second shows lookup decisions in completion order, their catalog outcomes and reasons. Add `--json` for IDs and structured evidence. Both commands use the same journal selection as `journal:lookups`.
+Open `/operator/dictionary` on the running journal to search entries or switch to its change ledger. For the default fixture, visit [Reader dictionary](http://127.0.0.1:4320/operator/dictionary).
+
+For terminal access, run these commands from the journal directory. The first shows the available readings and senses for a spelling. Omit the spelling to list the whole catalog. The second shows lookup decisions in completion order, their catalog outcomes and reasons. Add `--json` for IDs and structured evidence. Both commands use the same journal selection as `journal:lookups`.
 
 ```sh
 npm run --silent journal:dictionary -- 还
