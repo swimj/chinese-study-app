@@ -3,6 +3,7 @@ node_modules
 friend-bundles/
 .env
 .DS_Store
+data/*.backup*
 data/*.db
 data/*.json
 data/french-dev/
