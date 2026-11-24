@@ -52,6 +52,13 @@ show up in open answers, not only from exercises aimed at one target.
 - **Targets**: what the learner trains: words with their uses (senses),
   expressions and constructions (patterns with slots, such as 本来想…结果…),
   all first-class.
+- **Days**: a learning day is the learner's local calendar day. Every
+  day-based rule (when a recall is due, a schedule's intervals, the check-up,
+  clean days, the new-word allowance, practiced today) counts in the
+  learner's time zone, so a recall due tomorrow does not arrive this evening
+  because UTC has flipped. Times are stored as UTC instants and days are
+  derived from them, so a change of zone or a DST shift moves day boundaries
+  without rewriting history.
 
 Targets are distinct from the reader's **dictionary** (`reader-catalog.ts`): a
 shared lexical catalog of readings and senses that grows from lookups. The

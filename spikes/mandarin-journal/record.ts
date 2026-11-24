@@ -3,6 +3,7 @@
 // training (targets). The journal blob still holds pieces and interface state;
 // these tables sit beside it in the same SQLite file and commit with it.
 import type { DatabaseSync } from 'node:sqlite';
+import { learningDay } from './day.ts';
 
 /**
  * Kinds of learner activity. Production kinds carry the learner's own language.
@@ -169,11 +170,18 @@ export function judgments(db: DatabaseSync): JudgmentRecord[] {
     }));
 }
 
-/** Model notice judgments made today, for the daily limit. Admission judgments are not limited. */
-export function judgedToday(db: DatabaseSync, now = new Date()) {
-  const day = now.toISOString().slice(0, 10);
-  const row = db.prepare("SELECT count(*) n FROM judgments WHERE source LIKE 'model:%' AND source NOT LIKE '%/admit-v%' AND substr(at,1,10) = ?").get(day);
-  return Number(row?.n ?? 0);
+/**
+ * Model notice judgments made on the learner's day (in zone), for the daily limit.
+ * Admission judgments are not limited.
+ */
+export function judgedToday(db: DatabaseSync, zone: string, now = new Date()) {
+  const today = learningDay(now, zone);
+  // The learner's day began at most 25 hours ago (a DST day is 25 hours long).
+  const since = new Date(now.getTime() - 27 * 3_600_000).toISOString();
+  return db
+    .prepare("SELECT at FROM judgments WHERE source LIKE 'model:%' AND source NOT LIKE '%/admit-v%' AND at >= ?")
+    .all(since)
+    .filter((row) => learningDay(String(row.at), zone) === today).length;
 }
 
 function targetFrom(row: Record<string, unknown>): Target {

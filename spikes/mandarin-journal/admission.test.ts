@@ -150,8 +150,8 @@ test('admission can be rerun: the newest reading of an event counts, but never a
   assert.equal(forms.get('钻空子'), 'useful', 'admitted when any event’s current reading admits it');
   assert.equal(forms.get('值得'), 'useful', 'a later ask does not take back an explicit save');
   const saved = [target('值得'), target('我勒个去')];
-  assert.deepEqual(rank(saved, [], new Date(day(24)), forms).map((r) => r.target.form), ['值得']);
-  assert.deepEqual(rank(saved, [], new Date(day(24))), [], 'with no admissions, nothing saved is taught');
+  assert.deepEqual(rank(saved, [], new Date(day(24)), 'UTC', forms).map((r) => r.target.form), ['值得']);
+  assert.deepEqual(rank(saved, [], new Date(day(24)), 'UTC'), [], 'with no admissions, nothing saved is taught');
 });
 
 test('saved words from before admission stay targets without a migration', async () => {
