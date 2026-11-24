@@ -21,6 +21,13 @@ export const demoStashGlosses: Record<string, string> = {
 const demoWords: Record<string, { title: string } & WordContent> = Object.fromEntries(
   [
     [
+      '值得',
+      'zhíde',
+      'Be worth doing or deserving of something.',
+      '这本书值得再读一遍。',
+      'This book is worth reading again.',
+    ],
+    [
       '报备',
       'bàobèi',
       'Notify someone for the record or to keep them informed.',
@@ -97,6 +104,10 @@ demoWords['行（行业）'] = {
   example: '我在这行干了十年。',
   translation: 'I have worked in this line of business for ten years.',
 };
+
+export function recognizesDemoWord(text: string) {
+  return Object.hasOwn(demoWords, text) || ['行', '蜘', '蛛'].includes(text);
+}
 
 export function demoIntake(request: WordRequest): WordDecision {
   const { text, context, history, localWords } = request;

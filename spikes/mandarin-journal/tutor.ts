@@ -1,11 +1,13 @@
 import { Agent, Runner, tool, type Tool } from '@openai/agents';
 import { z } from 'zod';
+import type { CaptureDecision } from './situations/capture.ts';
 import type { WordDecision, WordRequest, WordContent } from './word-intake.ts';
 import type { MediaConsideration, MediaRequest } from './situations/media.ts';
 import { instructionsFor, situationFor, situations, type Reflection, type SituationName, type TutorAction } from './situations/index.ts';
 
 export interface TurnContext {
-  trigger: 'ask' | 'miss' | 'practice' | 'reflect' | 'answer' | 'wordIntake' | 'mediaConsider';
+  trigger: 'capture' | 'ask' | 'miss' | 'practice' | 'reflect' | 'answer' | 'wordIntake' | 'mediaConsider';
+  captureFollowUp?: { text: string; question: string; previousReply?: string };
   wordIntake?: WordRequest;
   media?: MediaRequest;
   practiceWord?: { title: string } & WordContent;
@@ -30,6 +32,7 @@ export interface TurnContext {
 // The loose shape any tutor backend may return. Each situation's validator
 // accepts only its own fields before the journal applies anything.
 export type TutorResult = {
+  capture?: CaptureDecision;
   reply?: string;
   action?: TutorAction | null;
   wordDecision?: WordDecision | null;

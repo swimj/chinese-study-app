@@ -33,7 +33,7 @@ const port = Number(process.env.JOURNAL_PORT || defaultPorts[resolved.profile]);
 const files = new Map([
   ['/', ['index.html', 'text/html']],
   ['/app.js', ['app.js', 'text/javascript']],
-  ['/words.js', ['words.js', 'text/javascript']],
+  ['/capture.js', ['capture.js', 'text/javascript']],
   ['/annotations.js', ['annotations.js', 'text/javascript']],
   ['/annotations.css', ['annotations.css', 'text/css']],
   ['/pdf-import.js', ['pdf-import.js', 'text/javascript']],

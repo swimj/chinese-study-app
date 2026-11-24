@@ -575,6 +575,7 @@ footer {
   font-size: .85rem;
   overflow-wrap: anywhere;
 }
+.tutor-context span { max-height: 4.5em; overflow: auto; }
 .tutor-context button {
   margin-inline-start: auto;
   padding: 3px 6px;
@@ -649,42 +650,14 @@ footer {
   min-width: 0;
 }
 .intake-line button { min-height: 2.75rem; }
-.word-context, .word-result { color: var(--quiet); font-size: .92rem; }
+.word-context { color: var(--quiet); font-size: .92rem; }
 .word-context { margin-top: .45rem; }
-.word-context summary, .word-result summary { width: fit-content; cursor: pointer; }
+.word-context summary { width: fit-content; cursor: pointer; }
 .word-context textarea { margin-top: .5rem; }
-.word-items {
-  grid-column: 1 / -1;
-  margin: .4rem 0 0;
-  padding: 0;
-  list-style: none;
-}
-.word-items:empty { display: none; }
-.word-items li {
-  border-block-start: 1px solid var(--line);
-  padding: .7rem 0;
-  overflow-wrap: anywhere;
-}
-.word-items li:last-of-type { padding-bottom: 0; }
-.word-row-heading {
-  display: flex;
-  justify-content: space-between;
-  gap: .3em 1em;
-  align-items: baseline;
-  flex-wrap: wrap;
-}
-.word-row-heading strong { font: 600 1.15rem/1.5 var(--serif); }
-.word-status { color: var(--quiet); font-size: .88rem; }
-[data-status="clarify"] .word-status, [data-status="failed"] .word-status { color: var(--clay); }
-.word-items p { margin: .4rem 0; white-space: pre-wrap; }
-.word-result { margin-top: .2rem; }
-.word-result[open] { color: var(--ink); }
 .word-choices { margin-block: .6rem; gap: .4rem; }
 .word-choices button, .secondary { padding: .35rem .75rem; border: 1px solid var(--line); border-radius: 4px; }
 .word-choices button { background: var(--tint); }
-.word-items .intake-line { max-width: 38rem; margin-top: .5rem; }
-#word-more, #word-refresh-error { grid-column: 1/-1; justify-self: start; }
+#word-refresh-error { grid-column: 1/-1; justify-self: start; }
 
 .masthead { flex-wrap: wrap; gap: .2rem 1.2rem; }
 .masthead nav { display: flex; align-items: baseline; gap: .4rem 1.2rem; flex-wrap: wrap; }
-#word-attention { color: var(--clay); font-size: .88rem; }

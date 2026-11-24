@@ -1,3 +1,4 @@
+import { demoCapture, requestsCaptureNote } from './situations/capture.ts';
 import { demoIntake, demoStashGlosses } from './word-intake-demo.ts';
 import { demoMedia } from './media/demo.ts';
 import type { TurnContext, TutorResult } from './tutor.ts';
@@ -396,6 +397,8 @@ export function demoTutor(input: TurnContext): TutorResult {
   const text = input.message.trim();
   const described = text + '\n' + input.source;
   switch (input.trigger) {
+    case 'capture':
+      return { capture: demoCapture(input) };
     case 'mediaConsider':
       return demoMedia(input);
     case 'wordIntake':
@@ -501,6 +504,11 @@ export function demoTutor(input: TurnContext): TutorResult {
       );
   }
   if (queueRequest) return practice(input);
+  if (input.captureFollowUp && requestsCaptureNote(text)) {
+    return response('I’ve kept the passage as a note.', {
+      kind: 'note', title: input.captureFollowUp.text, detail: input.captureFollowUp.text, exercise: null,
+    });
+  }
   const note = text.match(
     /^(?:(?:could|can) you\s+)?(?:please\s+)?(?:(?:save|keep|add|make) (?:a |this )?note(?: that)?|note to self|记一笔)\s*[:：,]?\s+(.+)$/is,
   );
@@ -516,6 +524,8 @@ export function demoTutor(input: TurnContext): TutorResult {
     /^(?:收藏|记住)/.test(text)
   )
     return stash(input);
+  if (/值得/.test(described) && /意思|什么意思|mean|explain|worth/i.test(text))
+    return response('值得 (zhíde) means “to be worth.” In 这本书值得看吗, 值得看 means “worth reading,” so the question is “Is this book worth reading?”');
   const focus =
     [text, input.source].find((part) => series.some((item) => item.match.test(part)) || /内耗/.test(part)) ??
     text;

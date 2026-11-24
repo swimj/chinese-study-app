@@ -20,6 +20,7 @@ ${exerciseDesign} For stash and note set exercise=null. For practice supply a co
     topic: input.topic,
     readingContext: input.readingContext,
     practiceStatus: input.practiceStatus,
+    captureClarification: input.captureFollowUp,
     message: input.message,
   }),
   validate(result) {
