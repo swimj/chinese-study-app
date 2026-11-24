@@ -2,6 +2,8 @@
 
 A local, single-learner app for trying a reading, a casual Mandarin conversation, and short practice with one continuous tutor. It has its own package, server, and SQLite journal. Readings, actions, and study records stay separate from the hosted study app.
 
+The journal is planned to replace the hosted app. [The journal's learning model](MODEL.md) explains that direction and the principles behind practice, priority, teaching and the record; read it before changing them.
+
 ## Run
 
 Use Node 24.13 or newer. From this directory run:

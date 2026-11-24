@@ -240,6 +240,17 @@ Standalone research, planning, and documentation-only tasks may hand off in
 the task conversation without publication unless the task asks for a pull request. This
 exception does not apply to documentation changed as part of implementation.
 
+### Check merge state before every push
+
+Justin may merge a pull request while related work continues. Before pushing
+to, rebasing, force-pushing, or adding commits for an already published branch,
+fetch and check the pull request's state (`gh pr view <number> --json
+state,mergedAt`) and how far `origin/main` has moved. Once a pull request has
+merged, its branch is a dead end: start new work on a fresh branch from the
+current `origin/main` and open a new pull request to main; stacked descendants
+retarget to main. Never rebase or force-push a merged branch. At handoff, say
+which work landed in which pull request.
+
 ### Publish a verified stack
 
 After validation and final branch-boundary review, publish the whole intended
