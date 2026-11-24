@@ -1,10 +1,13 @@
 # Working in this repository
 
-AGENTS.md defines how agents conduct work in this repository and routes them to
-more specific contributor procedures. [README.md](README.md) introduces the
-hosted Mandarin study app; the [documentation index](docs/README.md) routes to
-application knowledge. Contributor development and tests are separate from
-learner use of the hosted service.
+This repository contains the [hosted Mandarin study app](README.md) and its
+intended successor, the scrapbook journal in `spikes/mandarin-journal/`.
+For hosted work, start with the [documentation index](docs/README.md).
+The [journal learning model](spikes/mandarin-journal/MODEL.md) explains its
+product direction and which hosted ideas carry forward. To run or test the
+journal, follow the [journal runbook](spikes/mandarin-journal/RUNBOOK.md) and
+use the checkout's fixture by default. Never open Justin's live journal from
+an agent worktree.
 
 Claude Code reads this file through the `@AGENTS.md` import in
 [CLAUDE.md](CLAUDE.md), and finds the skills in `.agents/skills/` through the
@@ -17,11 +20,13 @@ requested problem coherently, including justified local refactoring. Discuss a
 broader redesign or scope expansion before undertaking it. Preserve unrelated
 work and existing behavior outside the authorized change.
 
-Make routine implementation choices and continue well-defined work. When a
-consequential product or architectural decision is unresolved, explain the
-choice, evidence, and recommendation to Justin before implementing that part.
-A request to work in one shot does not settle an ambiguous learning policy,
-data effect, or architectural boundary.
+Make routine implementation choices independently. When plausible interpretations
+would materially change the result, state your working assumption early and
+give a concrete example of what the user should be able to do or observe.
+Continue with reversible work. If an unresolved choice affects a product
+promise, the meaning of data, or an architectural commitment, bring Justin
+the case and your recommendation before implementing the part that depends on
+it. Ask before a costly-to-reverse step whose intended outcome is unclear.
 
 Use the [documentation principles](docs/documentation-principles.md#intent-evidence-and-disagreement)
 to reconcile sources: contracts describe intended promises, code and observed
@@ -43,13 +48,11 @@ read before every edit.
 | Organize, publish, or revise pull requests | [PR delivery and Graphite stacks](docs/stacked-feature-development-and-review.md) |
 | Create, adapt, or review a model prompt | [Prompt development](docs/prompt-development.md): working lineage, contract adaptation, and behavioral comparisons |
 | Set up a contributor environment or find a command | [Contributor setup and scripts](docs/scripts.md#contributor-setup-and-local-checks); [package.json](package.json) for command definitions |
-| Understand product behavior or current implementation | [Documentation index](docs/README.md), then the owning contracts, implementation explanations, relevant code, and tests |
-| Work affecting architectural assumptions or invariants | [Stability frontier](STABILITY_FRONTIER.md) for preserved assumptions and unresolved decisions, then the relevant contracts |
-| Change persistence or schema | [Database map](docs/server-db.md) and [migration guide](docs/ops/schema-migrations.md#writing-the-next-migration) |
+| Understand hosted product behavior or current implementation | [Documentation index](docs/README.md), then the owning contracts, implementation explanations, relevant code, and tests |
+| Hosted work affecting architectural assumptions or invariants | [Stability frontier](STABILITY_FRONTIER.md) for preserved assumptions and unresolved decisions, then the relevant contracts |
+| Change hosted persistence or schema | [Database map](docs/server-db.md) and [migration guide](docs/ops/schema-migrations.md#writing-the-next-migration) |
 | Operate or release the hosted service | [Release and maintenance runbook](docs/ops/hosted-beta-deployment.md), including its agent terminal-driver procedure; [offline migrations](docs/ops/schema-migrations.md) for schema-changing work |
-| Find configuration | [Configuration reference](docs/architecture.md#configuration), [.env.example](.env.example), and the relevant operations guide |
-| Change what the journal practices, teaches or records, or plan its move into the hosted app | [Journal learning model](spikes/mandarin-journal/MODEL.md): the product direction and principles; the hosted app is a prototype to be replaced, so its contracts do not automatically bind the journal |
-| Run or test the Mandarin journal spike | [Journal runbook](spikes/mandarin-journal/RUNBOOK.md): use the per-checkout fixture by default; never open Justin's live journal from a worktree |
+| Find hosted configuration | [Configuration reference](docs/architecture.md#configuration), [.env.example](.env.example), and the relevant operations guide |
 
 Existing documents are sources to reconcile against the documentation target;
 the index records known adoption gaps. Read supplied task notes and historical
@@ -58,10 +61,15 @@ does not establish current priority, unfinished work, or authorization.
 
 ## Working preferences
 
-- For prompt work, read the closest working prompt in full and preserve its
-  linguistic reasoning, examples, and teaching strategy while adapting the
-  call contract. Narrower responsibilities do not justify compressing proven
-  guidance; identify substantive removals and validate behavioral changes.
+**Prompt work.** Prepare your own outline before drafting a substantive prompt
+or revision. State its purpose, what the model can observe, and how it should
+use that evidence to produce a good result. Read the closest relevant working prompt in full, even
+when writing an original prompt. Identify the principles and examples that
+transfer to the new task. Draft from the outline and check representative
+outputs. When plausible interpretations would produce meaningfully different
+results and the intended choice is
+unresolved, bring Justin a concrete case and a recommendation.
+
 - Use the existing architecture where it fits. Add dependencies, global state
   machinery, or new abstractions when the task warrants them; explain material
   additions. Avoid introducing single-machine assumptions into hosted behavior.
@@ -72,53 +80,35 @@ does not establish current priority, unfinished work, or authorization.
 - In domain and state transitions, fail loudly when a programmer invariant is
   violated. Tolerant no-ops belong to explicitly user-driven or externally
   uncertain inputs, not hidden recovery from broken caller contracts.
-- Keep backend timestamps and date keys in UTC (`toISOString`, `YYYY-MM-DD` UTC)
-  unless the task explicitly changes that policy.
-- Keep HTTP handlers thin and domain/persistence logic in `server/db/` or its
-  owning subsystem. Centralize frontend API calls in `src/services/api.ts`.
+- Store backend timestamps as UTC instants. Hosted date keys use UTC
+  (`YYYY-MM-DD`). The journal derives learning days in the learner's time zone.
+- In the hosted app, keep HTTP handlers thin and place domain and persistence
+  logic in `server/db/` or the owning subsystem. Centralize frontend API calls
+  in `src/services/api.ts`.
   Endpoint changes preserve validation and meaningful status codes and update
   the client contract where needed. Use the [API map](docs/api.md) for navigation.
 
-Own your assigned task's end-to-end completion, including how the work is divided,
-coordinated, integrated, and verified. For substantial work, proactively choose
-an orchestration approach and revise it as the task develops; Justin need not
-separately request orchestration or identify opportunities to delegate.
+Use subagents proactively for parallel work, large investigations, or independent
+checks when that improves the result. Keep tightly coupled work together.
+When a task is easy to brief and a cheaper model is likely to produce a result
+nearly as useful, give it a self-contained brief and explicitly select that
+model and its reasoning effort. Favor stronger reasoning when a mistake would
+be consequential or hard to detect. Include briefing, verification, and likely
+rework when weighing savings. The coordinator owns integration and verification.
+Use separate worktrees for independently dispatched implementation tasks and
+follow the Graphite single-writer rule for stacks.
 
-Use subagents when they can keep substantial intermediate detail out of the
-main context, enable useful parallel progress, or improve the result. Choose
-subtasks by their context needs and dependencies. Exploration, implementation,
-testing, and independent review are examples, not an exhaustive list. When you
-delegate part of your task, retain responsibility for integrating and verifying
-the result against your task's objective and constraints. Give each subagent a
-clear scope, relevant context, and expected outcome.
-Request concise results with evidence, relevant changes, and unresolved questions.
-
-Choose each subagent's model and reasoning level to fit the subtask's difficulty,
-consequences, and context needs, while considering cost. A stronger coordinator
-can use a cheaper model for straightforward work; a cheaper coordinator can
-delegate a bounded task requiring greater intelligence to a stronger model.
-Adjust the choice when evidence from the work warrants it.
-
-Keep tightly coupled work together when delegation would add more coordination
-than value, avoid duplicating effort, and coordinate concurrent edits explicitly.
-Independently dispatched tasks belong in separate worktrees. Graphite stacks
-follow the review workflow's single-writer rule.
-
-For UI work, make the next action and necessary consequences clear. Put optional
-calculation details and technical explanations in accessible disclosures. Avoid
-repeated prose in compact cards; use shared labels or tables when they make
-comparisons clearer. Preserve readable text and wrapping rather than shrinking
-or clipping content to fit.
-
-Do not add instructional filler or explanatory helper copy to preempt hypothetical
-confusion. Labels, controls, layout, and interaction should carry the flow. Avoid
-lines such as “Read this familiar example” or “Give the Mandarin word” when the
-content and controls already establish the action. If an interaction proves
-confusing, improve its design with Justin rather than automatically adding prose.
-Keep actual learning content, actionable errors, and necessary consequences;
-this is a rule against redundant UI narration, not against useful content.
+For UI work, make the next action and its consequences clear through labels,
+controls, and layout. When a flow seems to need explanatory copy, first look
+for a clearer interaction. Omit instructions such as “Give the Mandarin word”
+when the exercise already establishes the action. Keep copy that teaches,
+explains a consequential choice, or helps someone recover from an error.
 
 ## Data and operational boundaries
+
+Use production data read-only when needed for analysis. Keep learner data
+private in extracts, logs, and review artifacts. Production mutations require
+authorization for the specific operation.
 
 `data/` can contain valued databases, backups, and source artifacts. Identify
 the target and its role before running a mutating command. Intentional changes
@@ -131,7 +121,7 @@ Keep secrets out of commits, logs, and artifacts. Use local environment
 configuration or the hosted secret mechanism as appropriate; `.env.example`
 documents names without real credentials.
 
-Persistence changes belong in the owning module with relevant tests. New schema
+Persistence changes belong in the owning module with relevant tests. Hosted schema
 changes follow the versioned migration procedure, not edits to startup
 constructors or previously applied migrations. A hosted code-only release
 permits no schema or data migration. Follow the runbook for the requested
@@ -157,25 +147,29 @@ its reason; do not bypass it through another route.
 
 ## Verification and delivery
 
-For substantial work affecting user-facing behavior, propose a task-level
-evaluation approach early alongside the implementation plan. Identify
-representative user goals, consequential expectations, suitable previews, and
-where independent UI evaluation will help. Prepare the brief yourself and carry
-evaluation through delivery using the [coordinator procedure](docs/evaluation/coordinator.md).
-Use proportional judgment for smaller changes; reporting the plan is not a new
-approval gate.
+For substantial user-facing changes, identify representative user goals and
+what successful completion looks like before implementation. Exercise those
+flows through the actual interface. Use the
+[coordinator procedure](docs/evaluation/coordinator.md) to prepare the preview
+and brief when an independent evaluation would add useful evidence.
+
+When success depends on model judgment or generated content, inspect
+representative outputs and say which model path produced them. If verification
+used an offline fixture or test double, identify the quality question that
+remains open.
 
 Choose checks that establish the requested behavior and cover affected risks.
 Use the [testing map](docs/testing.md) to find focused Node tests and
 [contributor commands](docs/scripts.md#contributor-setup-and-local-checks) to run
-them. Add or update behavior tests where practical. For scheduling or session
+them. Add or update behavior tests where practical. For hosted scheduling or session
 changes, start with composition and completion coverage. Run compilation/build
 checks for substantial code changes and broader tests when the affected surface
 warrants them. Documentation-only changes need content and link verification.
 
 Verify visual changes in their actual container, including narrow desktop
-panels and enlarged text. Exercise relevant long labels, large values, empty
-states, expanded disclosures, and keyboard access. A build does not establish
+panels and enlarged text. Check that text wraps and stays readable. Exercise
+relevant long labels, large values, empty states, expanded disclosures, and
+keyboard access. A build does not establish
 visual correctness; report missing rendered verification.
 
 Update owning documentation when a change affects the explanations readers
@@ -185,8 +179,8 @@ contents. Documentation completeness is not a blanket merge gate, while
 task-specific correctness and safety requirements still apply.
 
 Implementation work normally finishes with a verified review pull request.
-Before substantial implementation, state whether the change is one cohesive PR
-or likely needs a stack. Use ordinary GitHub delivery for a single PR and the
+Explain a proposed split early when the division or sequencing materially
+affects review. Use ordinary GitHub delivery for a single PR and the
 installed `gt` CLI for a useful multi-branch stack, following the PR delivery
 and Graphite workflow. Standalone research, planning, and documentation tasks may
 return in the agent conversation without a PR unless publication is requested.
@@ -200,20 +194,9 @@ link and review state; distinguish implemented, merged, deployed, and observed.
 
 ## Project context
 
-The separate [Steward repository](https://github.com/swimj/steward) maintains
-the north star in `vision.md`, weekly priorities in `outlook.md`, and unresolved
-thinking in `chewing.md`. For work that needs this context, consult an
-available Steward checkout or read the files on GitHub. Ask Justin for any
-unpublished updates the task needs. Steward's `AGENTS.md` governs its role.
-This repository contains the contracts needed for well-scoped application work.
-
-Task conversations establish execution context. Git and GitHub supply review
-and integration evidence. Linear supports issue intake and retrieval, but its
-bookkeeping is incomplete: a direct task needs no Linear item, and later issue
-edits do not silently change the ongoing task. The frontier is a checkout's
-architectural snapshot, not a live task ledger or release certificate.
-
-Justin selects portfolio work. Historical Steward/Linear dispatch rituals are
-not prerequisites for implementation. Report material overlap and worthwhile
-out-of-scope ideas in the handoff; creating additional portfolio tasks, changing
-external records, or maintaining a replacement backlog requires authorization.
+Consult [Steward](https://github.com/swimj/steward) when product direction or
+priorities bear on a decision. Its `vision.md` describes the north star,
+`outlook.md` the weekly priorities, and `chewing.md` unresolved thinking.
+A direct request from Justin is sufficient to begin work. Surface material
+overlap and worthwhile follow-ups. Get authorization before creating portfolio
+tasks or changing external planning records.
