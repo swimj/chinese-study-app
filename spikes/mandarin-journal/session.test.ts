@@ -10,8 +10,8 @@ import { openJournal } from './journal.ts';
 import { catalogue, demoFriend, demoTutor } from './practice.ts';
 import { events } from './record.ts';
 import {
-  AHEAD, cardSeconds, cardTime, CHUNK_SECONDS, extend, finishCard, formsFor, freshAllowed, needsCard, newSession, noteFailure, resume,
-  SESSION_SECONDS, stale,
+  AHEAD, cardSeconds, cardTime, CHUNK_SECONDS, currentCard, extend, finishCard, finishesSession, formsFor, freshAllowed, needsCard,
+  newSession, noteFailure, openRecalls, pendingRecalls, resume, NO_NEW_WITHIN, SESSION_SECONDS, stale,
   type Purpose, type Session,
 } from './session.ts';
 import type { TurnContext, TutorResult } from './tutor.ts';
@@ -114,10 +114,16 @@ test('finishing a card needs its session, and Try again resumes a paused session
   assert.equal(session.errors![4].at, now.toISOString());
 });
 
-test('one new word per four session cards', () => {
-  assert.equal(freshAllowed([card('open', 'material')]), 1);
-  assert.equal(freshAllowed([card('choice', 'teach'), card('open', 'weakness')]), 0);
-  assert.equal(freshAllowed([card('choice', 'teach'), card('open'), card('open'), card('open')]), 1);
+test('one new word per four session cards, and none near the end of the box', () => {
+  const at = new Date('2026-11-24T12:00:00Z');
+  const deck = (cards: ReturnType<typeof card>[]) => ({ mode: 'Daily mix', cards, index: 0, result: null, session: newSession(at) });
+  assert.equal(freshAllowed(deck([card('open', 'material')])), 1);
+  assert.equal(freshAllowed(deck([card('choice', 'teach'), card('open', 'weakness')])), 0);
+  assert.equal(freshAllowed(deck([card('choice', 'teach'), card('open'), card('open'), card('open')])), 1);
+  const late = deck([card('open', 'material')]);
+  late.session.spent = SESSION_SECONDS - NO_NEW_WITHIN + 1;
+  late.index = 1;
+  assert.equal(freshAllowed(late), 0, 'a lesson this late would leave its recall past the box');
 });
 
 test('the purpose decides the forms: recall for any target, a choice only for a confused contrast and never after teaching', () => {
@@ -289,7 +295,7 @@ const hosted = (over: Partial<HostedExport['words'][number]> & { hanzi: string }
   dueAt: null, intervalHours: null, attempts: 0, incorrect: 0, lastIncorrectAt: null, recentMistakes: [], ...over,
 });
 
-test('each card carries its purpose, and every target is tested by typed recall, never a choice or open production', async () => {
+test('each card carries its purpose, a new word gets a lesson, and every other target is tested by typed recall', async () => {
   const box = sandbox();
   const db = new DatabaseSync(box.path);
   importHosted(db, {
@@ -325,10 +331,11 @@ test('each card carries its purpose, and every target is tested by typed recall,
       cards.map((c) => [c.targets?.[0], c.purpose]),
       [['分心', 'weakness'], ['透透气', 'teach'], ['修复', 'review']],
     );
-    assert.ok(cards[1].teaching?.length || cards[1].introduction, 'a taught card is taught');
+    assert.ok(cards[1].teaching?.length, 'the new word is taught in beats');
+    assert.equal((cards[1] as { kind?: string }).kind, 'lesson', 'and asked nothing on its lesson card');
     const message = Object.fromEntries(asked.map((a) => [a.form, a.message]));
     assert.match(message['分心'], /typed recall/);
-    assert.match(message['透透气'], /^Teach .*typed recall/);
+    assert.equal(message['透透气'], undefined, 'no exercise is generated with the lesson');
     assert.match(message["修复"], /recall exercise/);
     for (const a of asked.filter((x) => x.form !== 'material')) assert.deepEqual(a.forms, ['recall'], a.form + ' may only be recalled');
   } finally {
@@ -384,6 +391,171 @@ test('a deck saved before sessions existed is put away, and the next visit start
     await settle(j);
     const ids = body(box.path).practice.cards.map((c) => (c as { id?: string }).id);
     assert.ok(!ids.some((id) => catalogue.some((seed) => seed.id === id)), 'starter cards are dropped');
+  } finally {
+    j.close();
+    box.done();
+  }
+});
+
+type Lesson = { kind: 'lesson' | 'recall' | 'open'; purpose?: Purpose; stage?: 'first'; targets?: string[] };
+test('a lesson’s recall waits two other cards, and past the box the session finishes it before ending', () => {
+  const now = new Date('2026-11-24T12:00:00Z');
+  const lesson: Lesson = { kind: 'lesson', purpose: 'teach', targets: ['透透气'] };
+  const other: Lesson = { kind: 'open', purpose: 'material' };
+  const recall: Lesson = { kind: 'recall', purpose: 'settle', stage: 'first', targets: ['透透气'] };
+  assert.deepEqual(pendingRecalls([lesson, other]), [{ form: '透透气', ready: false }]);
+  assert.deepEqual(pendingRecalls([lesson, other, other]), [{ form: '透透气', ready: true }]);
+  assert.deepEqual(pendingRecalls([lesson, other, other, recall]), []);
+  const p = { mode: 'Daily mix', cards: [lesson, other, other, recall], index: 1, result: null, session: newSession(now) };
+  assert.deepEqual(openRecalls(p), ['透透气']);
+  p.session.spent = SESSION_SECONDS - 1;
+  assert.equal(finishesSession(p, now), false, 'finishing this card leaves the recall open');
+  finishCard(p, now);
+  assert.equal(p.session.ended, undefined, 'the box is spent, but open work keeps the session going');
+  assert.equal(currentCard(p), recall, 'the recall comes next, ahead of the other prepared card');
+  assert.equal(needsCard(p), false);
+  assert.equal(finishesSession(p, now), true);
+  finishCard(p, now);
+  assert.equal(p.session.ended, true);
+  assert.equal(p.cards[p.index], other, 'the other card waits for Keep going');
+  // With no recall prepared yet, the session waits for it and shows nothing else.
+  const q = { mode: 'Daily mix', cards: [lesson, other, other], index: 1, result: null, session: newSession(now) };
+  q.session.spent = SESSION_SECONDS;
+  finishCard(q, now);
+  assert.equal(currentCard(q), undefined);
+  assert.equal(q.session.shownAt, null);
+  assert.equal(needsCard(q), true, 'past the box, only the closing recall is still prepared');
+});
+
+/** A tutor whose material cards are fresh recalls and whose recall of 透透气 can be held back. */
+function lessonTutor(hold?: () => Promise<void>) {
+  return {
+    ...demo,
+    tutor: async (ctx: TurnContext) => {
+      if (ctx.trigger !== 'practice') return demoTutor(ctx);
+      if (!ctx.source.startsWith('Target: 透透气')) return recallCard('Material');
+      await hold?.();
+      return {
+        reply: '',
+        action: { kind: 'practice' as const, title: 'Recall', detail: 'd', exercise: { kind: 'recall' as const, prompt: 'Step out for some air. ' + ++made, accepted: [], choices: [], answer: '透透气', explanation: 'e' } },
+      };
+    },
+  };
+}
+async function startWithLesson(j: Journal) {
+  await j.act({ id: randomUUID(), type: 'addWord', text: '透透气' });
+  for (const message of ['我在图书馆看书。', '下午我去公园散步。', '晚上我做了饺子。'])
+    await j.act({ id: randomUUID(), type: 'chat', message, source: '' });
+  await settle(j);
+  const s = await j.act({ id: randomUUID(), type: 'practice', mode: 'Daily mix' });
+  assert.equal(s.practice.card?.kind, 'lesson');
+  return s.practice.card!;
+}
+async function answerAndNext(j: Journal, answer = '也') {
+  const card = j.get().practice.card!;
+  await j.act({ id: randomUUID(), type: 'answer', cardId: card.id, answer });
+  return j.act({ id: randomUUID(), type: 'next', cardId: card.id });
+}
+
+test('a taught word is never checked right after its lesson: it returns as typed recall after two other cards', async () => {
+  const box = sandbox();
+  const j = openJournal(box.path, lessonTutor());
+  try {
+    const lesson = await startWithLesson(j);
+    await j.act({ id: randomUUID(), type: 'next', cardId: lesson.id });
+    await settle(j);
+    let s = j.get();
+    assert.equal(s.practice.card?.purpose, 'material', 'the session moves on after the lesson');
+    await answerAndNext(j);
+    await settle(j);
+    assert.equal(j.get().practice.card?.purpose, 'material');
+    await answerAndNext(j);
+    await settle(j);
+    s = j.get();
+    assert.equal(s.practice.card?.kind, 'recall');
+    assert.equal(s.practice.card?.purpose, 'settle');
+    s = await j.act({ id: randomUUID(), type: 'answer', cardId: s.practice.card!.id, answer: '透透气' });
+    assert.equal(s.practice.result?.correct, true);
+    const answer = events(new DatabaseSync(box.path, { readOnly: true })).findLast((e) => e.kind === 'answer')!;
+    assert.deepEqual([answer.targets, answer.context.stage], [['透透气'], 'first']);
+    assert.notEqual(j.priority().find((r) => r.target.form === '透透气')?.stage, 'first', 'the first recall is done');
+  } finally {
+    j.close();
+    box.done();
+  }
+});
+
+test('past the box the session waits for a taught word’s recall and ends after it; Keep going serves the rest', async () => {
+  const box = sandbox();
+  let release!: () => void;
+  let gate: Promise<void> = new Promise((r) => (release = r));
+  const j = openJournal(box.path, lessonTutor(() => gate));
+  try {
+    const lesson = await startWithLesson(j);
+    await j.act({ id: randomUUID(), type: 'next', cardId: lesson.id });
+    // The worker is now preparing the recall behind a closed gate.
+    await new Promise((r) => setTimeout(r, 50));
+    // A moment before the box is spent: finishing the card in front crosses it.
+    body(box.path, (b) => (b.practice.session.spent = SESSION_SECONDS - 0.01));
+    assert.equal(j.get().practice.session?.last, false, 'this card does not end the session while the recall is open');
+    let s = await answerAndNext(j);
+    assert.equal(s.practice.session?.ended, false);
+    assert.equal(s.practice.card, null, 'no other card is shown while wrapping up');
+    assert.equal(s.practice.session?.waiting, true);
+    release();
+    await settle(j);
+    s = j.get();
+    assert.equal(s.practice.card?.purpose, 'settle', 'the recall arrives in front of the prepared card');
+    assert.equal(s.practice.session?.last, true);
+    s = await answerAndNext(j, '透透气');
+    assert.equal(s.practice.session?.ended, true);
+    assert.equal(s.practice.done, true);
+    assert.ok((s.practice.session?.ready ?? 0) >= 1, 'the card prepared earlier waits for Keep going');
+    s = await j.act({ id: randomUUID(), type: 'practice', mode: 'Daily mix', continue: true });
+    assert.equal(s.practice.card?.purpose, 'material');
+  } finally {
+    j.close();
+    box.done();
+  }
+});
+
+test('a learner who leaves before a taught word’s recall finds it first in line next session', async () => {
+  const box = sandbox();
+  const j = openJournal(box.path, lessonTutor());
+  try {
+    const lesson = await startWithLesson(j);
+    await j.act({ id: randomUUID(), type: 'next', cardId: lesson.id });
+    await settle(j);
+    // The session is left behind before the recall; its unanswered cards are gone with it.
+    body(box.path, (b) => {
+      b.practice = { mode: 'Daily mix', cards: [], index: 0, result: null } as unknown as Stored['practice'];
+      (b as unknown as { pending: unknown[] }).pending = [];
+    });
+    const s = await j.act({ id: randomUUID(), type: 'practice', mode: 'Daily mix' });
+    assert.equal(s.practice.card?.purpose, 'settle');
+    assert.match(s.practice.card?.prompt ?? '', /Step out for some air/);
+  } finally {
+    j.close();
+    box.done();
+  }
+});
+
+test('a flagged exercise is marked on its attempt and recorded, and leaves Past mistakes', async () => {
+  const box = sandbox();
+  const j = openJournal(box.path, lessonTutor());
+  try {
+    const lesson = await startWithLesson(j);
+    await j.act({ id: randomUUID(), type: 'next', cardId: lesson.id });
+    await settle(j);
+    const card = j.get().practice.card!;
+    await j.act({ id: randomUUID(), type: 'answer', cardId: card.id, answer: '不知道' });
+    const attempt = j.get().attempts.at(-1)!;
+    const s = await j.act({ id: randomUUID(), type: 'flagExercise', attemptId: attempt.id });
+    assert.ok(s.attempts.at(-1)!.flagged);
+    const flag = events(new DatabaseSync(box.path, { readOnly: true })).find((e) => e.kind === 'flag')!;
+    assert.equal(flag.ref, attempt.id);
+    const past = await j.act({ id: randomUUID(), type: 'practice', mode: 'Past mistakes' });
+    assert.equal(past.practice.card, null, 'a flagged miss is not replayed');
   } finally {
     j.close();
     box.done();

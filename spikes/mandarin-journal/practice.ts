@@ -343,8 +343,10 @@ function practice(input: TurnContext): TutorResult {
   // A target is tested by typed recall from a short English cue.
   if (input.practiceWord && input.exerciseForms?.includes('recall') && input.practiceWord.meaning) {
     const w = input.practiceWord;
-    const prompt = w.meaning.replace(/\.$/, '') + '.';
-    if (input.previousPrompts?.includes(prompt) || prompt.includes(w.title)) return response('');
+    const cue = w.meaning.replace(/\.$/, '') + '.';
+    // A settling word comes back on later days, so its cue varies.
+    const prompt = [cue, 'From memory: ' + cue, 'Once more: ' + cue].find((p) => !input.previousPrompts?.includes(p));
+    if (!prompt || cue.includes(w.title)) return response('');
     // A word being taught gets a short introduction, the fallback when teaching beats fail.
     const introduction = /^Teach /.test(input.message) ? w.title + (w.pinyin ? ' (' + w.pinyin + ')' : '') + ' · ' + w.meaning : '';
     return response(introduction, {
@@ -421,7 +423,7 @@ function stash(input: TurnContext): TutorResult {
 }
 
 // Offline teaching for the fixture's saved words, paced as the live prompt asks:
-// a simple word gets its meaning and an example, a social word more room.
+// every lesson opens with a scene; a simple word gets a sentence, a social word more room.
 const zh = (text: string, pinyin: string): BeatPart => ({ kind: 'chinese', text, pinyin });
 const en = (text: string): BeatPart => ({ kind: 'translation', text });
 const say = (text: string): BeatPart => ({ kind: 'text', text });
@@ -444,23 +446,24 @@ const demoBeats: Record<string, BeatPart[][]> = {
     [say('It can be either. Said lightly, it is a courtesy; said with a sigh, it suggests someone keeping close track.')],
   ],
   分心: [
-    [note('分心 is having your attention pulled away from what you are doing. 分 divides; 心 is the mind.')],
+    [say('You sit down to work, and your phone lights up on the desk.')],
     [zh('手机一响，我就容易分心。', 'Shǒujī yì xiǎng, wǒ jiù róngyì fēnxīn.')],
     [en('I get distracted easily when my phone rings.')],
-    [say('容易分心 is the everyday way to say you are easily distracted.')],
+    [note('分心 is having your attention pulled away from what you are doing: 分 divides, 心 is the mind. 容易分心 is the everyday way to say you are easily distracted.')],
   ],
   鸟食: [
-    [note('鸟食 is bird food, such as the seed people put out for birds.')],
+    [say('Sparrows keep landing on your balcony railing, so you put out a small dish.')],
     [zh('我在阳台上放了一些鸟食。', 'Wǒ zài yángtái shang fàngle yìxiē niǎoshí.')],
     [en('I put some bird food out on the balcony.')],
   ],
 };
 export function demoTeaching(target: TeachTarget): Beat[] {
   const curated = demoBeats[target.form];
+  const example = target.savedExample;
   const parts: BeatPart[][] = curated ?? [
+    [say(target.encounter ? 'Back to where you met it: ' + target.encounter.split('\n')[0] : 'Here is a moment where you might hear it.')],
+    ...(example ? [[{ kind: 'chinese' as const, text: example.text }], [en(example.translation)]] : []),
     [note(target.form + (target.pinyin ? ' (' + target.pinyin + ')' : '') + (target.gloss ? ': ' + target.gloss : ''))],
-    ...(target.example ? [[{ kind: 'chinese' as const, text: target.example }]] : []),
-    ...(target.example && target.translation ? [[en(target.translation)]] : []),
   ];
   return parts.map((beat, i) => ({ id: 'b' + (i + 1), parts: beat }));
 }

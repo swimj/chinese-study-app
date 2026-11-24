@@ -111,74 +111,58 @@ test('converted history becomes events without times, and the model never reads 
   }
 });
 
-test('daily mix asks for the top target, and a typed recall on it is judged by rule', async () => {
-  const box = sandbox();
-  const j = openJournal(box.path, demo);
-  try {
-    await j.act({ id: randomUUID(), type: 'addWord', text: '透透气', context: '图书馆太闷了' });
-    await settle(j);
-    assert.equal(j.priority()[0].target.form, '透透气');
-    assert.match(j.priority()[0].reasons.join(), /saved, not practiced yet/);
-    const s = await j.act({ id: randomUUID(), type: 'practice', mode: 'Daily mix' });
-    const card = s.practice.card!;
-    assert.ok(card, 'a card was generated');
-    assert.equal(card.kind, 'recall', 'a taught word is checked by recall, never by a choice');
-    await j.act({ id: randomUUID(), type: 'answer', cardId: card.id, answer: '透透气' });
-    await settle(j);
-    const answerEvent = read(box.path, events).find((e) => e.kind === 'answer')!;
-    assert.deepEqual(answerEvent.targets, ['透透气'], 'the card carries the target it was asked to practice');
-    const sources = read(box.path, judgments).filter((x) => x.eventId === answerEvent.id).map((x) => x.source);
-    assert.deepEqual(sources, ['rule:recall-v1']);
-    assert.match(j.priority().find((r) => r.target.form === '透透气')?.reasons.join() ?? 'practiced today', /practiced today|graduated/);
-  } finally {
-    j.close();
-    box.done();
-  }
-});
-
-test('daily mix teaches an unstudied saved word in beats before its exercise, and the answer records it taught', async () => {
+test('daily mix teaches a saved word on a lesson card that asks nothing, and finishing it records the lesson with an assigned policy', async () => {
   const box = sandbox();
   const asked: TurnContext[] = [];
-  let teachingFails = false;
   const j = openJournal(box.path, {
     ...demo,
     tutor: async (ctx: TurnContext) => {
-      if (ctx.trigger === 'teach') {
-        asked.push(ctx);
-        if (teachingFails) throw new Error('offline');
-      }
+      if (ctx.trigger === 'teach') asked.push(ctx);
       return demoTutor(ctx);
     },
   });
   try {
     await j.act({ id: randomUUID(), type: 'addWord', text: '报备', context: '朋友说出去玩要跟男朋友报备' });
     await settle(j);
+    assert.match(j.priority()[0].reasons.join(), /saved, not practiced yet/);
     const s = await j.act({ id: randomUUID(), type: 'practice', mode: 'Daily mix' });
     const card = s.practice.card!;
-    assert.ok(card.teaching?.length, 'the card carries teaching beats');
-    assert.equal(card.teaching[1].parts[0].kind, 'chinese');
+    assert.equal(card.kind, 'lesson', 'the word is taught on a card of its own');
+    assert.equal(card.purpose, 'teach');
+    assert.equal(card.teaching![0].parts[0].kind, 'text', 'the lesson opens with a scene');
     assert.equal(asked.length, 1);
     assert.deepEqual(asked[0].teach, {
       form: '报备',
       pinyin: 'bàobèi',
       gloss: 'Notify someone for the record or to keep them informed.',
-      example: '周末有访客，需要提前向物业报备。',
-      translation: 'If you have visitors this weekend, you need to notify the property manager in advance.',
-      why: 'saved, not practiced yet; met in: 朋友说出去玩要跟男朋友报备',
+      encounter: '朋友说出去玩要跟男朋友报备',
+      savedExample: {
+        text: '周末有访客，需要提前向物业报备。',
+        translation: 'If you have visitors this weekend, you need to notify the property manager in advance.',
+      },
     });
-    await j.act({ id: randomUUID(), type: 'answer', cardId: card.id, answer: card.kind === 'choice' ? card.choices[0] : '我得跟物业报备。' });
+    await assert.rejects(j.act({ id: randomUUID(), type: 'answer', cardId: card.id, answer: '报备' }), /nothing to answer/);
+    await j.act({ id: randomUUID(), type: 'next', cardId: card.id });
     await settle(j);
-    const answer = read(box.path, events).find((e) => e.kind === 'answer')!;
-    assert.equal(answer.context.taught, true);
-    assert.deepEqual(answer.targets, ['报备']);
-
+    const recorded = read(box.path, events);
+    assert.equal(recorded.filter((e) => e.kind === 'answer').length, 0, 'no check right after teaching');
+    const lesson = recorded.find((e) => e.kind === 'lesson')!;
+    assert.deepEqual(lesson.targets, ['报备']);
+    const graduation = lesson.context.graduation as { policy: string; version: string };
+    assert.ok(['A', 'B', 'C'].includes(graduation.policy), 'one policy is assigned at random');
+    assert.equal(graduation.version, 'graduation-v1');
+    assert.ok((lesson.context.sentences as string[]).length, 'the taught sentences stay with the lesson');
+    assert.equal(read(box.path, judgments).length, 0, 'the assignment is part of the event, not a rerunnable judgment');
+    const ranked = j.priority().find((r) => r.target.form === '报备')!;
+    assert.equal(ranked.purpose, 'settle');
+    assert.equal(ranked.stage, 'first');
   } finally {
     j.close();
     box.done();
   }
 });
 
-test('when teaching fails, a new word keeps the generator introduction', async () => {
+test('when teaching fails, no lesson is shown and the word stays new', async () => {
   const box = sandbox();
   const j = openJournal(box.path, {
     ...demo,
@@ -190,10 +174,12 @@ test('when teaching fails, a new word keeps the generator introduction', async (
   try {
     await j.act({ id: randomUUID(), type: 'addWord', text: '分心' });
     await settle(j);
-    const taught = (await j.act({ id: randomUUID(), type: 'practice', mode: 'Daily mix' })).practice.card!;
-    assert.deepEqual(taught.purpose, 'teach');
-    assert.equal(taught.teaching, undefined);
-    assert.ok(taught.introduction, 'the introduction remains as a fallback');
+    await j.act({ id: randomUUID(), type: 'practice', mode: 'Daily mix' });
+    await settle(j);
+    const stored = j.get();
+    assert.ok(!stored.practice.card || stored.practice.card.kind !== 'lesson');
+    assert.equal(read(box.path, events).filter((e) => e.kind === 'lesson').length, 0);
+    assert.equal(j.priority().find((r) => r.target.form === '分心')?.purpose, 'teach', 'the word is still waiting to be taught');
   } finally {
     j.close();
     box.done();
