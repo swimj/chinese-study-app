@@ -19,7 +19,7 @@ const base: TurnContext = {
 const open = {
   kind: 'open' as const,
   prompt: 'Tell a friend you are just waiting.',
-  choices: [],
+  accepted: [], choices: [],
   answer: '我只是在等。',
   explanation: '只是 frames waiting as all you are doing.',
 };
@@ -35,7 +35,7 @@ test('ask requires a reply and a complete action, and owns no other effect', () 
     () => validateTurn('ask', { reply: 'Ready.', action: { ...practice, exercise: { ...open, choices: ['等'] } } }, ask),
     /cannot include choices/,
   );
-  const choice = { ...open, kind: 'choice' as const, choices: ['只', '只是', '只'], answer: '只是' };
+  const choice = { ...open, kind: 'choice' as const, accepted: [], choices: ['只', '只是', '只'], answer: '只是' };
   assert.throws(
     () => validateTurn('ask', { reply: 'Ready.', action: { ...practice, exercise: choice } }, ask),
     /invalid contrast/,
@@ -161,4 +161,53 @@ test('demo and live results pass the same validation before the journal applies 
   } finally {
     j.close();
   }
+});
+
+test('teaching returns 1–8 unique beats, keeps the first Chinese sentence apart from its translation, and owns no other effect', () => {
+  const teach: TurnContext = { ...base, trigger: 'teach', teach: { form: '分心', pinyin: 'fēnxīn', gloss: 'Be distracted.' } };
+  const sentence = { kind: 'chinese' as const, text: '手机一响，我就容易分心。', pinyin: 'Shǒujī yì xiǎng, wǒ jiù róngyì fēnxīn.' };
+  const translation = { kind: 'translation' as const, text: 'I get distracted easily when my phone rings.', pinyin: null };
+  const beats = [
+    { id: 'a', parts: [{ kind: 'note' as const, text: '分心 is attention pulled away.', pinyin: 'fēnxīn' }] },
+    { id: 'b', parts: [sentence] },
+    { id: 'c', parts: [translation, { kind: 'chinese' as const, text: '我又分心了。', pinyin: ' ' }, { ...translation, text: 'I got distracted again.' }] },
+  ];
+  assert.deepEqual(validateTurn('teach', { beats }, teach).beats, [
+    { id: 'a', parts: [{ kind: 'note', text: '分心 is attention pulled away.' }] },
+    { id: 'b', parts: [sentence] },
+    { id: 'c', parts: [{ kind: 'translation', text: translation.text }, { kind: 'chinese', text: '我又分心了。' }, { kind: 'translation', text: 'I got distracted again.' }] },
+  ]);
+  assert.throws(() => validateTurn('teach', { beats: [] }, teach), /1–8 beats/);
+  const many = Array.from({ length: 9 }, (_, i) => ({ id: 'b' + i, parts: [{ kind: 'text' as const, text: 'More.' }] }));
+  assert.throws(() => validateTurn('teach', { beats: many }, teach), /1–8 beats/);
+  assert.throws(() => validateTurn('teach', { beats: [beats[0], { ...beats[1], id: 'a' }] }, teach), /unique/);
+  assert.throws(() => validateTurn('teach', { beats: [{ id: 'a', parts: [] }] }, teach), /no parts/);
+  assert.throws(() => validateTurn('teach', { beats: [{ id: 'a', parts: [{ kind: 'text', text: ' ' }] }] }, teach), /empty/);
+  assert.throws(() => validateTurn('teach', { beats: [{ id: 'a', parts: [sentence, translation] }] }, teach), /separate beats/);
+  assert.throws(() => validateTurn('teach', { beats: [{ id: 'a', parts: [translation] }] }, teach), /Chinese sentence before/);
+  assert.throws(() => validateTurn('teach', { beats, reply: 'Here is the word.' }, teach), /only through its beats/);
+  assert.throws(() => validateTurn('teach', { beats, action: practice }, teach), /cannot change/);
+  assert.throws(() => validateTurn('feedback', { reply: 'Ok.', beats }, { ...base, trigger: 'answer' }), /Only teaching/);
+  assert.equal(situationFor('teach'), 'teach');
+});
+
+test('offline teaching validates for the fixture words and falls back to a generic introduction', () => {
+  const forms: [string, string | null, string | null][] = [
+    ['透透气', 'tòu tou qì', 'Get some air.'],
+    ['报备', 'bàobèi', 'Notify someone for the record.'],
+    ['分心', 'fēnxīn', 'Be distracted.'],
+    ['鸟食', 'niǎoshí', 'Bird food.'],
+    ['蜘蛛', null, null],
+  ];
+  for (const [form, pinyin, gloss] of forms) {
+    const ctx: TurnContext = { ...base, trigger: 'teach', teach: { form, pinyin, gloss } };
+    const { beats } = validateTurn('teach', demoTutor(ctx), ctx);
+    assert.ok(beats.some((b) => b.parts.some((p) => p.text.includes(form))), form + ' is named');
+  }
+  const ctx: TurnContext = {
+    ...base,
+    trigger: 'teach',
+    teach: { form: '散场', pinyin: 'sànchǎng', gloss: 'An event ends.', example: '电影散场了。', translation: 'The movie let out.' },
+  };
+  assert.deepEqual(validateTurn('teach', demoTutor(ctx), ctx).beats.map((b) => b.parts[0].kind), ['note', 'chinese', 'translation']);
 });

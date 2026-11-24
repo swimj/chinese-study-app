@@ -64,8 +64,18 @@ export function signalsFrom(judgmentList: JudgmentRecord[], eventsById: Map<stri
   return out;
 }
 
-/** pressing: an open weakness or a word still settling. fresh: chosen and never taught. */
-export type Ranked = { target: Target; score: number; reasons: string[]; signals: number; pressing?: boolean; fresh?: boolean };
+/**
+ * pressing: an open weakness or a word still settling. fresh: chosen and never taught.
+ * purpose: what a card on this target is for. A new word is taught; a flaw, need or
+ * avoidance in the learner's own Chinese asks for production; anything else (a miss
+ * on a choice, a word still settling after teaching, the hosted app's due words) is a
+ * quick review.
+ */
+export type Ranked = {
+  target: Target; score: number; reasons: string[]; signals: number; pressing?: boolean; fresh?: boolean;
+  purpose: 'teach' | 'review' | 'weakness';
+};
+const production = new Set<Role>(['needed', 'flawed', 'avoided']);
 
 const day = (at: string) => at.slice(0, 10);
 const ageDays = (at: string | null, now: number) => (at ? Math.max(0, (now - Date.parse(at)) / DAY) : UNKNOWN_AGE_DAYS);
@@ -105,6 +115,7 @@ export function rank(targetList: Target[], signals: Signal[], nowDate = new Date
     let score = 0;
     let pressing = false;
     let fresh = false;
+    let purpose: Ranked['purpose'] = 'review';
 
     const weak = own.filter((s) => weakness[s.role]);
     if (weak.length) {
@@ -117,6 +128,7 @@ export function rank(targetList: Target[], signals: Signal[], nowDate = new Date
         const sum = weak.reduce((total, s) => total + weakness[s.role]! * decay(ageDays(s.at, now)), 0);
         score += sum * (1 - 0.35 * cleanDays);
         pressing = true;
+        if (weak.some((s) => production.has(s.role))) purpose = 'weakness';
         const latest = weak[weak.length - 1];
         reasons.push(
           `${latest.role}${latest.evidence ? ` in “${latest.evidence.slice(0, 40)}”` : ''}` +
@@ -129,6 +141,7 @@ export function rank(targetList: Target[], signals: Signal[], nowDate = new Date
       // the journal or from the old app's stash alike.
       score += decay(ageDays(t.createdAt, now), 21);
       fresh = true;
+      purpose = 'teach';
       reasons.push(t.origin === 'saved' ? 'saved, not practiced yet' : 'in the old stash, never taught');
     }
 
@@ -143,7 +156,7 @@ export function rank(targetList: Target[], signals: Signal[], nowDate = new Date
       score *= 0.3;
       reasons.push('practiced today');
     }
-    if (score > 0) ranked.push({ target: t, score, reasons, signals: own.length, pressing, fresh });
+    if (score > 0) ranked.push({ target: t, score, reasons, signals: own.length, pressing, fresh, purpose });
   }
   ranked.sort((a, b) => b.score - a.score);
   // Backpressure on new words: a daily limit, and none while too much is still open.

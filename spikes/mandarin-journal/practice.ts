@@ -2,14 +2,16 @@ import { demoCapture, requestsCaptureNote } from './situations/capture.ts';
 import { demoIntake, demoStashGlosses } from './word-intake-demo.ts';
 import { demoMedia } from './media/demo.ts';
 import { demoNotice } from './situations/notice.ts';
+import type { Beat, BeatPart, TeachTarget } from './teaching.ts';
 import type { TurnContext, TutorResult } from './tutor.ts';
 
 export type Card = {
   id: string;
-  kind: 'choice' | 'open';
+  kind: 'choice' | 'open' | 'recall';
   prompt: string;
   choices: string[];
   answer: string;
+  accepted?: string[];
   explanation: string;
   source: string;
 };
@@ -92,10 +94,10 @@ function response(reply: string, action: TutorResult['action'] = null): TutorRes
 
 type Exercise = NonNullable<NonNullable<TutorResult['action']>['exercise']>;
 function open(prompt: string, answer: string, explanation: string): Exercise {
-  return { kind: 'open', prompt, answer, explanation, choices: [] };
+  return { kind: 'open', prompt, answer, explanation, choices: [], accepted: [] };
 }
 function choice(prompt: string, choices: string[], answer: string, explanation: string): Exercise {
-  return { kind: 'choice', prompt, choices, answer, explanation };
+  return { kind: 'choice', prompt, choices, answer, explanation, accepted: [] };
 }
 
 type Series = { match: RegExp; title: string; introduction: string; exercises: Exercise[] };
@@ -183,7 +185,7 @@ const series: Series[] = [
     title: 'When your attention shifts',
     introduction: 'Try describing the moment your attention moved to something else.',
     exercises: [
-      catalogue[3]!,
+      { ...catalogue[3]!, accepted: [] },
       open(
         'A friend wonders why lunch took an hour to cook. Describe the recipe search that turned into scrolling restaurant reviews.',
         '我本来想查个菜谱，结果看起餐馆点评来了。',
@@ -202,7 +204,7 @@ const series: Series[] = [
     title: 'Stepping outside for air',
     introduction: 'Think about why someone would step outside partway through an evening.',
     exercises: [
-      catalogue[1]!,
+      { ...catalogue[1]!, accepted: [] },
       open(
         'Dinner is still going on. Tell your friend you want to step out for some air and will be right back.',
         '我出去透透气，马上回来。',
@@ -239,7 +241,7 @@ const series: Series[] = [
     title: 'Restoring damaged data',
     introduction: '修复 is a useful verb when something damaged can be restored.',
     exercises: [
-      catalogue[0]!,
+      { ...catalogue[0]!, accepted: [] },
       open(
         'The old footage was damaged, but a film archive has restored it. Tell a friend what the archive did.',
         '电影资料馆修复了那段受损的影像。',
@@ -329,6 +331,18 @@ function recentEvidence(input: TurnContext): string[] {
 }
 
 function practice(input: TurnContext): TutorResult {
+  // A review asks for typed recall from a short English cue.
+  if (input.practiceWord && /recall exercise/.test(input.message) && input.practiceWord.meaning) {
+    const w = input.practiceWord;
+    const prompt = w.meaning.replace(/\.$/, '') + '.';
+    if (input.previousPrompts?.includes(prompt) || prompt.includes(w.title)) return response('');
+    return response('', {
+      kind: 'practice',
+      title: 'Recall',
+      detail: w.meaning,
+      exercise: { kind: 'recall', prompt, choices: [], accepted: [], answer: w.title, explanation: w.title + (w.pinyin ? ' (' + w.pinyin + ')' : '') + ': ' + w.meaning },
+    });
+  }
   if (input.practiceWord) {
     const w = input.practiceWord;
     const prompt = 'How would you say this in Mandarin? “' + w.translation + '”';
@@ -341,6 +355,7 @@ function practice(input: TurnContext): TutorResult {
         kind: 'open',
         prompt,
         choices: [],
+        accepted: [],
         answer: w.example,
         explanation: 'One natural phrasing is ' + w.example + ' ' + w.meaning,
       },
@@ -359,7 +374,7 @@ function practice(input: TurnContext): TutorResult {
         kind: 'practice',
         title: item.title,
         detail: item.introduction,
-        exercise: { kind, prompt, choices: [...choices], answer, explanation },
+        exercise: { kind, prompt, choices: [...choices], answer, explanation, accepted: [] },
       });
     }
   }
@@ -394,6 +409,51 @@ function stash(input: TurnContext): TutorResult {
   });
 }
 
+// Offline teaching for the fixture's saved words, paced as the live prompt asks:
+// a simple word gets its meaning and an example, a social word more room.
+const zh = (text: string, pinyin: string): BeatPart => ({ kind: 'chinese', text, pinyin });
+const en = (text: string): BeatPart => ({ kind: 'translation', text });
+const say = (text: string): BeatPart => ({ kind: 'text', text });
+const note = (text: string): BeatPart => ({ kind: 'note', text });
+const demoBeats: Record<string, BeatPart[][]> = {
+  透透气: [
+    [say('The library has been warm and quiet for an hour, and your head feels stuffy.')],
+    [zh('屋里太闷了，我出去透透气。', 'Wūli tài mèn le, wǒ chūqu tòutou qì.')],
+    [en('It is stuffy inside. I’m stepping out for some air.')],
+    [note('透气 is letting air through. Doubled as 透透气, it becomes a short, easy break: a few minutes outside, or a change of scene.')],
+    [say('It works for the mind as well as the lungs. After a tense meeting, 出去走走，透透气 says you need to get away from it for a bit.')],
+  ],
+  报备: [
+    [say('Your building’s management wants to know about weekend visitors before they arrive.')],
+    [zh('周末有访客，需要提前向物业报备。', 'Zhōumò yǒu fǎngkè, xūyào tíqián xiàng wùyè bàobèi.')],
+    [en('If you have visitors this weekend, you need to notify the property manager in advance.')],
+    [note('报备 is telling someone who has a right to know, so that it is on record: 向物业报备, 向公司报备.')],
+    [say('Between partners it moves into private life. A friend says that before going out she has to 跟男朋友报备.')],
+    [say('Picture how that sounds. A considerate heads-up, or asking permission?')],
+    [say('It can be either. Said lightly, it is a courtesy; said with a sigh, it suggests someone keeping close track.')],
+  ],
+  分心: [
+    [note('分心 is having your attention pulled away from what you are doing. 分 divides; 心 is the mind.')],
+    [zh('手机一响，我就容易分心。', 'Shǒujī yì xiǎng, wǒ jiù róngyì fēnxīn.')],
+    [en('I get distracted easily when my phone rings.')],
+    [say('容易分心 is the everyday way to say you are easily distracted.')],
+  ],
+  鸟食: [
+    [note('鸟食 is bird food, such as the seed people put out for birds.')],
+    [zh('我在阳台上放了一些鸟食。', 'Wǒ zài yángtái shang fàngle yìxiē niǎoshí.')],
+    [en('I put some bird food out on the balcony.')],
+  ],
+};
+export function demoTeaching(target: TeachTarget): Beat[] {
+  const curated = demoBeats[target.form];
+  const parts: BeatPart[][] = curated ?? [
+    [note(target.form + (target.pinyin ? ' (' + target.pinyin + ')' : '') + (target.gloss ? ': ' + target.gloss : ''))],
+    ...(target.example ? [[{ kind: 'chinese' as const, text: target.example }]] : []),
+    ...(target.example && target.translation ? [[en(target.translation)]] : []),
+  ];
+  return parts.map((beat, i) => ({ id: 'b' + (i + 1), parts: beat }));
+}
+
 export function demoTutor(input: TurnContext): TutorResult {
   const text = input.message.trim();
   const described = text + '\n' + input.source;
@@ -404,6 +464,9 @@ export function demoTutor(input: TurnContext): TutorResult {
       return demoMedia(input);
     case 'notice':
       return { notice: demoNotice(input) };
+    case 'teach':
+      if (!input.teach) throw new Error('Missing teaching target');
+      return { beats: demoTeaching(input.teach) };
     case 'wordIntake':
       if (!input.wordIntake) throw new Error('Missing word intake');
       return { reply: '', action: null, wordDecision: demoIntake(input.wordIntake) };

@@ -4,12 +4,15 @@ import type { CaptureDecision } from './situations/capture.ts';
 import type { WordDecision, WordRequest, WordContent } from './word-intake.ts';
 import type { MediaConsideration, MediaRequest } from './situations/media.ts';
 import type { Notice, NoticeRequest } from './situations/notice.ts';
+import type { RawBeat } from './situations/teach.ts';
+import type { TeachRequest } from './teaching.ts';
 import { instructionsFor, situationFor, situations, type Reflection, type SituationName, type TutorAction } from './situations/index.ts';
 
 export interface TurnContext {
-  trigger: 'capture' | 'ask' | 'miss' | 'practice' | 'reflect' | 'answer' | 'wordIntake' | 'mediaConsider' | 'notice';
+  trigger: 'capture' | 'ask' | 'miss' | 'practice' | 'reflect' | 'answer' | 'wordIntake' | 'mediaConsider' | 'notice' | 'teach';
   captureFollowUp?: { text: string; question: string; previousReply?: string };
   wordIntake?: WordRequest;
+  teach?: TeachRequest;
   notice?: NoticeRequest;
   media?: MediaRequest;
   practiceWord?: { title: string } & WordContent;
@@ -42,6 +45,7 @@ export type TutorResult = {
   observation?: string | null;
   media?: MediaConsideration | null;
   notice?: Notice | null;
+  beats?: RawBeat[] | null;
 };
 
 const recallInput = z.object({

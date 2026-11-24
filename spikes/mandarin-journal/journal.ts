@@ -24,6 +24,7 @@ import {
 } from './annotations.ts';
 export { JournalConflict } from './annotations.ts';
 import { catalogue, demoFriend, demoTutor, type Card } from './practice.ts';
+import { teachingFor, type Beat, type TeachTarget } from './teaching.ts';
 import { friendTurn, tutorTurn, type TurnContext, type TutorResult } from './tutor.ts';
 import { validateTurn, type Reflection as TutorReflection, type SituationName, type SituationOutput, type TutorAction } from './situations/index.ts';
 
@@ -41,6 +42,10 @@ import {
   meta, nextUnjudged, setMeta, targets as recordTargets, upsertTarget, type NewEvent, type JudgmentRecord,
 } from './record.ts';
 import { rank, signalsFrom, type ChoiceJudgment, type Ranked } from './priority.ts';
+import {
+  extend, finishCard, freshAllowed, MAX_ATTEMPTS, MAX_FAILURES, needsCard, newSession, stale,
+  cardSeconds, cardTime, type Purpose, type Session,
+} from './session.ts';
 
 const text = z.string().trim().min(1).max(8000);
 const source = z.string().max(12000);
@@ -147,12 +152,16 @@ type Activity = { id: string; at: string; text: string; source: string; referenc
 // rationale is the tutor's reason for choosing this exercise. It stays with the
 // card and is never treated as evidence about the learner.
 // targets are the forms the journal asked this card to practice, when it asked for any.
-type QueuedCard = Card & { title?: string; introduction?: string; rationale?: string; targets?: string[] };
+// purpose is why the journal asked for it; queued and catalogue cards have none.
+// teaching is the beat sequence that introduces a never-studied target; introduction
+// is the practice generator's own paragraph, shown when teaching is unavailable.
+type QueuedCard = Card & { title?: string; introduction?: string; teaching?: Beat[]; rationale?: string; targets?: string[]; purpose?: Purpose };
 /** What an action records beside the journal: events, and rule judgments made on the spot. */
 type Outbox = { events: NewEvent[]; judgments: JudgmentRecord[]; priority: () => Ranked[] };
 type Item = { word?: WordContent; id: string; kind: string; title: string; detail: string; source: string; reference?: Reference };
 type Result = { correct: boolean | null; feedback: string };
-type Practice = { started?: boolean; mode: string; cards: QueuedCard[]; index: number; result: Result | null };
+// cards holds the whole session in order; index is the card in front of the learner.
+type Practice = { started?: boolean; mode: string; cards: QueuedCard[]; index: number; result: Result | null; session?: Session };
 type State = {
   wordIntakes: WordIntake[];
   tutor: Message[];
@@ -199,13 +208,23 @@ type Backend = {
   friend: (ctx: TurnContext) => Promise<string>;
   mode: 'live' | 'demo';
 };
+// JOURNAL_DEMO_DELAY_MS makes each offline tutor turn take about as long as a
+// live one, to watch background preparation in the browser.
+const demoDelay = Number(process.env.JOURNAL_DEMO_DELAY_MS) || 0;
+const slow = <T>(value: T) => (demoDelay ? new Promise<T>((r) => setTimeout(() => r(value), demoDelay)) : Promise.resolve(value));
 export const engine: Backend = live
   ? { tutor: tutorTurn, friend: friendTurn, mode: 'live' }
-  : { tutor: async (ctx) => demoTutor(ctx), friend: async (ctx) => demoFriend(ctx), mode: 'demo' };
+  : { tutor: async (ctx) => slow(demoTutor(ctx)), friend: async (ctx) => demoFriend(ctx), mode: 'demo' };
 
-function publicState(s: State, mode: Backend['mode']) {
+function publicState(s: State, mode: Backend['mode'], now = new Date()) {
   const p = s.practice,
-    current = p.cards[p.index];
+    session = p.session && !stale(p.session, now) ? p.session : undefined,
+    // An ended session left for a while is put away; the next visit starts a fresh one.
+    putAway = !!p.session && !session,
+    ended = !!session?.ended,
+    current = ended ? undefined : p.cards[p.index],
+    // A generating session with nothing in front of the learner is waiting for its next card.
+    waiting = !!session && !ended && !session.stopped && !current && p.mode !== 'Past mistakes';
   return {
     mode,
     wordIntakes: s.wordIntakes,
@@ -239,10 +258,26 @@ function publicState(s: State, mode: Backend['mode']) {
             prompt: current.prompt,
             choices: current.choices,
             introduction: current.introduction,
+            purpose: current.purpose,
+            teaching: current.teaching,
           }
         : null,
       result: p.result,
-      done: !!p.started && p.index >= p.cards.length,
+      done: ended || (!!p.started && !putAway && p.index >= p.cards.length && !waiting),
+      session: session
+        ? {
+            budgetMinutes: Math.round(session.budget / 60),
+            spentMinutes: Math.round(session.spent / 60),
+            finished: p.index,
+            ready: Math.max(0, p.cards.length - p.index - (current ? 1 : 0)),
+            ended,
+            waiting,
+            stopped: session.stopped ?? null,
+            // Whether finishing the current card spends the rest of the session.
+            last:
+              !!current && session.spent + cardTime(current, session.shownAt, now) >= session.budget,
+          }
+        : null,
     },
   };
 }
@@ -368,98 +403,217 @@ function practiceSources(s: State, mode: string): string[] {
     ),
   ];
 }
+type PracticeSource = { source: string; purpose: Purpose; target?: Ranked['target'] };
 /**
  * Daily mix asks for exercises on the highest-priority targets first, then
- * falls back to recent journal material. Targets already in play are skipped.
+ * falls back to recent journal material. Targets already queued or carded in
+ * this session are skipped. allowed limits how many new words may be offered.
  */
-function prioritySources(s: State, ranked: Ranked[]): { source: string; target: Ranked['target']; teach: boolean }[] {
-  const inPlay = new Set([...s.pending, ...s.practice.cards.slice(s.practice.index)].flatMap((c) => c.targets ?? []));
-  // At most one new word per round, so review and open weaknesses keep their place.
+function prioritySources(s: State, ranked: Ranked[], allowed = 1): PracticeSource[] {
+  const inPlay = new Set([...s.pending, ...s.practice.cards].flatMap((c) => c.targets ?? []));
   let fresh = 0;
   return ranked
-    .filter((r) => !inPlay.has(r.target.form) && (!r.fresh || fresh++ < 1))
+    .filter((r) => !inPlay.has(r.target.form) && (!r.fresh || fresh++ < allowed))
     .slice(0, 6)
     .map((r) => ({
       target: r.target,
-      // A chosen word with no record of study yet is taught before it is practiced.
-      teach: !!r.fresh,
+      purpose: r.purpose,
       source:
         'Target: ' + r.target.form + (r.target.pinyin ? ' (' + r.target.pinyin + ')' : '') +
         (r.target.gloss ? ' · ' + r.target.gloss : '') + '\nWhy now: ' + r.reasons.join('; '),
     }));
 }
-async function startPractice(s: State, mode: string, backend: Backend, continuing: boolean, outbox: Outbox) {
+/** What teaching knows about a target: its reading and gloss, the saved intake example, and why now. */
+function teachTarget(target: Ranked['target'], source: string, saved?: Item): TeachTarget {
+  const why = source.split('\nWhy now: ')[1];
+  const met = saved?.source && saved.source !== saved.title ? 'met in: ' + saved.source : '';
+  return {
+    form: target.form,
+    pinyin: target.pinyin ?? saved?.word?.pinyin ?? null,
+    gloss: target.gloss ?? saved?.word?.meaning ?? null,
+    ...(saved?.word?.example ? { example: saved.word.example, translation: saved.word.translation } : {}),
+    ...(why || met ? { why: [why, met].filter(Boolean).join('; ') } : {}),
+  };
+}
+/** What the next card of the current session could be about, best first. */
+function sessionSources(s: State, ranked: () => Ranked[]): PracticeSource[] {
   const p = s.practice;
-  if (p.mode === mode && p.index < p.cards.length) return;
-  // Switching modes returns unattempted personal cards to the queue.
-  if (p.mode !== mode && p.mode !== 'Past mistakes') {
+  const skipped = new Set(p.session?.skipped ?? []);
+  const prioritized = p.mode === 'Daily mix' ? prioritySources(s, ranked(), freshAllowed(p.cards)) : [];
+  const material = practiceSources(s, p.mode).map((source): PracticeSource => ({ source, purpose: 'material' }));
+  const all = [...prioritized, ...material].filter((x) => !skipped.has(x.source));
+  // Priority targets go in order; plain material rotates, least used first.
+  const uses = p.session?.uses ?? {};
+  const rest = all.filter((x) => x.purpose === 'material').sort((a, b) => (uses[a.source] ?? 0) - (uses[b.source] ?? 0));
+  return [...all.filter((x) => x.purpose !== 'material'), ...rest];
+}
+// The form follows the purpose: a quick choice to review, open production for a
+// weakness in the learner's own Chinese, a light check after teaching.
+const purposeMessage: Record<Purpose, string> = {
+  teach:
+    'Teach the expression named in the supplied source, then offer a light check on it, usually a choice the learner can answer from what you just showed. The learner sees only your reply and the exercise, so never call it “the target”.',
+  review:
+    'A review of the expression named in the supplied source, which the learner has met before. Offer a recall exercise: a concise English cue or a short phrase cloze for which this expression is the natural answer, typed from memory. The learner sees only the exercise, so never call it “the target”.',
+  weakness:
+    'The learner reached for or misused the expression named in the supplied source in their own Chinese. Offer an open exercise: a fresh situation in which they produce it themselves. The learner sees only the exercise, so never call it “the target”.',
+  material: 'Offer a fresh, relevant exercise if this material supports one.',
+};
+/**
+ * Teaching for a card that introduces its expression. Beats come from the
+ * teaching situation; the generator's own reply is the fallback introduction.
+ */
+function teachCard(card: QueuedCard, reply: string, beats: Beat[] | undefined) {
+  if (beats?.length) card.teaching = beats;
+  else card.introduction = reply.trim() || undefined;
+}
+/** The Chinese sentences a teaching sequence showed, so the exercise can move to a fresh situation. */
+const taughtSentences = (beats: Beat[]) =>
+  beats.flatMap((b) => b.parts.filter((p) => p.kind === 'chinese').map((p) => p.text));
+/** One model call for one card. Null when the tutor offered nothing new. Reads s, never writes it. */
+async function generateCard(s: State, pick: PracticeSource, backend: Backend): Promise<QueuedCard | null> {
+  const mode = s.practice.mode;
+  const ctx = context(
+    s,
+    'practice',
+    mode === 'Build vocabulary' ? 'Teach one useful word or sense from the supplied material.' : purposeMessage[pick.purpose],
+    mode,
+    pick.source,
+  );
+  const target = pick.target;
+  const savedWord = s.saved.find(
+    (item) => item.kind === 'Word' && (item.title + ' · ' + item.detail === ctx.source || item.title === target?.form),
+  );
+  if (savedWord?.word) ctx.practiceWord = { title: savedWord.title, ...savedWord.word };
+  else if (target?.gloss)
+    ctx.practiceWord = { title: target.form, pinyin: target.pinyin ?? '', meaning: target.gloss, example: '', translation: '' };
+  ctx.previousPrompts = [...s.attempts.slice(-24).map((a) => a.card.prompt), ...s.practice.cards.map((c) => c.prompt)];
+  // A new word is taught first; the exercise then checks it in a situation the teaching did not use.
+  const beats =
+    pick.purpose === 'teach' && target
+      ? await teachingFor(teachTarget(target, pick.source, savedWord), ctx, async (c) => (await consult(backend, 'teach', c)).beats)
+      : undefined;
+  if (beats?.length)
+    ctx.source += '\nJust taught with these sentences; check the expression in a different situation and sentence: ' + taughtSentences(beats).join(' / ');
+  const response = await consult(backend, 'practiceGen', ctx);
+  const card = exerciseCard(response.action, ctx);
+  // A repeat of a served or queued prompt is skipped like an empty turn, not a failure.
+  if (!card || ctx.previousPrompts.includes(card.prompt) || s.pending.some((c) => c.prompt === card.prompt)) return null;
+  card.purpose = pick.purpose;
+  if (target) card.targets = [target.form];
+  if (mode === 'Build vocabulary' || pick.purpose === 'teach') teachCard(card, response.reply, beats);
+  return card;
+}
+/**
+ * Applies one generation to the current session: a new card at the end, a note
+ * that a source gave nothing, or a failure. Appending never touches the card in
+ * front of the learner or its answer.
+ */
+function applyGenerated(s: State, pick: PracticeSource | undefined, outcome: QueuedCard | null | 'failed', now: Date) {
+  const p = s.practice;
+  const session = p.session;
+  if (!session) throw new Error('No practice session to prepare for');
+  session.attempts++;
+  if (!pick) session.stopped = 'exhausted';
+  else if (outcome === 'failed') {
+    if (++session.failures >= MAX_FAILURES) {
+      session.stopped = 'failed';
+      s.notice = 'The tutor could not prepare more practice this time.';
+    }
+  } else if (
+    !outcome ||
+    p.cards.some((c) => c.prompt === outcome.prompt) ||
+    s.pending.some((c) => c.prompt === outcome.prompt) ||
+    s.attempts.slice(-24).some((a) => a.card.prompt === outcome.prompt)
+  ) {
+    session.skipped.push(pick.source);
+    // Each empty turn costs a model call while the learner may be waiting.
+    if ((session.empties = (session.empties ?? 0) + 1) >= MAX_EMPTIES) session.stopped = 'exhausted';
+  } else if (!outcome.targets?.some((form) => p.cards.some((c) => c.targets?.includes(form)))) {
+    p.cards.push(outcome);
+    session.failures = 0;
+    session.empties = 0;
+    if (pick.purpose === 'material') session.uses[pick.source] = (session.uses[pick.source] ?? 0) + 1;
+    // A learner waiting for this card sees it now.
+    if (p.index === p.cards.length - 1 && !session.ended) session.shownAt = now.toISOString();
+  }
+  if (session.attempts >= MAX_ATTEMPTS && !session.stopped) session.stopped = 'exhausted';
+}
+/** Prepares the card in front of the learner inside the action, when nothing is ready. */
+const MAX_EMPTIES = 3;
+async function generateNow(s: State, backend: Backend, ranked: () => Ranked[], now: Date) {
+  // The learner waits for this card. A new word needs teaching first (two model
+  // calls), so another priority item opens the session when there is one.
+  const sources = sessionSources(s, ranked);
+  const pick =
+    sources[0]?.purpose === 'teach'
+      ? (sources.find((source) => source.purpose === 'review' || source.purpose === 'weakness') ?? sources[0])
+      : sources[0];
+  let outcome: QueuedCard | null | 'failed' = null;
+  if (pick)
+    try {
+      outcome = await generateCard(s, pick, backend);
+    } catch {
+      outcome = 'failed';
+    }
+  applyGenerated(s, pick, outcome, now);
+}
+/** Choice cards whose latest attempt was a miss, newest first, as many as the budget holds. */
+function missedCards(s: State, budget: number): QueuedCard[] {
+  const latest = new Map(s.attempts.map((a) => [a.card.id, a]));
+  const missed = [...latest.values()].reverse().filter((a) => a.result.correct === false).map((a) => a.card);
+  let total = 0;
+  return missed.filter((c, i) => (total += cardSeconds(c)) <= budget || i === 0);
+}
+/**
+ * Starts a practice session, or with keepGoing extends a finished one by another
+ * chunk. The first card arrives in this action; the rest are prepared in the
+ * background (preparePractice in openJournal).
+ */
+async function startPractice(s: State, mode: string, backend: Backend, keepGoing: boolean, outbox: Outbox) {
+  const p = s.practice;
+  const now = new Date();
+  const session = p.session && !stale(p.session, now) ? p.session : undefined;
+  const generates = mode !== 'Past mistakes';
+  if (p.mode === mode && session) {
+    // A card is in front of the learner, or one is being prepared.
+    if (!session.ended && (p.index < p.cards.length || (generates && !session.stopped))) return;
+    if (keepGoing) {
+      extend(session, now);
+      if (!generates) {
+        // Another round over what is still missed.
+        p.cards = missedCards(s, session.budget - session.spent);
+        p.index = 0;
+        p.result = null;
+      } else if (p.index >= p.cards.length) await generateNow(s, backend, outbox.priority, now);
+      session.shownAt = p.index < p.cards.length ? now.toISOString() : null;
+      return;
+    }
+  }
+  // A replaced session returns unattempted personal cards to the queue.
+  if (p.mode !== 'Past mistakes') {
     const remaining = p.cards.slice(p.index + (p.result ? 1 : 0));
     s.pending.unshift(...remaining.filter((c) => !catalogue.some((seed) => seed.id === c.id)));
   }
-  let cards: QueuedCard[] = [];
-  if (mode === 'Past mistakes') {
-    const latest = new Map(s.attempts.map((a) => [a.card.id, a]));
-    cards = [...latest.values()]
-      .reverse()
-      .filter((a) => a.result.correct === false)
-      .slice(0, 4)
-      .map((a) => a.card);
-  } else {
-    cards = s.pending.splice(0, 3);
-    const material = practiceSources(s, mode).map((source) => ({ source, target: undefined }));
-    const prioritized = mode === 'Daily mix' ? prioritySources(s, outbox.priority()) : [];
-    const sources: { source: string; target?: Ranked['target']; teach?: boolean }[] = [...prioritized, ...material];
-    // The first visit opens quickly. Each explicit continuation can draw on more journal material.
-    const budget = continuing ? 3 : cards.length ? 0 : 1;
-    const previousPrompts = s.attempts.slice(-24).map((a) => a.card.prompt);
-    for (let n = 0; n < budget && cards.length < 3 && sources.length; n++) {
-      // Priority targets go in order; plain material rotates as before.
-      const index = prioritized.length ? n % sources.length : continuing ? (s.attempts.length + n) % sources.length : 0;
-      const { source, target, teach } = sources[index];
-      const ctx = context(
-        s,
-        'practice',
-        mode === 'Build vocabulary'
-          ? 'Teach one useful word or sense from the supplied material.'
-          : teach
-            ? 'Teach the expression named in the supplied source, then offer an exercise on it. The learner sees only your reply and the exercise, so never call it “the target”.'
-            : target
-            ? 'Offer a fresh exercise that practices the expression named in the supplied source. The learner sees only the exercise, so never call it “the target”.'
-            : 'Offer a fresh, relevant exercise if this material supports one.',
-        mode,
-        source,
-      );
-      const savedWord = s.saved.find(
-        (item) => item.kind === 'Word' && (item.title + ' · ' + item.detail === ctx.source || item.title === target?.form),
-      );
-      if (savedWord?.word) ctx.practiceWord = { title: savedWord.title, ...savedWord.word };
-      else if (target?.gloss)
-        ctx.practiceWord = { title: target.form, pinyin: target.pinyin ?? '', meaning: target.gloss, example: '', translation: '' };
-      ctx.previousPrompts = [...previousPrompts, ...cards.map((c) => c.prompt)];
-      try {
-        const response = await consult(backend, 'practiceGen', ctx);
-        const fresh = exerciseCard(response.action, ctx);
-        // A repeat of a served or queued prompt is skipped like an empty turn, not a failure.
-        if (!fresh || ctx.previousPrompts.includes(fresh.prompt) || s.pending.some((c) => c.prompt === fresh.prompt))
-          continue;
-        if (mode === 'Build vocabulary' || teach) fresh.introduction = response.reply.trim() || undefined;
-        if (target) fresh.targets = [target.form];
-        cards.push(fresh);
-      } catch {
-        s.notice = 'The tutor could not prepare more practice this time.';
-        break;
+  const fresh = newSession(now);
+  s.practice = { started: true, mode, cards: [], index: 0, result: null, session: fresh };
+  if (!generates) s.practice.cards = missedCards(s, fresh.budget);
+  else {
+    s.practice.cards = s.pending.splice(0, 3);
+    // The first card costs at most one model call; the rest are prepared ahead.
+    if (!s.practice.cards.length) {
+      if (sessionSources(s, outbox.priority).length) await generateNow(s, backend, outbox.priority, now);
+      else {
+        // A fresh journal has no material yet: the starter catalogue.
+        const seen = new Map(s.attempts.map((attempt, i) => [attempt.card.id, i]));
+        s.practice.cards = catalogue
+          .filter((c) => mode !== 'Build vocabulary' || c.source.startsWith('Build vocabulary'))
+          .sort((a, b) => (seen.get(a.id) ?? -1) - (seen.get(b.id) ?? -1))
+          .slice(0, 3);
+        fresh.stopped = 'exhausted';
       }
     }
-    if (!sources.length && !cards.length && !s.notice) {
-      const seen = new Map(s.attempts.map((attempt, i) => [attempt.card.id, i]));
-      cards = catalogue
-        .filter((c) => mode !== 'Build vocabulary' || c.source.startsWith('Build vocabulary'))
-        .sort((a, b) => (seen.get(a.id) ?? -1) - (seen.get(b.id) ?? -1))
-        .slice(0, 3);
-    }
-    if (sources.length && !cards.length && !s.notice) s.notice = 'No fresh follow-up from this material yet.';
   }
-  s.practice = { started: true, mode, cards, index: 0, result: null };
+  fresh.shownAt = s.practice.cards.length ? now.toISOString() : null;
 }
 
 function resolveReference(s: State, key: string, supplied: string): { reference: Reference; source: string } {
@@ -686,14 +840,21 @@ function answerEvent(attempt: Attempt, at: string | null): NewEvent {
       kind: c.kind, prompt: c.prompt, reference: c.answer, explanation: c.explanation,
       correct: attempt.result.correct, tutorSaid: attempt.result.feedback,
       // A card that introduced its target taught it.
-      taught: !!c.introduction && !!c.targets?.length,
+      taught: (!!c.introduction || !!c.teaching?.length) && !!c.targets?.length,
+      purpose: c.purpose ?? null,
     },
     targets: c.targets ?? [],
   };
 }
-function choiceJudgment(eventId: string, correct: boolean, targets: string[], at: string): JudgmentRecord {
+function choiceJudgment(eventId: string, correct: boolean, targets: string[], at: string, kind: 'choice' | 'recall' = 'choice'): JudgmentRecord {
   const body: ChoiceJudgment = { correct, targets };
-  return { id: randomUUID(), eventId, at, source: 'rule:choice-v1', body };
+  return { id: randomUUID(), eventId, at, source: kind === 'recall' ? 'rule:recall-v1' : 'rule:choice-v1', body };
+}
+/** Spacing and sentence punctuation are not part of a typed recall. */
+const normalized = (text: string) => text.normalize('NFKC').replace(/[\s。．.，,！!？?、“”"'「」]/g, '');
+function recalled(card: QueuedCard, answer: string) {
+  const typed = normalized(answer);
+  return [card.answer, ...(card.accepted ?? [])].some((form) => normalized(form) === typed);
 }
 
 async function mutate(
@@ -890,15 +1051,19 @@ async function mutate(
       if (!c || a.cardId !== c.id) throw new JournalConflict('This exercise changed. Refresh the session.');
       if (a.type === 'next') {
         if (!p.result) throw new JournalConflict('Answer before continuing.');
-        p.index++;
+        finishCard(p, new Date(now));
         p.result = null;
         return;
       }
       if (p.result) throw new JournalConflict('This exercise already has an answer.');
       if (c.kind === 'choice' && !c.choices.includes(a.answer))
         throw new JournalConflict('Choose one of the offered expressions.');
-      const correct = c.kind === 'choice' ? a.answer === c.answer : null;
-      const result = { correct, feedback: c.explanation };
+      const correct = c.kind === 'choice' ? a.answer === c.answer : c.kind === 'recall' ? recalled(c, a.answer) : null;
+      // A typed recall shows the expected form with its explanation, right or wrong.
+      const result = {
+        correct,
+        feedback: c.kind === 'recall' && !c.explanation.startsWith(c.answer) ? c.answer + ' · ' + c.explanation : c.explanation,
+      };
       if (correct !== true) {
         const ctx = context(
           s,
@@ -915,7 +1080,7 @@ async function mutate(
         try {
           const response = await consult(backend, 'feedback', ctx);
           if (response.reply.trim()) {
-            result.feedback = c.kind === 'open' ? response.reply : c.explanation + '\n' + response.reply;
+            result.feedback = c.kind === 'open' ? response.reply : result.feedback + '\n' + response.reply;
             // Keep the full reaction on the attempt; link the answer in the shared stream.
             if (response.observation)
               s.tutor.push({
@@ -933,8 +1098,8 @@ async function mutate(
       p.result = result;
       s.attempts.push({ id: a.id, card: c, answer: a.answer, result });
       outbox.events.push(answerEvent(s.attempts[s.attempts.length - 1], now));
-      if (c.kind === 'choice' && c.targets?.length)
-        outbox.judgments.push(choiceJudgment(a.id, correct === true, c.targets, now));
+      if (c.kind !== 'open' && c.targets?.length)
+        outbox.judgments.push(choiceJudgment(a.id, correct === true, c.targets, now, c.kind));
       return;
     }
   }
@@ -1054,8 +1219,8 @@ function convertHistory(s: State): Outbox {
   }
   for (const attempt of s.attempts) {
     out.events.push(answerEvent(attempt, null));
-    if (attempt.card.kind === 'choice' && attempt.card.targets?.length)
-      out.judgments.push(choiceJudgment(attempt.id, attempt.result.correct === true, attempt.card.targets, new Date().toISOString()));
+    if (attempt.card.kind !== 'open' && attempt.card.targets?.length)
+      out.judgments.push(choiceJudgment(attempt.id, attempt.result.correct === true, attempt.card.targets, new Date().toISOString(), attempt.card.kind));
   }
   for (const intake of s.wordIntakes)
     out.events.push({ id: 'history-word-' + intake.id, at: null, kind: 'addWord', surface: 'home', text: intake.text, context: { context: intake.context } });
@@ -1288,6 +1453,39 @@ export function openJournal(path: string, backend: Backend = engine) {
       });
     }
   }
+  // Keeps a practice session's next cards ready, one model call at a time, so the
+  // learner never waits on generation between cards. The commit re-reads the
+  // journal and appends to the same session only, after any answer given meanwhile.
+  async function preparePractice() {
+    while (!closed) {
+      const { s } = read();
+      const session = s.practice.session;
+      if (!session || !needsCard(s.practice)) return;
+      const pick = sessionSources(s, () => priorityOf(db))[0];
+      let outcome: QueuedCard | null | 'failed' = null;
+      if (pick)
+        try {
+          outcome = await generateCard(s, pick, backend);
+        } catch {
+          outcome = 'failed';
+        }
+      await enqueue(() => {
+        if (closed) return;
+        db.exec('BEGIN IMMEDIATE');
+        try {
+          const { s: latest } = read();
+          if (latest.practice.session?.id === session.id && latest.practice.mode === s.practice.mode) {
+            applyGenerated(latest, pick, outcome, new Date());
+            db.prepare('UPDATE journal SET body=?,revision=revision+1 WHERE id=1').run(JSON.stringify(latest));
+          }
+          db.exec('COMMIT');
+        } catch (error) {
+          db.exec('ROLLBACK');
+          throw error;
+        }
+      });
+    }
+  }
   // Model work runs outside the user action queue; see prepareWords.
   function worker(task: () => Promise<void>) {
     let running = false;
@@ -1317,6 +1515,7 @@ export function openJournal(path: string, backend: Backend = engine) {
   const words = worker(prepareWords);
   const media = worker(prepareMedia);
   const notices = worker(prepareNotices);
+  const practice = worker(preparePractice);
   const wakeWords = words.wake;
   const wakeMedia = media.wake;
 
@@ -1362,18 +1561,20 @@ export function openJournal(path: string, backend: Backend = engine) {
     if (s.wordIntakes.some(item => item.status === 'pending')) wakeWords();
     if (s.mediaJobs.some((job) => job.status === 'pending')) wakeMedia();
     if (outbox.events.length) notices.wake();
+    if (needsCard(s.practice)) practice.wake();
     return result();
   }
   wakeWords();
   wakeMedia();
   notices.wake();
+  practice.wake();
   return {
     get: () => publicState(read().s, backend.mode),
-    /** Whether background word or media work is pending or running. */
+    /** Whether background word, media, notice or practice work is pending or running. */
     busy() {
       const { s } = read();
       return (
-        words.busy() || media.busy() || notices.busy() ||
+        words.busy() || media.busy() || notices.busy() || practice.busy() || needsCard(s.practice) ||
         (!!nextUnjudged(db, noticeSource, judgeFrom) && (backend.mode !== 'live' || judgedToday(db) < NOTICE_DAILY_LIMIT)) ||
         s.wordIntakes.some((item) => item.status === 'pending') ||
         (s.mediaJobs.some((job) => job.status === 'pending') && ranToday(s) < DAILY_LIMIT && s.settings.pictures !== 'off')

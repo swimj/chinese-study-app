@@ -238,6 +238,51 @@ textarea {
   overflow-wrap: anywhere;
   max-width: 100%;
 }
+.session-progress {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px 12px;
+  color: var(--quiet);
+  font-size: 0.9rem;
+  margin: -12px 0 18px;
+}
+.session-progress progress {
+  appearance: none;
+  flex: 1 1 8rem;
+  max-width: 16rem;
+  height: 4px;
+  border: 0;
+  border-radius: 2px;
+  background: var(--tint);
+  color: var(--solid);
+}
+.session-progress progress::-webkit-progress-bar { background: var(--tint); border-radius: 2px; }
+.session-progress progress::-webkit-progress-value { background: var(--solid); border-radius: 2px; }
+.session-progress progress::-moz-progress-bar { background: var(--solid); border-radius: 2px; }
+.session-waiting {
+  font: 500 clamp(19px, 2.2vw, 24px) / 1.5 var(--serif);
+  color: var(--quiet);
+  margin: 18px 0;
+  animation: session-breathe 2.4s ease-in-out infinite;
+}
+@keyframes session-breathe {
+  50% { opacity: 0.55; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .session-waiting { animation: none; }
+}
+/* Focus kept on a prompt, status or heading after the card changes; the controls keep their ring. */
+#practice-body [tabindex='-1']:focus {
+  outline: none;
+}
+.session-end h2 {
+  font: 500 clamp(26px, 3.4vw, 38px) / 1.25 var(--serif);
+  margin: 18px 0 4px;
+}
+.session-end .sub {
+  margin: 0 0 18px;
+}
 .result {
   border-top: 1px solid var(--line);
   margin: 17px 0 0;
@@ -625,6 +670,50 @@ footer {
   white-space: pre-wrap;
   overflow-wrap: anywhere;
 }
+.teaching {
+  margin: 18px 0 8px;
+  max-width: 42rem;
+}
+.beats {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.beat {
+  padding: 4px 0 4px 16px;
+  border-inline-start: 3px solid var(--line);
+  overflow-wrap: anywhere;
+}
+.beat.current {
+  border-inline-start-color: var(--solid);
+}
+.beat + .beat {
+  margin-top: 6px;
+}
+.beat p {
+  margin: 6px 0;
+}
+.beat-chinese {
+  font: clamp(1.25rem, 1rem + 0.8vw, 1.625rem) / 1.6 var(--han);
+}
+.beat-pinyin,
+.beat-translation {
+  color: var(--quiet);
+}
+.beat .beat-pinyin {
+  margin-top: 0;
+}
+.beat-note {
+  background: var(--tint);
+  padding: 8px 12px;
+  border-radius: 4px;
+}
+.teaching-next {
+  margin-top: 16px;
+}
+.teaching + .exercise .prompt {
+  margin-top: 28px;
+}
 
 /* Reserve room for open marginalia alongside the source on a wide desk. */
 @media (min-width: 70rem) {
@@ -661,3 +750,11 @@ footer {
 
 .masthead { flex-wrap: wrap; gap: .2rem 1.2rem; }
 .masthead nav { display: flex; align-items: baseline; gap: .4rem 1.2rem; flex-wrap: wrap; }
+.recall input {
+  display: block;
+  width: 100%;
+  max-width: 16rem;
+  margin-top: .4rem;
+  font-size: 1.25rem;
+}
+.recall button { margin-top: .75rem; }
