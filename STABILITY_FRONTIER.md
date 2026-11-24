@@ -19,6 +19,12 @@ and content repair have
 separate authority. Simple initial policies can evolve without replacing those
 boundaries. This snapshot does not certify deployment or operational readiness.
 
+The hosted app is paused as a prototype. The scrapbook journal in
+`spikes/mandarin-journal/` is planned to replace it above a bare shell, with
+every learner moving to a fresh start at once; its
+[learning model](spikes/mandarin-journal/MODEL.md) holds that direction and
+its principles. This frontier still governs changes to the hosted app.
+
 The [Steward workspace](AGENTS.md#11-project-context-and-task-scope) and direct
 task instructions carry current product priorities. This frontier describes
 the architectural boundary for implementation.

@@ -48,6 +48,7 @@ read before every edit.
 | Change persistence or schema | [Database map](docs/server-db.md) and [migration guide](docs/ops/schema-migrations.md#writing-the-next-migration) |
 | Operate or release the hosted service | [Release and maintenance runbook](docs/ops/hosted-beta-deployment.md), including its agent terminal-driver procedure; [offline migrations](docs/ops/schema-migrations.md) for schema-changing work |
 | Find configuration | [Configuration reference](docs/architecture.md#configuration), [.env.example](.env.example), and the relevant operations guide |
+| Change what the journal practices, teaches or records, or plan its move into the hosted app | [Journal learning model](spikes/mandarin-journal/MODEL.md): the product direction and principles; the hosted app is a prototype to be replaced, so its contracts do not automatically bind the journal |
 | Run or test the Mandarin journal spike | [Journal runbook](spikes/mandarin-journal/RUNBOOK.md): use the per-checkout fixture by default; never open Justin's live journal from a worktree |
 
 Existing documents are sources to reconcile against the documentation target;
