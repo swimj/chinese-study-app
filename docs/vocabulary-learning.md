@@ -312,26 +312,36 @@ the day active time at which this session wraps up, pressing keys, and each admi
 item's classic due date and prior-lapse flag. That context stays server-side; the
 client receives only `timed` state (wrap-up, Study a little more, active time, note).
 
-Timed admission (`server/vocabulary/timed-admission.ts`) caps each stream on its own
-terms and shares no capacity between them. New words take ready reserve hints up to
-the day's remaining quota; learning takes every due Solidify word. Review words and
-due fragile pure cues share one bound of five items per minute of the session's
-allowance (`untilDayActiveMs - dayActiveMsAtStart`: 100 for a fresh 20-minute day,
-25 for a five-minute entry into a spent day). They share one urgency order: a
-review word at its most urgent due objective (time since study over its interval),
-a fragile cue by how far past its due date it is in intervals, plus one; equal
-urgency keeps the review ranking's own tie order, words ahead of cues. An item at
-urgency 2 or more (`PRESSING_OVERDUE_URGENCY`, overdue by a full interval) that has
-study history is pressing; the admitted ones are frozen as `pressingKeys`.
-The walk checks content for each candidate as it reaches it and stops once the bound
-is filled, so a failing candidate is replaced by the next in rank and the rest are
-never checked. Every due strong-cue recheck is admitted ahead of the bound (a due
-fragile-cue recheck is ranked with the fragile cues); strong-cue
-maintenance draws today's rolled cues with slots scaled to the admitted review items.
-Untimed Start keeps the 1,000-item cap and 50/30/20 allocation.
+[Timed admission](../server/vocabulary/timed-admission.ts) caps each stream on its
+own terms and shares no capacity between them. New words take ready reserve hints
+up to the day's remaining quota; learning takes every eligible due Solidify word
+with usable content. Review words and due fragile pure cues share one bound of
+five items per minute of the session's allowance (`untilDayActiveMs - dayActiveMsAtStart`:
+100 for a fresh 20-minute day, 25 for a five-minute entry into a spent day).
+
+A review objective must pass its due-time and eligibility checks to enter the
+ranking. For a studied objective, urgency is elapsed time since last study
+divided by its interval; an objective without study history ranks first but
+does not count toward Pressing. A due fragile cue's urgency is one plus elapsed
+time past its due time divided by its interval. Review words rank by their
+highest-ranked due objective; equal urgency keeps the review ranking's own tie
+order, words ahead of cues.
+
+A review word qualifies as Pressing if any studied due objective has urgency 2
+or more (`PRESSING_OVERDUE_URGENCY`); a fragile cue needs both study history and
+urgency 2 or more. Admission checks a word's due objectives in rank order and
+uses the first with usable content, which can differ from the one that made it
+Pressing. The walk skips unusable candidates and stops checking once the bound
+is filled. Only admitted review words and fragile cues that meet the Pressing
+threshold are frozen as `pressingKeys`.
+
+Usable due strong-cue rechecks are placed first and do not count toward the
+shared bound; due fragile-cue rechecks rank with the other fragile cues. Strong-cue
+maintenance draws today's rolled cues with slots scaled to the admitted review
+items. Untimed Start keeps the 1,000-item cap and 50/30/20 allocation.
 
 Selection treats Solidify words, any started item still owed work (teaching begun, a
-missed review or pure cue) and those overdue held items as pressing. While any is
+missed review or pure cue) and items in `pressingKeys` as pressing. While any is
 still available, a not-yet-started new word does not begin. Each appearance rests an
 item for a seeded random 2–5 cards. Seven picks in ten choose at random among rested
 pressing items (`server/vocabulary/timed-selection.ts`); the rest, and any pick with
