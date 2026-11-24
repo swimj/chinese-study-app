@@ -103,7 +103,8 @@ export function createAnnotations({ submit, getState, canSubmit, lookupPassage, 
   gloss.setAttribute('aria-live', 'polite');
   const chunks = element('p', 'an-chunks');
   chunks.lang = 'zh';
-  const flag = button('an-flag', 'Mark as wrong');
+  const check = button('an-lookup-action', 'Check in context');
+  const flag = button('an-lookup-action', 'Mark as wrong');
   const feedbackError = element('span', 'an-feedback-error');
   feedbackError.setAttribute('role', 'status');
   const closeLookup = button('an-close-lookup', '×');
@@ -111,7 +112,7 @@ export function createAnnotations({ submit, getState, canSubmit, lookupPassage, 
   closeLookup.setAttribute('aria-keyshortcuts', 'Escape');
   closeLookup.title = 'Close lookup (Esc)';
   termLine.append(spelling, pronunciation, closeLookup);
-  dictionary.append(termLine, gloss, chunks, flag, feedbackError);
+  dictionary.append(termLine, gloss, chunks, check, flag, feedbackError);
   const quickActions = element('div', 'an-quick-actions');
   const capture = button('an-capture', 'Save');
   const compose = button('an-compose', 'Ask');
@@ -377,8 +378,14 @@ export function createAnnotations({ submit, getState, canSubmit, lookupPassage, 
       undefined, document.activeElement);
   }
 
-  function updateFlag() {
-    flag.hidden = !lookup?.id;
+  function updateLookupActions() {
+    const quickAnswer = lookup?.answer && lookup.route !== 'context';
+    check.hidden = !quickAnswer;
+    check.disabled = !lookup?.canCheckContext;
+    check.setAttribute('aria-disabled', String(check.disabled || Boolean(lookup?.checkingFrom)));
+    check.textContent = lookup?.checkingFrom ? 'Checking…'
+      : check.disabled ? 'Check in context (unavailable)' : 'Check in context';
+    flag.hidden = !lookup?.answer || lookup.route !== 'context';
     flag.disabled = Boolean(lookup?.flagged || lookup?.flagPending);
     flag.textContent = lookup?.flagged ? 'Marked as wrong' : 'Mark as wrong';
     feedbackError.textContent = lookup?.feedbackError || '';
@@ -386,10 +393,10 @@ export function createAnnotations({ submit, getState, canSubmit, lookupPassage, 
 
   flag.onclick = async () => {
     const entry = lookup;
-    if (!entry?.id || flag.disabled) return;
+    if (!entry?.id || flag.hidden || flag.disabled) return;
     entry.flagPending = true;
     entry.feedbackError = '';
-    updateFlag();
+    updateLookupActions();
     try {
       await flagLookup(entry.id);
       entry.flagged = true;
@@ -397,7 +404,7 @@ export function createAnnotations({ submit, getState, canSubmit, lookupPassage, 
       entry.feedbackError = 'Couldn’t record feedback. Try again.';
     } finally {
       entry.flagPending = false;
-      if (lookup === entry) { updateFlag(); position(); }
+      if (lookup === entry) { updateLookupActions(); position(); }
     }
   };
 
@@ -410,8 +417,9 @@ export function createAnnotations({ submit, getState, canSubmit, lookupPassage, 
     toolbar.removeAttribute('aria-describedby');
     dictionary.hidden = !entry;
     capture.hidden = withNote.hidden = !reading;
-    inspect.hidden = !reading || Boolean(entry && !entry.error);
-    inspect.textContent = entry?.error ? 'Retry lookup' : 'Look up';
+    const retry = entry?.error || entry?.route === 'unavailable';
+    inspect.hidden = !reading || Boolean(entry && !retry);
+    inspect.textContent = retry ? 'Retry lookup' : 'Look up';
     compose.textContent = reading ? 'Ask' : 'Quote';
     toolbar.classList.toggle('has-gloss', Boolean(entry));
     if (entry) {
@@ -424,7 +432,7 @@ export function createAnnotations({ submit, getState, canSubmit, lookupPassage, 
           if (/\p{Script=Han}/u.test(glyph)) {
             const narrow = button('an-character', glyph);
             narrow.setAttribute('aria-label', 'Look up ' + glyph);
-            narrow.onclick = () => startLookup(piece, 'selection', trigger, entry);
+            narrow.onclick = () => startLookup(piece, 'selection', trigger, entry.checkingFrom || entry);
             spelling.append(narrow);
           } else spelling.append(glyph);
           start = piece.endOffset;
@@ -446,7 +454,7 @@ export function createAnnotations({ submit, getState, canSubmit, lookupPassage, 
       chunks.hidden = !chunks.textContent;
       toolbar.setAttribute('aria-describedby', gloss.id);
     }
-    updateFlag();
+    updateLookupActions();
     updateCapture();
     toolbar.hidden = false;
     paintLookup();
@@ -456,34 +464,50 @@ export function createAnnotations({ submit, getState, canSubmit, lookupPassage, 
     }
   }
 
-  async function startLookup(anchor, kind, trigger, whole) {
-    const block = startBlock(anchor);
+  // The displayed quote can expand after a tap. Keep its original gesture for retries.
+  function startLookup(original, kind, trigger, whole) {
+    requestLookup({ anchor: original, original, kind, whole, pending: true }, trigger, {
+      documentId: original.ownerId, blockId: original.startId,
+      ...(original.startId !== original.endId ? { endBlockId: original.endId } : {}),
+      kind, start: original.startOffset, end: original.endOffset,
+    });
+  }
+
+  check.onclick = () => {
+    if (check.hidden || check.disabled || lookup.checkingFrom) return;
+    requestLookup({ ...lookup, checkingFrom: lookup, feedbackError: '' }, lookupTrigger,
+      { previousDecisionId: lookup.id });
+  };
+
+  async function requestLookup(entry, trigger, request) {
+    const block = startBlock(entry.original);
     if (!block) return;
-    const entry = { anchor, kind, whole, pending: true };
-    // Keep Save and Ask available for the visible quote while its lookup runs.
-    offer(anchor, entry, trigger);
+    offer(entry.anchor, entry, trigger);
     try {
-      const result = await lookupPassage({ documentId: anchor.ownerId, blockId: anchor.startId,
-        ...(anchor.startId !== anchor.endId ? { endBlockId: anchor.endId } : {}),
-        kind, start: anchor.startOffset, end: anchor.endOffset });
+      const result = await lookupPassage(request);
       if (lookup !== entry || !block.isConnected) return;
-      if (kind === 'tap') {
+      if (entry.kind === 'tap') {
         const quote = block.textContent.slice(result.start, result.end);
-        entry.anchor = { ...anchor, startOffset: result.start, endOffset: result.end, quote };
+        entry.anchor = { ...entry.original, startOffset: result.start, endOffset: result.end, quote };
       }
       entry.id = result.id;
+      entry.route = result.route;
+      entry.canCheckContext = result.canCheckContext;
       entry.answer = result.answer;
     } catch {
       if (lookup !== entry || !block.isConnected) return;
-      entry.error = 'Couldn’t look up this passage.';
+      if (entry.checkingFrom) entry.feedbackError = 'Couldn’t check this passage. Try again.';
+      else entry.error = 'Couldn’t look up this passage.';
     }
     entry.pending = false;
+    entry.checkingFrom = undefined;
     offer(entry.anchor, entry, trigger);
   }
 
   inspect.onclick = () => {
     if (!candidate) return;
-    startLookup(candidate, lookup?.kind || 'selection', lookupTrigger || startBlock(candidate)?.parentElement, lookup?.whole);
+    startLookup(lookup?.original || candidate, lookup?.kind || 'selection',
+      lookupTrigger || startBlock(candidate)?.parentElement, lookup?.whole);
     if (document.activeElement === inspect || document.activeElement === document.body) {
       (capture.disabled ? compose : capture).focus({ preventScroll: true });
     }
@@ -651,7 +675,7 @@ export function createAnnotations({ submit, getState, canSubmit, lookupPassage, 
     const rect = toolbar.getBoundingClientRect();
     const keyboard = toolbar.contains(document.activeElement);
     if (!await submit({ type: 'captureReading', anchor })) return;
-    if (!candidate || (activeLookup ? lookup !== activeLookup : anchorKey(candidate) !== anchorKey(anchor))) return;
+    if (!candidate || lookup !== activeLookup || anchorKey(candidate) !== anchorKey(anchor)) return;
     window.getSelection()?.removeAllRanges();
     clearCandidate();
     if (keyboard) target?.focus({ preventScroll: true });

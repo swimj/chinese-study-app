@@ -6,10 +6,27 @@ import type { LookupInput, LookupAnswer } from './reader-dictionary.ts';
 
 export const feedbackRequest = z.strictObject({ id: z.string().uuid() });
 
-type Decision = {
+export type Decision = {
+  trigger?: 'gesture' | 'check_in_context';
+  previousDecisionId?: string;
+  revision?: { spanChanged: boolean; readingChanged: boolean; glossChanged: boolean };
   documentId: string; blockId: string; endBlockId: string; sourceEnd: number; input: LookupInput; startedAt: string;
   result: { route: string; start: number; end: number; answer: LookupAnswer | null; evidence: object };
 };
+
+export type ReaderDecisionRow = Decision & {
+  version: 1; id: string; completedAt: string;
+  feedback: { type: 'marked_wrong'; at: string } | null;
+};
+
+export function compareAnswers(previous: Decision['result'], current: Decision['result']) {
+  if (!previous.answer || !current.answer) throw new Error('Comparison requires two lookup answers');
+  return {
+    spanChanged: previous.start !== current.start || previous.end !== current.end,
+    readingChanged: previous.answer.pinyin !== current.answer.pinyin,
+    glossChanged: previous.answer.gloss !== current.answer.gloss,
+  };
+}
 
 // Publish a complete immutable record. An exclusive link also makes simultaneous
 // feedback submissions and retries preserve the first feedback timestamp.
@@ -28,8 +45,16 @@ function publish(directory: string, name: string, value: unknown) {
 
 export function readerLedger(databasePath: string) {
   const directory = databasePath + '.lookups';
+  function get(id: string): ReaderDecisionRow | null {
+    feedbackRequest.parse({ id });
+    const path = join(directory, id + '.json');
+    if (!existsSync(path)) return null;
+    const decision = JSON.parse(readFileSync(path, 'utf8'));
+    const flag = join(directory, id + '.wrong.json');
+    return { ...decision, feedback: existsSync(flag) ? JSON.parse(readFileSync(flag, 'utf8')) : null };
+  }
   return {
-    directory,
+    directory, get,
     record(decision: Decision) {
       const id = randomUUID();
       if (!publish(directory, id + '.json', { version:1, id, completedAt:new Date().toISOString(), ...decision })) {
@@ -48,10 +73,8 @@ export function readerLedger(databasePath: string) {
       const files = readdirSync(directory);
       for (const name of files) {
         if (!/^[\da-f-]{36}\.json$/.test(name)) continue;
-        const decision = JSON.parse(readFileSync(join(directory, name), 'utf8')) as Decision & { version:1; id:string; completedAt:string };
-        const flag = join(directory, name.slice(0,-5) + '.wrong.json');
-        const feedback = existsSync(flag) ? JSON.parse(readFileSync(flag,'utf8')) as { type:'marked_wrong'; at:string } : null;
-        yield { ...decision, feedback };
+        const row = get(name.slice(0, -5));
+        if (row) yield row;
       }
     },
   };

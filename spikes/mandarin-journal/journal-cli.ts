@@ -2,6 +2,7 @@
 import { existsSync } from 'node:fs';
 import { dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { dictionaryReport } from './reader-catalog-report.ts';
 import { readerLedger } from './reader-ledger.ts';
 import { buildFixture } from './fixture.ts';
 import { backupDir, copyDatabase, copyPath, fixturePath, isPrimaryCheckout, journalHome, livePath, snapshot } from './storage.ts';
@@ -11,13 +12,14 @@ const [command, ...args] = process.argv.slice(2);
 const force = args.includes('--force');
 
 async function main() {
-  if (command === 'lookups') {
+  if (command === 'lookups' || command === 'dictionary') {
     const profile = process.env.JOURNAL_PROFILE || 'fixture';
     const paths: Record<string,string> = { fixture: fixturePath(checkout), copy: copyPath(checkout), live: livePath() };
     const db = process.env.JOURNAL_DB || paths[profile];
     if (!db) throw new Error('Unknown JOURNAL_PROFILE.');
-    if (db === livePath() && !isPrimaryCheckout(checkout)) throw new Error('Read the live ledger from the primary checkout.');
-    for (const row of readerLedger(db).rows()) console.log(JSON.stringify(row));
+    if (db === livePath() && !isPrimaryCheckout(checkout)) throw new Error('Read live journal evidence from the primary checkout.');
+    if (command === 'dictionary') console.log(dictionaryReport(db, args));
+    else for (const row of readerLedger(db).rows()) console.log(JSON.stringify(row));
     return;
   }
   if (command === 'where') {
@@ -46,7 +48,7 @@ Live copy        ${copyPath(checkout)}${existsSync(copyPath(checkout)) ? '' : ' 
     console.log('Rebuilt ' + fixturePath(checkout));
     return;
   }
-  throw new Error('Usage: journal-cli.ts where | lookups | backup | copy-live [--force] | fixture');
+  throw new Error('Usage: journal-cli.ts where | lookups | dictionary [--changes] [--json] [word] | backup | copy-live [--force] | fixture');
 }
 main().catch((err) => {
   console.error(err.message);

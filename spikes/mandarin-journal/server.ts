@@ -11,7 +11,10 @@ import { actionSchema, engine, JournalConflict, openJournal } from './journal.ts
 import { buildFixture } from './fixture.ts';
 import { resolveStorage } from './storage.ts';
 import { createLookupService } from './reader-lookup-service.ts';
-import { lookupRequest, resolveLookupRange } from './reader-lookup-input.ts';
+import { dictionaryPage } from './reader-catalog-report.ts';
+import { openReaderCatalog } from './reader-catalog.ts';
+import { startReaderGrowth } from './reader-growth-queue.ts';
+import { readerWorkflow, ReaderRequestError } from './reader-workflow.ts';
 import { feedbackRequest, readerLedger } from './reader-ledger.ts';
 
 const dir = dirname(fileURLToPath(import.meta.url));
@@ -26,8 +29,10 @@ const storage = resolved.path;
 mkdirSync(dirname(storage), { recursive: true });
 if (resolved.profile === 'fixture' && resolved.fresh) await buildFixture(storage);
 const journal = openJournal(storage);
-const lookups = createLookupService();
+const catalog = openReaderCatalog(storage);
+const lookups = createLookupService({ catalogSnapshot: catalog.snapshot });
 const ledger = readerLedger(storage);
+const reader = readerWorkflow(ledger, lookups, journal.readingParagraphs, startReaderGrowth(ledger, catalog));
 const defaultPorts = { live: 4317, copy: 4319, fixture: 4320, custom: 4320 } as const;
 const port = Number(process.env.JOURNAL_PORT || defaultPorts[resolved.profile]);
 const files = new Map([
@@ -106,6 +111,14 @@ const server = createServer(async (req, res) => {
       throw new RequestError(403, 'Local access only.');
     if (req.headers.origin && req.headers.origin !== 'http://' + host)
       throw new RequestError(403, 'Unexpected request origin.');
+    if (req.method === 'GET' && req.url?.split('?')[0] === '/operator/dictionary') {
+      const params = new URL(req.url, 'http://localhost').searchParams;
+      const page = dictionaryPage(storage, params);
+      res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store',
+        'Content-Security-Policy': "default-src 'none'; style-src 'unsafe-inline'; form-action 'self'; frame-ancestors 'none'" });
+      res.end(page);
+      return;
+    }
     if (req.method === 'GET' && req.url === '/api/state') {
       json(200, journal.get());
       return;
@@ -116,21 +129,11 @@ const server = createServer(async (req, res) => {
       const payload = await body(req);
       if (req.url === '/api/reader-lookup/feedback') {
         const { id } = feedbackRequest.parse(payload);
-        if (!ledger.flag(id)) throw new RequestError(404, 'Lookup decision not found.');
-        json(200, { id, flagged:true });
+        json(200, reader.flag(id));
         return;
       }
       if (req.url === '/api/reader-lookup') {
-        const request = lookupRequest.parse(payload);
-        const { documentId, blockId, endBlockId = blockId } = request;
-        const resolvedRange = resolveLookupRange(request, journal.readingParagraphs(documentId));
-        if (resolvedRange.error !== undefined) throw new RequestError(resolvedRange.status, resolvedRange.error);
-        const { input, lastBlockStart } = resolvedRange;
-        const startedAt = new Date().toISOString();
-        const result = await lookups.lookup(input, { documentId, blockId });
-        const id = ledger.record({ documentId, blockId, endBlockId, sourceEnd:request.end, input, result, startedAt });
-        const { start, end, answer, route } = result;
-        json(200, { id, start, end: end - lastBlockStart, answer, route });
+        json(200, await reader.lookup(payload));
         return;
       }
       const action = actionSchema.parse(payload);
@@ -157,7 +160,7 @@ const server = createServer(async (req, res) => {
       canPaste: err.canPaste,
       preview: err instanceof ImportPreview ? err.preview : undefined,
     });
-    else if (err instanceof RequestError) json(err.status, { error: err.message });
+    else if (err instanceof RequestError || err instanceof ReaderRequestError) json(err.status, { error: err.message });
     else if (err instanceof JournalConflict || err instanceof ReadingConflict)
       json(409, { error: err.message });
     else if (err instanceof ZodError) json(400, { error: 'Invalid journal action.' });

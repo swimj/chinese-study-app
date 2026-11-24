@@ -24,7 +24,7 @@ function withProvider(t: TestContext, body: unknown, status = 200) {
 test('the contextual lookup marks the occurrence and retains reproducible, credential-free evidence', async (t) => {
   const raw = responseFor(JSON.stringify(answer));
   const fetch = withProvider(t, raw);
-  const result = await runModel('strong', tap);
+  const result = await runModel('strong', tap, '走');
   assert.deepEqual(result.answer, answer);
   assert.deepEqual(result.raw, raw);
   assert.equal(result.model, modelIds.strong);
@@ -35,7 +35,7 @@ test('the contextual lookup marks the occurrence and retains reproducible, crede
   assert.deepEqual(JSON.parse(String(init?.body)), result.request);
   assert.equal(result.request.instructions, lookupPrompt);
   assert.deepEqual(JSON.parse(String(result.request.input)), {
-    kind: 'tap', before: '快走，后来他', focus: '走', after: '进了车站。',
+    kind: 'tap', before: '快走，后来他', focus: '走', after: '进了车站。', suggestedSpan: '走',
   });
   assert.doesNotMatch(JSON.stringify(result), /dummy-lookup-key/);
 });

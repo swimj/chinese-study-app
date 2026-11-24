@@ -9,6 +9,7 @@
     "start": "node --env-file-if-exists=.env server.ts",
     "start:live": "JOURNAL_PROFILE=live node --env-file-if-exists=../../.env --env-file-if-exists=.env server.ts",
     "start:copy": "JOURNAL_PROFILE=copy node --env-file-if-exists=../../.env --env-file-if-exists=.env server.ts",
+    "journal:dictionary": "node journal-cli.ts dictionary",
     "journal:lookups": "node journal-cli.ts lookups",
     "journal:where": "node journal-cli.ts where",
     "journal:backup": "node journal-cli.ts backup",

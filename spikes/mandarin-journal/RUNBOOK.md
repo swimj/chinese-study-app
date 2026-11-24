@@ -68,7 +68,7 @@ overrides that refusal. Use it only on purpose, and never from an agent.
 
 ## Lookup dogfood and decision ledger
 
-Tap a Han character for a quick lookup. Escape, ×, or another tap on the underlined text closes it. Tapping a different word opens its lookup directly. Selecting a span opens Save, Ask and **Look up**. Only Look up requests a definition for that selection. Local matches use CC-CEDICT and the sample sense catalog (8 headwords, 14 senses). A clean lexical entry can answer immediately. With `OPENROUTER_API_KEY`, the selector can choose a stored sense using the passage. With `OPENAI_API_KEY`, Sol can explain unresolved lookups. `JOURNAL_DEMO=1` disables both model paths. Point `LOOKUP_DICTIONARY` to an extracted CC-CEDICT v1 file to use a full dictionary. The default is the attributed excerpt bundled with the spike.
+Tap a Han character for a quick lookup. Escape, ×, or another tap on the underlined text closes it. Tapping a different word opens its lookup directly. Selecting a span opens Save, Ask and **Look up**. Only Look up requests a definition for that selection. Local matches use CC-CEDICT and the journal’s sense catalog. Its checked-in seed covers 8 headwords and 14 senses. A clean lexical entry can answer immediately. With `OPENROUTER_API_KEY`, the selector can choose a stored sense using the passage. With `OPENAI_API_KEY`, Sol can explain unresolved lookups. `JOURNAL_DEMO=1` disables both model paths. Point `LOOKUP_DICTIONARY` to an extracted CC-CEDICT v1 file to use a full dictionary. The default is the attributed excerpt bundled with the spike.
 
 From the journal directory, a separate fixture server can load provider keys explicitly:
 
@@ -76,17 +76,31 @@ From the journal directory, a separate fixture server can load provider keys exp
 JOURNAL_PROFILE=fixture JOURNAL_PORT=4386 node --env-file=/path/to/keys.env server.ts
 ```
 
-**Mark as wrong** flags the individual answer. You can then Ask, select a more useful span, or keep reading. Asking, saving, narrowing, dismissing and returning to the story imply no judgment about correctness.
+**Check in context** asks the stronger model to revisit a quick answer. On a tap, the model can move the underline to a better expression containing the tapped character. Save and Ask follow the visible underline. A deliberate selection keeps its exact span. **Mark as wrong** flags a contextual answer. The ledger records the request for a second look, any difference in span, pronunciation or gloss text, and explicit feedback separately. A change in wording alone can have the same meaning.
 
 Each completed lookup is recorded before the server responds, including answers the learner may dismiss before they arrive. The record includes UTC times, source document and block IDs, the original gesture, the exact text sent for lookup, UTF-16 offsets, the returned range and answer, dictionary and catalog hashes, candidate labels and IDs, selected sense, and routing steps. Model steps include provider, model, prompt hash, elapsed time, outcome and available usage. A flag is a separate, timestamped record linked to the original decision. Repeated feedback preserves the first timestamp.
 
-Export one JSON object per decision from the fixture with the command below. Set `JOURNAL_PROFILE=live` in the primary checkout or `JOURNAL_DB` for a custom journal. The export joins feedback onto its decision. A null feedback field means the learner gave no explicit judgment. Use `startedAt` or `completedAt` to order records.
+Export one JSON object per decision from the fixture with the command below. Set `JOURNAL_PROFILE=live` in the primary checkout or `JOURNAL_DB` for a custom journal. The export joins feedback onto its decision. A null feedback field means the learner gave no explicit judgment. Use `startedAt` or `completedAt` to order records. Second looks carry `previousDecisionId` and completed comparisons carry `revision`.
 
 ```sh
 npm run --silent journal:lookups > .local/lookup-decisions.jsonl
 ```
 
-The plain JSON files live in a directory alongside the journal, e.g. `.local/fixture.sqlite.lookups/`. Preserve that directory when backing up or moving the evidence. SQLite snapshots and copy-live cover the journal database alone.
+### Inspect the growing dictionary
+
+Open `/operator/dictionary` on the running journal to search entries or switch to its change ledger. For the default fixture, visit [Reader dictionary](http://127.0.0.1:4320/operator/dictionary).
+
+For terminal access, run these commands from the journal directory. The first shows the available readings and senses for a spelling. Omit the spelling to list the whole catalog. The second shows lookup decisions in completion order, their catalog outcomes and reasons. Add `--json` for IDs and structured evidence. Both commands use the same journal selection as `journal:lookups`.
+
+```sh
+npm run --silent journal:dictionary -- 还
+npm run --silent journal:dictionary -- --changes
+npm run --silent journal:dictionary -- --changes --json 泡沫
+```
+
+After serving a lookup, the journal processes its decision in the background. A catalog match links the occurrence to its existing sense. For an unclassified answer the model can link it to an existing sense, add a reusable sense, or keep the explanation with that passage. This also applies to expressions outside CC-CEDICT. Raw dictionary glosses require this judgment before becoming catalog content. The ledger supplies outstanding work when the journal restarts, including earlier lookups without catalog receipts. With an OpenAI key, the background judge receives the passage, focus, answer, and candidate senses. Work that requires a model stays pending offline. Flagging a contextual answer withdraws its support for learned material. A contextual recheck supersedes the earlier occurrence’s support until the recheck is flagged. A sense with other contextual evidence stays available. Repeating an instant reminder adds a lookup link and supplies no independent evidence for its meaning. Dictionary growth is independent of the learner’s practice record and priority.
+
+Keep both the private decision directory (for example, `.local/fixture.sqlite.lookups/`) and the learned catalog (`.local/fixture.sqlite.catalog.json`) when preserving a journal’s lookup history. Stop the journal before copying these files together. SQLite snapshots and copy-live cover the journal database alone.
 
 ## Bring in hosted history
 
