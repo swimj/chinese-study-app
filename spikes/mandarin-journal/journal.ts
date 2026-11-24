@@ -372,13 +372,15 @@ function practiceSources(s: State, mode: string): string[] {
  * Daily mix asks for exercises on the highest-priority targets first, then
  * falls back to recent journal material. Targets already in play are skipped.
  */
-function prioritySources(s: State, ranked: Ranked[]): { source: string; target: Ranked['target'] }[] {
+function prioritySources(s: State, ranked: Ranked[]): { source: string; target: Ranked['target']; teach: boolean }[] {
   const inPlay = new Set([...s.pending, ...s.practice.cards.slice(s.practice.index)].flatMap((c) => c.targets ?? []));
   return ranked
     .filter((r) => !inPlay.has(r.target.form))
     .slice(0, 6)
     .map((r) => ({
       target: r.target,
+      // A chosen word with no record of study yet is taught before it is practiced.
+      teach: !r.signals && (r.target.origin === 'saved' || (!!r.target.hosted?.inStash && r.target.hosted.mode === 'unstudied')),
       source:
         'Target: ' + r.target.form + (r.target.pinyin ? ' (' + r.target.pinyin + ')' : '') +
         (r.target.gloss ? ' · ' + r.target.gloss : '') + '\nWhy now: ' + r.reasons.join('; '),
@@ -404,20 +406,22 @@ async function startPractice(s: State, mode: string, backend: Backend, continuin
     cards = s.pending.splice(0, 3);
     const material = practiceSources(s, mode).map((source) => ({ source, target: undefined }));
     const prioritized = mode === 'Daily mix' ? prioritySources(s, outbox.priority()) : [];
-    const sources: { source: string; target?: Ranked['target'] }[] = [...prioritized, ...material];
+    const sources: { source: string; target?: Ranked['target']; teach?: boolean }[] = [...prioritized, ...material];
     // The first visit opens quickly. Each explicit continuation can draw on more journal material.
     const budget = continuing ? 3 : cards.length ? 0 : 1;
     const previousPrompts = s.attempts.slice(-24).map((a) => a.card.prompt);
     for (let n = 0; n < budget && cards.length < 3 && sources.length; n++) {
       // Priority targets go in order; plain material rotates as before.
       const index = prioritized.length ? n % sources.length : continuing ? (s.attempts.length + n) % sources.length : 0;
-      const { source, target } = sources[index];
+      const { source, target, teach } = sources[index];
       const ctx = context(
         s,
         'practice',
         mode === 'Build vocabulary'
           ? 'Teach one useful word or sense from the supplied material.'
-          : target
+          : teach
+            ? 'Teach the expression named in the supplied source, then offer an exercise on it. The learner sees only your reply and the exercise, so never call it “the target”.'
+            : target
             ? 'Offer a fresh exercise that practices the expression named in the supplied source. The learner sees only the exercise, so never call it “the target”.'
             : 'Offer a fresh, relevant exercise if this material supports one.',
         mode,
@@ -436,7 +440,7 @@ async function startPractice(s: State, mode: string, backend: Backend, continuin
         // A repeat of a served or queued prompt is skipped like an empty turn, not a failure.
         if (!fresh || ctx.previousPrompts.includes(fresh.prompt) || s.pending.some((c) => c.prompt === fresh.prompt))
           continue;
-        if (mode === 'Build vocabulary') fresh.introduction = response.reply.trim();
+        if (mode === 'Build vocabulary' || teach) fresh.introduction = response.reply.trim() || undefined;
         if (target) fresh.targets = [target.form];
         cards.push(fresh);
       } catch {

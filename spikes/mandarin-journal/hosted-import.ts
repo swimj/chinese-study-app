@@ -37,9 +37,11 @@ export type HostedExport = z.infer<typeof hostedExportSchema>;
 
 export function importHosted(db: DatabaseSync, data: HostedExport) {
   createRecordTables(db);
+  // Unstudied words outside the stash came in with bulk repertoire and were never the learner's choice.
+  const words = data.words.filter((w) => w.inStash || w.mode !== 'unstudied');
   db.exec('BEGIN IMMEDIATE');
   try {
-    for (const w of data.words)
+    for (const w of words)
       upsertTarget(db, {
         form: w.hanzi,
         gloss: w.meaning,
@@ -60,13 +62,13 @@ export function importHosted(db: DatabaseSync, data: HostedExport) {
           recentMistakes: w.recentMistakes,
         },
       });
-    setMeta(db, 'hosted_import', JSON.stringify({ exportedAt: data.exportedAt, learner: data.learner, words: data.words.length }));
+    setMeta(db, 'hosted_import', JSON.stringify({ exportedAt: data.exportedAt, learner: data.learner, words: words.length }));
     db.exec('COMMIT');
   } catch (error) {
     db.exec('ROLLBACK');
     throw error;
   }
-  return { words: data.words.length };
+  return { words: words.length };
 }
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) {

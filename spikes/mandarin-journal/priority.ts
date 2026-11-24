@@ -69,8 +69,7 @@ function hostedScore(t: Target, now: number): { score: number; reason?: string }
   const missRate = h.incorrect / Math.max(1, h.attempts);
   const lastMiss = h.lastIncorrectAt ? decay((now - Date.parse(h.lastIncorrectAt)) / DAY, 30) : 0;
   const mistakes = Math.min(1, 0.6 * Math.min(1, missRate * 3) + 0.4 * lastMiss);
-  // Words the learner put in their stash count fully; the bulk repertoire counts half.
-  const score = HOSTED_WEIGHT * due * (0.25 + 0.75 * mistakes) * (h.inStash ? 1 : 0.5);
+  const score = HOSTED_WEIGHT * due * (0.25 + 0.75 * mistakes);
   return {
     score,
     reason: 'due in the old app' + (h.incorrect ? ` · ${h.incorrect} of ${h.attempts} recalls missed` : ''),
@@ -111,9 +110,11 @@ export function rank(targetList: Target[], signals: Signal[], nowDate = new Date
             (cleanDays ? ` · ${cleanDays} clean day since` : ''),
         );
       }
-    } else if (t.origin === 'saved' && !own.length) {
+    } else if (!own.length && (t.origin === 'saved' || (t.hosted?.inStash && t.hosted.mode === 'unstudied'))) {
+      // A word the learner chose and has not studied waits to be taught, from
+      // the journal or from the old app's stash alike.
       score += decay(ageDays(t.createdAt, now), 21);
-      reasons.push('saved, not practiced yet');
+      reasons.push(t.origin === 'saved' ? 'saved, not practiced yet' : 'in the old stash, never taught');
     }
 
     const hosted = hostedScore(t, now);

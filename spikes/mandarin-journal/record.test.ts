@@ -173,6 +173,25 @@ test('new signals outweigh the old app, whose misses still order its due words',
   assert.ok(ranked[1].score <= 0.3, 'the hosted SRS contributes at most 0.3');
 });
 
+test('an unstudied stash word waits to be taught; unstudied bulk words are not imported', () => {
+  const box = sandbox();
+  const db = new DatabaseSync(box.path);
+  try {
+    importHosted(db, {
+      exportedAt: now.toISOString(),
+      learner: 'test',
+      words: [hosted({ hanzi: '钻空子', mode: 'unstudied' }), hosted({ hanzi: '公共汽车', mode: 'unstudied', inStash: false }), hosted({ hanzi: '稳', inStash: false, dueAt: at(10), attempts: 10, incorrect: 3 })],
+    });
+    const ranked = rank(targets(db), [], now);
+    assert.deepEqual(ranked.map((r) => r.target.form), ['钻空子', '稳']);
+    assert.match(ranked[0].reasons.join(), /in the old stash, never taught/);
+    assert.ok(ranked[1].score > 0.1, 'a studied word outside the stash is not discounted');
+  } finally {
+    db.close();
+    box.done();
+  }
+});
+
 test('only the newest model reading of an event counts, and failed readings count for nothing', () => {
   const e = { id: 'e', seq: 1, at: at(20), kind: 'chat' as const, surface: 'chat', ref: null, text: '我想出去透气', context: {}, targets: [] };
   const reading = (when: number, needs: string[]) => ({
