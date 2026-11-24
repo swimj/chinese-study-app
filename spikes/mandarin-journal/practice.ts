@@ -40,7 +40,7 @@ export const catalogue: Card[] = [
   {
     id: 'san-chang',
     kind: 'choice',
-    source: 'Build vocabulary · 散场',
+    source: 'New word · 散场',
     prompt:
       '散场 (sànchǎng) describes an event ending as the audience disperses. Which caption fits 散场以后?',
     choices: ['观众听着开场音乐，陆续找位子。', '观众往出口走，还有人哼着最后一首歌。'],
@@ -71,7 +71,7 @@ export const catalogue: Card[] = [
   {
     id: 'fen-xin',
     kind: 'choice',
-    source: 'Build vocabulary · 分心',
+    source: 'New word · 分心',
     prompt:
       '分心 (fēnxīn) means your attention is pulled away. “我在家容易分心。” Which example illustrates that?',
     choices: ['本来在看书，手机一响，我就去刷消息了。', '专心看完了书，然后按计划休息。'],
@@ -379,9 +379,7 @@ function practice(input: TurnContext): TutorResult {
   for (const sample of evidence) {
     const candidates = series.filter((item) => item.match.test(sample));
     for (const item of candidates) {
-      const vocabulary = input.surface === 'Build vocabulary' && item.match === distraction;
-      const exercises = vocabulary ? [catalogue[5]!, ...item.exercises] : item.exercises;
-      const exercise = exercises.find((candidate) => allowed(candidate.kind) && !input.previousPrompts?.includes(candidate.prompt));
+      const exercise = item.exercises.find((candidate) => allowed(candidate.kind) && !input.previousPrompts?.includes(candidate.prompt));
       if (!exercise) continue;
       const { kind, prompt, choices, answer, explanation } = exercise;
       return response(item.introduction, {

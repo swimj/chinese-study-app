@@ -104,9 +104,20 @@ test('stash and past mistakes use this learner’s own actions', async () => {
     assert.equal(j.get().saved[0].title, '分心');
     let s = await j.act({ id: randomUUID(), type: 'practice', mode: 'Past mistakes' });
     assert.equal(s.practice.card, null);
-    s = await j.act({ id: randomUUID(), type: 'practice', mode: 'Build vocabulary' });
-    const c = s.practice.card!;
-    assert.equal(c.kind, 'recall', 'a word taught from material is checked by recall');
+    s = await j.act({ id: randomUUID(), type: 'practice', mode: 'Daily mix' });
+    // The saved word is taught first, on a lesson card that asks nothing.
+    assert.deepEqual([s.practice.card?.kind, s.practice.card?.prompt], ['lesson', '分心']);
+    await j.act({ id: randomUUID(), type: 'next', cardId: s.practice.card!.id });
+    // Its recall follows a couple of other cards.
+    for (let i = 0; i < 4; i++) {
+      await settle(j);
+      const other = j.get().practice.card!;
+      if (other.kind === 'recall') break;
+      await j.act({ id: randomUUID(), type: 'answer', cardId: other.id, answer: '好的。' });
+      await j.act({ id: randomUUID(), type: 'next', cardId: other.id });
+    }
+    const c = j.get().practice.card!;
+    assert.equal(c.kind, 'recall');
     await j.act({ id: randomUUID(), type: 'answer', cardId: c.id, answer: '放心' });
     s = await j.act({ id: randomUUID(), type: 'practice', mode: 'Past mistakes' });
     assert.equal(s.practice.card?.id, c.id);
@@ -803,7 +814,8 @@ test('a generated exercise matching a card from the replaced session is served, 
     const starter = await j.act({ id: randomUUID(), type: 'practice', mode: 'Daily mix' });
     assert.equal(starter.practice.card?.id, catalogueCard.id);
     await j.act({ id: randomUUID(), type: 'chat', source: '', message: '数据坏了，要修复。' });
-    const next = await j.act({ id: randomUUID(), type: 'practice', mode: 'Build vocabulary' });
+    await j.act({ id: randomUUID(), type: 'practice', mode: 'Past mistakes' });
+    const next = await j.act({ id: randomUUID(), type: 'practice', mode: 'Daily mix' });
     assert.equal(next.notice, '');
     assert.equal(next.practice.card?.prompt, catalogueCard.prompt);
     assert.notEqual(next.practice.card?.id, catalogueCard.id);
