@@ -149,6 +149,7 @@ main {
 }
 .recent,
 .tools,
+.session-actions,
 .mode-label,
 footer {
   display: flex;
@@ -282,6 +283,9 @@ textarea {
 }
 .session-end .sub {
   margin: 0 0 18px;
+}
+.session-actions a {
+  padding: 8px 2px;
 }
 .result {
   border-top: 1px solid var(--line);

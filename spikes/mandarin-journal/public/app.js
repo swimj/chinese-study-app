@@ -505,7 +505,12 @@ function renderSessionEnd(body, mode, done, session) {
     const count = session.finished === 1 ? '1 exercise' : session.finished + ' exercises';
     end.append(node('p', count + ' · ' + session.spentMinutes + ' min', 'sub'));
   }
-  if (!exhausted) end.append(button(failed ? 'Try again' : 'Keep going · 5 min', () => startPractice(mode, true), 'primary', true));
+  if (!exhausted) {
+    const actions = node('div', undefined, 'session-actions');
+    actions.append(button(failed ? 'Try again' : 'Keep going · 5 min', () => startPractice(mode, true), 'primary', true));
+    if (!failed) actions.append(link('Back home', '#home'));
+    end.append(actions);
+  }
   body.append(end);
   return heading;
 }
