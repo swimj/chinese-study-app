@@ -35,6 +35,8 @@ export type Session = {
   /** Set when no more cards can be prepared: the model failed, or nothing is left to ask about. */
   stopped?: 'failed' | 'exhausted';
   failures: number;
+  /** Why recent card preparations failed, newest last, so a stopped session can be diagnosed. */
+  errors?: { at: string; error: string }[];
   attempts: number;
   /** Generations in a row that offered nothing new; a few in a row end the search. */
   empties?: number;
@@ -93,15 +95,34 @@ export function needsCard<C extends CardLike>(p: PracticeLike<C>): boolean {
 
 /** Finishes the card in front of the learner and advances; ends the session when its time is spent. */
 export function finishCard<C extends CardLike>(p: PracticeLike<C>, now: Date): void {
-  const session = (p.session ??= newSession(now));
+  const session = p.session;
+  if (!session) throw new Error('No practice session for this card');
   const card = p.cards[p.index];
   if (!card) throw new Error('No card to finish');
   session.spent += cardTime(card, session.shownAt, now);
   session.estimated += cardSeconds(card);
   session.lastAt = now.toISOString();
   p.index++;
-  session.shownAt = p.index < p.cards.length ? now.toISOString() : null;
   if (session.spent >= session.budget) session.ended = true;
+  // An ended session shows its end, not the next prepared card; that card appears with Keep going.
+  session.shownAt = !session.ended && p.index < p.cards.length ? now.toISOString() : null;
+}
+
+/** Errors kept per session: enough to see why it stopped. */
+const KEPT_ERRORS = 5;
+/** Notes why a card preparation failed, trimmed so a long provider message stays readable. */
+export function noteFailure(session: Session, error: unknown, now: Date): void {
+  const text = error instanceof Error ? error.name + ': ' + error.message : String(error);
+  (session.errors ??= []).push({ at: now.toISOString(), error: text.slice(0, 200) });
+  session.errors.splice(0, session.errors.length - KEPT_ERRORS);
+}
+
+/** Try again after preparation failed: clears the stop and keeps the session's time. */
+export function resume(session: Session, now: Date): void {
+  if (session.stopped !== 'failed' || session.ended) throw new Error('Only a session paused by failed preparation resumes');
+  session.stopped = undefined;
+  session.failures = 0;
+  session.lastAt = now.toISOString();
 }
 
 /** Keep going: another chunk of time, counted from what has been spent. */

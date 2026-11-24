@@ -349,7 +349,10 @@ test('existing journals promote their original conversation and link prior feedb
     await j.act({ id: randomUUID(), type: 'newThread', title: 'Gardening' });
     await j.act({ id: randomUUID(), type: 'selectThread', threadId: 'first' });
     assert.deepEqual(j.get().attempts, before.attempts);
-    assert.equal(j.get().practice.result?.feedback, result.feedback);
+    // The answered card's feedback stays on its attempt; the sessionless deck itself is put away.
+    assert.equal(j.get().attempts[0].result.feedback, result.feedback);
+    assert.equal(j.get().practice.card, null);
+    assert.equal(j.get().practice.result, null);
   } finally {
     j.close();
     rmSync(folder, { recursive: true });
