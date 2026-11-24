@@ -630,6 +630,32 @@ footer {
   padding: 0;
   border: 0;
 }
+.feedback-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 22px;
+  margin-top: 10px;
+}
+.feedback-actions .flagged {
+  display: inline-flex;
+  align-items: center;
+  margin: 0;
+}
+.feedback-actions .quiet {
+  color: var(--quiet);
+}
+.icon {
+  flex: none;
+  width: 1.05em;
+  height: 1.05em;
+  margin-inline-end: .4em;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
 .tutor-context {
   margin: 0 11px 6px;
   display: flex;
