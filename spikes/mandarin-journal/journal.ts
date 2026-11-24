@@ -26,6 +26,7 @@ export { JournalConflict } from './annotations.ts';
 import { catalogue, demoFriend, demoTutor, type Card } from './practice.ts';
 import type { Beat, TeachTarget } from './teaching.ts';
 import { assignPolicy } from './lifecycle.ts';
+import { learnerZone, validZone } from './day.ts';
 import { friendTurn, tutorTurn, type TurnContext, type TutorResult } from './tutor.ts';
 import { validateTurn, type Reflection as TutorReflection, type SituationName, type SituationOutput, type TutorAction } from './situations/index.ts';
 
@@ -126,6 +127,8 @@ export const actionSchema = z.discriminatedUnion('type', [
   z.object({ id, type: z.literal('saveReading'), title: text, detail: text, source }),
   z.object({ id, type: z.literal('mediaReaction'), mediaId: text, reaction: z.enum(['keep', 'notForMe']) }),
   z.object({ id, type: z.literal('settings'), pictures: z.enum(['off', 'quiet', 'normal']) }),
+  // The browser reports its IANA zone; learning days follow it (day.ts).
+  z.object({ id, type: z.literal('timeZone'), timeZone: z.string().max(64).refine(validZone, 'Unknown time zone.') }),
 ]);
 type Action = z.infer<typeof actionSchema>;
 type Reference = {
@@ -217,7 +220,7 @@ const initial = (): State => ({
   mediaJobs: [],
   settings: { pictures: 'normal' },
 });
-/** Model reads of the learner's language per UTC day. */
+/** Model reads of the learner's language per learner day. */
 const NOTICE_DAILY_LIMIT = 150;
 export const live = !!process.env.OPENAI_API_KEY && process.env.JOURNAL_DEMO !== '1';
 type Backend = {
@@ -1200,6 +1203,10 @@ async function mutate(
     case 'settings':
       s.settings.pictures = a.pictures;
       return;
+    case 'timeZone':
+      // Day keys are recomputed from stored instants, so a new zone rewrites no history.
+      s.settings.timeZone = a.timeZone;
+      return;
     case 'flagExercise': {
       const attempt = s.attempts.find((x) => x.id === a.attemptId);
       if (!attempt) throw new JournalConflict('This practice answer could not be found.');
@@ -1420,12 +1427,20 @@ function syncTargets(db: DatabaseSync, s: State) {
       upsertTarget(db, { form: item.title, gloss: item.word?.meaning ?? item.detail, pinyin: item.word?.pinyin ?? null, origin: 'saved', at });
 }
 
-/** The current priority ranking over a journal database. */
-export function priorityOf(db: DatabaseSync, now = new Date()) {
+/** The learner's zone stored in a journal database's settings, if the browser has reported one. */
+export function storedZone(db: DatabaseSync): string | undefined {
+  const row = db.prepare("SELECT json_extract(body, '$.settings.timeZone') zone FROM journal WHERE id=1").get();
+  return row?.zone ? String(row.zone) : undefined;
+}
+/** The zone of the learner's days: the stored one, or the server's (day.ts). */
+export const zoneOf = (db: DatabaseSync) => learnerZone({ timeZone: storedZone(db) });
+
+/** The current priority ranking over a journal database, on the learner's days. */
+export function priorityOf(db: DatabaseSync, now = new Date(), zone = zoneOf(db)) {
   const byId = new Map(recordEvents(db).map((e) => [e.id, e]));
   const judgmentList = recordJudgments(db);
   const targetList = recordTargets(db);
-  return rank(targetList, signalsFrom(judgmentList, byId), now, admitted(judgmentList, targetList, meta(db, 'admit_from')));
+  return rank(targetList, signalsFrom(judgmentList, byId), now, zone, admitted(judgmentList, targetList, meta(db, 'admit_from')));
 }
 /** Forms admitted as targets to teach, derived from the record. */
 export function admittedOf(db: DatabaseSync) {
@@ -1658,7 +1673,7 @@ export function openJournal(path: string, backend: Backend = engine) {
   // limit. A failed read is recorded so it is not retried forever.
   async function prepareNotices() {
     while (!closed) {
-      if (backend.mode === 'live' && judgedToday(db) >= NOTICE_DAILY_LIMIT) return;
+      if (backend.mode === 'live' && judgedToday(db, zoneOf(db)) >= NOTICE_DAILY_LIMIT) return;
       const event = nextUnjudged(db, noticeSource, judgeFrom);
       if (!event) return;
       const { s } = read();
@@ -1823,7 +1838,7 @@ export function openJournal(path: string, backend: Backend = engine) {
       const { s } = read();
       return (
         words.busy() || media.busy() || notices.busy() || practice.busy() || needsCard(s.practice) ||
-        (!!nextUnjudged(db, noticeSource, judgeFrom) && (backend.mode !== 'live' || judgedToday(db) < NOTICE_DAILY_LIMIT)) ||
+        (!!nextUnjudged(db, noticeSource, judgeFrom) && (backend.mode !== 'live' || judgedToday(db, learnerZone(s.settings)) < NOTICE_DAILY_LIMIT)) ||
         s.wordIntakes.some((item) => item.status === 'pending') ||
         (s.mediaJobs.some((job) => job.status === 'pending') && ranToday(s) < DAILY_LIMIT && s.settings.pictures !== 'off')
       );

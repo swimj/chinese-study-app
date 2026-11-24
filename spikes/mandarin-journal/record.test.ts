@@ -194,20 +194,22 @@ const now = new Date(Date.UTC(2026, 10, 23, 12));
 
 test('a weakness gets a bounded number of clean days, then graduates', () => {
   const need: Signal = { form: '修复', role: 'needed', at: at(18), eventId: 'e1' };
-  const open = rank([target('修复')], [need], now);
+  const open = rank([target('修复')], [need], now, 'UTC');
   assert.ok(open[0].score > 2);
-  const once = rank([target('修复')], [need, { form: '修复', role: 'correct', at: at(19), eventId: 'e2' }], now);
+  const once = rank([target('修复')], [need, { form: '修复', role: 'correct', at: at(19), eventId: 'e2' }], now, 'UTC');
   assert.ok(once[0].score < open[0].score);
   const twice = rank(
     [target('修复')],
     [need, { form: '修复', role: 'correct', at: at(19), eventId: 'e2' }, { form: '修复', role: 'used', at: at(21), eventId: 'e3' }],
     now,
+    'UTC',
   );
   assert.equal(twice.length, 0, 'two clean days after the latest weakness retire it');
   const sameDay = rank(
     [target('修复')],
     [need, { form: '修复', role: 'correct', at: at(19), eventId: 'e2' }, { form: '修复', role: 'correct', at: at(19), eventId: 'e3' }],
     now,
+    'UTC',
   );
   assert.equal(sameDay.length, 1, 'repeats on one day count once');
 });
@@ -222,38 +224,38 @@ test('a correct choice is recognition and never counts toward graduation; a wron
   assert.deepEqual(roles, ['recognized', 'missed', 'correct']);
   const need: Signal = { form: '修复', role: 'needed', at: at(18), eventId: 'n' };
   const choices = signalsFrom([rule('c1', 'choice', true), rule('c2', 'choice', true)], evs);
-  const afterChoices = rank([target('修复')], [need, ...choices], now);
+  const afterChoices = rank([target('修复')], [need, ...choices], now, 'UTC');
   assert.equal(afterChoices.length, 1, 'two correct choices on two days retire nothing');
   assert.doesNotMatch(afterChoices[0].reasons.join(), /clean day/);
   const recalls = signalsFrom([rule('r1', 'recall', true), rule('r2', 'recall', true)], evs);
-  assert.equal(rank([target('修复')], [need, ...recalls], now).length, 0, 'two correct recalls on two days do');
+  assert.equal(rank([target('修复')], [need, ...recalls], now, 'UTC').length, 0, 'two correct recalls on two days do');
 });
 
 test('target use in an open answer is a signal for priority, never for graduation', () => {
   const need: Signal = { form: '体面', role: 'needed', at: at(18), eventId: 'n' };
   const openUse = (day: number): Signal => ({ form: '体面', role: 'used', at: at(day), eventId: 'o' + day, practice: true });
-  const prompted = rank([target('体面')], [need, openUse(19), openUse(21)], now);
+  const prompted = rank([target('体面')], [need, openUse(19), openUse(21)], now, 'UTC');
   assert.equal(prompted.length, 1, 'natural use in open answers does not retire a weakness');
   const ownUse = (day: number): Signal => ({ form: '体面', role: 'used', at: at(day), eventId: 'u' + day });
-  assert.equal(rank([target('体面')], [need, ownUse(19), ownUse(21)], now).length, 0, 'the learner’s own use elsewhere still does');
+  assert.equal(rank([target('体面')], [need, ownUse(19), ownUse(21)], now, 'UTC').length, 0, 'the learner’s own use elsewhere still does');
   const avoided: Signal = { form: '潜台词', role: 'avoided', at: at(20), eventId: 'a', practice: true };
-  assert.equal(rank([target('潜台词')], [avoided], now).length, 0, 'an open answer that did without the expression is no weakness');
+  assert.equal(rank([target('潜台词')], [avoided], now, 'UTC').length, 0, 'an open answer that did without the expression is no weakness');
   const flawed: Signal = { form: '人家', role: 'flawed', at: at(20), eventId: 'f', practice: true };
-  const raised = rank([target('人家')], [flawed], now);
+  const raised = rank([target('人家')], [flawed], now, 'UTC');
   assert.equal(raised[0]?.pressing, true, 'a flawed use in an open answer raises the target');
   assert.equal(raised[0].purpose, 'weakness');
 });
 
 test('a choice is allowed only for a contrast the learner has demonstrably confused', () => {
   const slip: Signal = { form: '有意', role: 'needed', at: at(18), eventId: 's', evidence: '有意思的避开下乡' };
-  const fresh = rank([target('有意')], [slip], now)[0];
+  const fresh = rank([target('有意')], [slip], now, 'UTC')[0];
   assert.equal(fresh.purpose, 'weakness');
   assert.equal(fresh.contrast, undefined, 'a slip comes back first as recall');
   const recalled: Signal = { form: '有意', role: 'correct', at: at(19), eventId: 'r', practice: true };
-  assert.equal(rank([target('有意')], [slip, recalled], now)[0].contrast, true, 'after a recall, the confused contrast may be a choice');
+  assert.equal(rank([target('有意')], [slip, recalled], now, 'UTC')[0].contrast, true, 'after a recall, the confused contrast may be a choice');
   const miss = (day: number): Signal => ({ form: '修复', role: 'missed', at: at(day), eventId: 'm' + day, practice: true });
-  assert.equal(rank([target('修复')], [miss(19)], now)[0].contrast, undefined);
-  const twice = rank([target('修复')], [miss(19), miss(20)], now)[0];
+  assert.equal(rank([target('修复')], [miss(19)], now, 'UTC')[0].contrast, undefined);
+  const twice = rank([target('修复')], [miss(19), miss(20)], now, 'UTC')[0];
   assert.equal(twice.contrast, true, 'a repeated miss is a demonstrated confusion');
   assert.equal(twice.purpose, 'review');
 });
@@ -269,6 +271,7 @@ test('new signals outweigh the old app, whose misses still order its due words',
     ],
     [{ form: '透透气', role: 'flawed', at: at(5), eventId: 'e' }],
     now,
+    'UTC',
   );
   assert.deepEqual(ranked.map((r) => r.target.form), ['透透气', '修复', '稳']);
   assert.ok(ranked[1].score <= 0.3, 'the hosted SRS contributes at most 0.3');
@@ -283,7 +286,7 @@ test('an unstudied stash word waits to be taught; unstudied bulk words are not i
       learner: 'test',
       words: [hosted({ hanzi: '钻空子', mode: 'unstudied' }), hosted({ hanzi: '公共汽车', mode: 'unstudied', inStash: false }), hosted({ hanzi: '稳', inStash: false, dueAt: at(10), attempts: 10, incorrect: 3 })],
     });
-    const ranked = rank(targets(db), [], now);
+    const ranked = rank(targets(db), [], now, 'UTC');
     assert.deepEqual(ranked.map((r) => r.target.form), ['钻空子', '稳']);
     assert.match(ranked[0].reasons.join(), /in the old stash, never taught/);
     assert.ok(ranked[1].score > 0.1, 'a studied word outside the stash is not discounted');
@@ -323,17 +326,17 @@ test('a notice quotes the learner exactly and answers for every intended form', 
 test('new words wait behind a daily limit and behind open work, and a taught word settles before it graduates', () => {
   const fresh = Array.from({ length: 7 }, (_, i) => target('新' + i, { origin: 'saved', createdAt: at(22) }));
   const all = new Map([...fresh, ...['甲', '乙', '丙'].map((f) => target(f))].map((t) => [t.form, 'explicit save']));
-  assert.equal(rank(fresh, [], now, all).length, 5, 'five new words a day, as the hosted default');
-  assert.equal(rank(fresh, [], now).length, 0, 'nothing unadmitted is taught');
+  assert.equal(rank(fresh, [], now, 'UTC', all).length, 5, 'five new words a day, as the hosted default');
+  assert.equal(rank(fresh, [], now, 'UTC').length, 0, 'nothing unadmitted is taught');
   const taught = (form: string, day: number): Signal => ({ form, role: 'taught', at: at(day), eventId: 'e-' + form, practice: true });
   const taughtToday = ['甲', '乙', '丙'].map((form) => taught(form, 23));
-  const afterTeaching = rank([...fresh, ...['甲', '乙', '丙'].map((f) => target(f, { origin: 'saved' }))], taughtToday, now, all);
+  const afterTeaching = rank([...fresh, ...['甲', '乙', '丙'].map((f) => target(f, { origin: 'saved' }))], taughtToday, now, 'UTC', all);
   assert.equal(afterTeaching.filter((r) => r.fresh).length, 2, 'three taught today leave room for two');
   assert.ok(afterTeaching.find((r) => r.target.form === '甲')?.pressing, 'a word taught today is still settling');
   const busy = Array.from({ length: 8 }, (_, i) => ({ form: '弱' + i, role: 'needed' as const, at: at(20), eventId: 'n' + i }));
-  const blocked = rank([...fresh, ...busy.map((s) => target(s.form))], busy, now, all);
+  const blocked = rank([...fresh, ...busy.map((s) => target(s.form))], busy, now, 'UTC', all);
   assert.equal(blocked.filter((r) => r.fresh).length, 0, 'eight open weaknesses hold back new words');
-  const settled = rank([target('甲')], [taught('甲', 18), { form: '甲', role: 'correct', at: at(19), eventId: 'c1' }, { form: '甲', role: 'used', at: at(21), eventId: 'c2' }], now);
+  const settled = rank([target('甲')], [taught('甲', 18), { form: '甲', role: 'correct', at: at(19), eventId: 'c1' }, { form: '甲', role: 'used', at: at(21), eventId: 'c2' }], now, 'UTC');
   assert.equal(settled.length, 0, 'two clean days after teaching retire it');
 });
 

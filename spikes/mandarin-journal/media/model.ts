@@ -40,7 +40,11 @@ export type MediaDecision = {
   mediaId?: string;
 };
 export type Pictures = 'off' | 'quiet' | 'normal';
-export type Settings = { pictures: Pictures };
+export type Settings = {
+  pictures: Pictures;
+  /** The learner's IANA time zone, reported by the browser; learning days are local days in it (day.ts). */
+  timeZone?: string;
+};
 /** One queued back-office consideration of an anchor piece (media/job.ts). */
 export type MediaJob = {
   id: string;

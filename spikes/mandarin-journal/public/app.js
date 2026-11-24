@@ -891,11 +891,24 @@ async function load() {
     markBusy(false);
   }
   if (state && !loadFailed) {
+    reportTimeZone();
     await navigate(true);
     if (ui.pending && !busy) {
       if (hasCommittedTurn(ui.pending)) await runAction(ui.pending);
       else showPendingError('The previous request was interrupted. Retry to recover it.');
     }
+  }
+}
+// Learning days are the learner's local days: the journal keeps the zone this
+// browser is in, and a new zone (travel, a moved machine) replaces it.
+async function reportTimeZone() {
+  const timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+  if (!timeZone || state.settings?.timeZone === timeZone) return;
+  try {
+    await sendAction({ id: crypto.randomUUID(), type: 'timeZone', timeZone });
+    state.settings = { ...state.settings, timeZone };
+  } catch {
+    // The server's zone stands in until a later visit reports this one.
   }
 }
 function hasCommittedTurn(action) {

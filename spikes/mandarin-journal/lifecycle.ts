@@ -3,13 +3,15 @@
 // word is randomly assigned one policy, recorded on its lesson event, and every
 // policy can also be scored in shadow over the same evidence. Nothing here is
 // stored; the state is derived from the record each time (MODEL.md principles 1, 9).
+// Days are the learner's local days (day.ts), derived from the stored UTC instants.
+import { addDays, learningDay } from './day.ts';
 
 export const GRADUATION_VERSION = 'graduation-v1';
 export type PolicyId = 'A' | 'B' | 'C';
 export type Assignment = { policy: PolicyId; version: string };
 
 /**
- * Recall intervals in UTC days: the first counted from teaching, each later one from
+ * Recall intervals in the learner's days: the first counted from teaching, each later one from
  * the previous clean recall. A word graduates after one clean recall per interval.
  */
 export const POLICIES: Record<PolicyId, { intervals: number[] }> = {
@@ -40,7 +42,7 @@ export type Lifecycle = {
   /** Clean recalls toward graduation since teaching or the latest miss. */
   clean: number;
   needed: number;
-  /** UTC day the next recall or check-up is due; null once checked. */
+  /** The learner's day the next recall or check-up is due; null once checked. */
   due: string | null;
   /** Typed recalls since teaching. */
   recalls: number;
@@ -50,10 +52,6 @@ export type Lifecycle = {
   checkups: { at: string; passed: boolean }[];
 };
 
-const dayOf = (at: string) => at.slice(0, 10);
-export function addDays(day: string, days: number) {
-  return new Date(Date.parse(day + 'T00:00:00Z') + days * 86_400_000).toISOString().slice(0, 10);
-}
 
 /**
  * Replays the evidence after teaching under one policy. A clean recall is a correct
@@ -61,8 +59,10 @@ export function addDays(day: string, days: number) {
  * (typed or choice) resets the schedule from the day of the miss. A correct choice is
  * recognition and counts for nothing. After graduation, the first typed recall at
  * least CHECKUP_DAYS later is the check-up; a miss at any point reopens the word.
+ * zone: the learner's IANA time zone; every day here is a local day in it.
  */
-export function lifecycle(policy: PolicyId, taughtAt: string, outcomes: Outcome[]): Lifecycle {
+export function lifecycle(policy: PolicyId, taughtAt: string, outcomes: Outcome[], zone: string): Lifecycle {
+  const dayOf = (at: string) => learningDay(at, zone);
   const { intervals } = POLICIES[policy];
   let state: LifecycleState = 'first';
   let clean = 0;
@@ -109,5 +109,5 @@ export function lifecycle(policy: PolicyId, taughtAt: string, outcomes: Outcome[
   return { policy, state, clean, needed: intervals.length, due, recalls, recallsToGraduate, graduatedAt, checkups };
 }
 
-/** Whether a lifecycle wants a recall on the given UTC day. */
+/** Whether a lifecycle wants a recall on the given learner's day (from the same zone). */
 export const isDue = (life: Lifecycle, today: string) => life.due !== null && life.due <= today;

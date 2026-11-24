@@ -19,6 +19,7 @@
 // A saved word waits to be taught only once admitted (admission.ts): an explicit save
 // admits it; a word the learner only asked about is admitted by a separate judgment.
 import { isAdmission } from './admission.ts';
+import { learningDay } from './day.ts';
 import { isDue, lifecycle, type Assignment, type Lifecycle } from './lifecycle.ts';
 import type { Notice } from './situations/notice.ts';
 import type { JudgmentRecord, RecordedEvent, Target } from './record.ts';
@@ -29,7 +30,7 @@ const DAY = 86_400_000;
 const HALF_LIFE_DAYS = 14;
 /** Converted history that kept no time counts as this old. */
 const UNKNOWN_AGE_DAYS = 14;
-/** Clean uses on distinct days, after the latest weakness, that retire it. */
+/** Clean uses on distinct learner days, after the latest weakness, that retire it. */
 const GRADUATE_AFTER = 2;
 /** The hosted SRS contributes at most this much, against about 3 for one fresh need. */
 const HOSTED_WEIGHT = 0.3;
@@ -37,7 +38,7 @@ const HOSTED_WEIGHT = 0.3;
 const FIRST_RECALL = 10;
 /** A due settling recall or check-up: above a fresh need (about 3), so it competes high. */
 const DUE_RECALL = 3.5;
-/** New words taught per UTC day, as the hosted app's default new-word limit. */
+/** New words taught per learner day, as the hosted app's default new-word limit. */
 export const NEW_PER_DAY = 5;
 /** With this many weaknesses and newly taught words still open, nothing new is taught. */
 export const PRESSING_LIMIT = 8;
@@ -133,7 +134,6 @@ const production = new Set<Role>(['needed', 'flawed']);
 /** Signals from a rule-judged (bounded) exercise. */
 const bounded = new Set<Role>(['correct', 'recognized', 'missed']);
 
-const day = (at: string) => at.slice(0, 10);
 const ageDays = (at: string | null, now: number) => (at ? Math.max(0, (now - Date.parse(at)) / DAY) : UNKNOWN_AGE_DAYS);
 const decay = (age: number, halfLife = HALF_LIFE_DAYS) => Math.pow(0.5, age / halfLife);
 
@@ -157,10 +157,13 @@ function hostedScore(t: Target, now: number): { score: number; reason?: string }
  * admitted: forms admitted to be taught, with the reason (admission.ts). A saved word that
  * was only asked about and not admitted is never offered for teaching; with no admissions
  * passed, none is.
+ * zone: the learner's IANA time zone. Clean days, today's teaching and practice, and
+ * recall due days are the learner's local days in it (day.ts).
  */
-export function rank(targetList: Target[], signals: Signal[], nowDate = new Date(), admitted: ReadonlyMap<string, string> = new Map()): Ranked[] {
+export function rank(targetList: Target[], signals: Signal[], nowDate: Date, zone: string, admitted: ReadonlyMap<string, string> = new Map()): Ranked[] {
   const now = nowDate.getTime();
-  const today = nowDate.toISOString().slice(0, 10);
+  const day = (at: string | number) => learningDay(at, zone);
+  const today = day(now);
   const byForm = new Map<string, Signal[]>();
   for (const s of signals) {
     const list = byForm.get(s.form) ?? [];
@@ -191,6 +194,7 @@ export function rank(targetList: Target[], signals: Signal[], nowDate = new Date
           lesson.graduation!.policy,
           lesson.at!,
           own.filter((s) => s.exercise && s.at).map((s) => ({ at: s.at!, correct: s.role !== 'missed', typed: s.exercise === 'recall' })),
+          zone,
         )
       : undefined;
     if (life) {

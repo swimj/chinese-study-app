@@ -4,14 +4,15 @@
 import { fileURLToPath } from 'node:url';
 import { DatabaseSync } from 'node:sqlite';
 import { reportPath } from './media-report.ts';
-import { priorityOf } from './journal.ts';
+import { learningDay } from './day.ts';
+import { priorityOf, storedZone, zoneOf } from './journal.ts';
 import { lifecycle, POLICY_IDS, type Lifecycle, type PolicyId } from './lifecycle.ts';
 import { signalsFrom, type Signal } from './priority.ts';
 import { events, hasRecord, judgments, meta, targets } from './record.ts';
 import type { Notice } from './situations/notice.ts';
 
 /** One newly taught word in the graduation experiment, replayed under every policy. */
-export type ExperimentRow = { form: string; taughtAt: string; assigned: PolicyId; version: string; under: Record<PolicyId, Lifecycle> };
+export type ExperimentRow = { form: string; taughtAt: string; taughtOn: string; assigned: PolicyId; version: string; under: Record<PolicyId, Lifecycle> };
 /** Per policy: its assigned words, and every taught word scored in shadow as if it had that policy. */
 export type PolicyScore = { words: number; graduated: number; checkupsTaken: number; checkupsPassed: number; recallsToGraduate: number[] };
 
@@ -19,9 +20,9 @@ export type PolicyScore = { words: number; graduated: number; checkupsTaken: num
  * The graduation experiment, derived from the record. Each word taught on a lesson
  * card keeps the policy it was assigned; the same evidence is replayed under every
  * policy. Shadow scores are counterfactual: the recalls actually asked for followed
- * the assigned policy's schedule.
+ * the assigned policy's schedule. Days are the learner's days in zone.
  */
-export function graduationExperiment(signals: Signal[]) {
+export function graduationExperiment(signals: Signal[], zone: string) {
   const rows: ExperimentRow[] = [];
   const lessons = signals.filter((s) => s.role === 'taught' && s.graduation && s.at).sort((a, b) => a.at!.localeCompare(b.at!));
   for (const lesson of lessons) {
@@ -29,8 +30,8 @@ export function graduationExperiment(signals: Signal[]) {
     const outcomes = signals
       .filter((s) => s.form === lesson.form && s.exercise && s.at)
       .map((s) => ({ at: s.at!, correct: s.role !== 'missed', typed: s.exercise === 'recall' }));
-    const under = Object.fromEntries(POLICY_IDS.map((p) => [p, lifecycle(p, lesson.at!, outcomes)])) as Record<PolicyId, Lifecycle>;
-    rows.push({ form: lesson.form, taughtAt: lesson.at!, assigned: lesson.graduation!.policy, version: lesson.graduation!.version, under });
+    const under = Object.fromEntries(POLICY_IDS.map((p) => [p, lifecycle(p, lesson.at!, outcomes, zone)])) as Record<PolicyId, Lifecycle>;
+    rows.push({ form: lesson.form, taughtAt: lesson.at!, taughtOn: learningDay(lesson.at!, zone), assigned: lesson.graduation!.policy, version: lesson.graduation!.version, under });
   }
   const score = (lives: Lifecycle[]): PolicyScore => ({
     words: lives.length,
@@ -57,7 +58,7 @@ export function experimentText(experiment: ReturnType<typeof graduationExperimen
   const lines = ['', `Graduation experiment · ${experiment.rows.length} ${experiment.rows.length === 1 ? 'word' : 'words'} taught on lesson cards`];
   if (!experiment.rows.length) return lines;
   for (const r of experiment.rows)
-    lines.push(`  ${r.form} · taught ${r.taughtAt.slice(0, 10)} · assigned ${r.assigned} (${r.version})
+    lines.push(`  ${r.form} · taught ${r.taughtOn} · assigned ${r.assigned} (${r.version})
          ` +
       POLICY_IDS.map((p) => `${p}${p === r.assigned ? '*' : ''}: ${place(r.under[p])}`).join(' · '));
   lines.push('  Assigned (each policy over its own words)');
@@ -71,7 +72,8 @@ export function priorityReport(path: string, now = new Date(), limit = 25) {
   const db = new DatabaseSync(path, { readOnly: true });
   try {
     if (!hasRecord(db)) throw new Error('This journal has no record yet. Open it once with the current version.');
-    const ranked = priorityOf(db, now);
+    const zone = zoneOf(db);
+    const ranked = priorityOf(db, now, zone);
     const allTargets = targets(db);
     const allEvents = events(db);
     const allJudgments = judgments(db);
@@ -83,6 +85,7 @@ export function priorityReport(path: string, now = new Date(), limit = 25) {
       `Record · ${allEvents.length} events (${judged.size} judged) · ${allJudgments.length} judgments · judging events from ${meta(db, 'judge_from') ?? '?'}`,
       `Targets · ${[...byOrigin].map(([k, v]) => k + ' ' + v).join(' · ') || 'none'}`,
       imported ? 'Hosted import · ' + imported : 'Hosted import · none',
+      `Learning days · local days in ${zone}${storedZone(db) ? '' : ' (the server’s zone; the browser has not reported one)'}`,
       '',
       `Open: ${ranked.filter((r) => r.pressing).length} weaknesses or settling words · new words admitted today: ${ranked.filter((r) => r.fresh).length}`,
       `Top ${Math.min(limit, ranked.length)} of ${ranked.length} with any priority`,
@@ -99,7 +102,7 @@ export function priorityReport(path: string, now = new Date(), limit = 25) {
         for (const n of (j.body as Notice).needs) lines.push(`  ${j.at.slice(0, 16).replace('T', ' ')} · ${n.form} (${n.gloss}) from “${n.evidence}”${n.note ? ' · ' + n.note : ''}`);
     }
     const byId = new Map(allEvents.map((e) => [e.id, e]));
-    const experiment = graduationExperiment(signalsFrom(allJudgments, byId));
+    const experiment = graduationExperiment(signalsFrom(allJudgments, byId), zone);
     lines.push(...experimentText(experiment));
     return { text: lines.join('\n'), ranked, experiment };
   } finally {
