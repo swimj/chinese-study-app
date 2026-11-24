@@ -12,6 +12,11 @@ const demo = {
   tutor: async (ctx: TurnContext) => demoTutor(ctx),
   friend: async (ctx: TurnContext) => demoFriend(ctx),
 };
+/** Waits for background work, including cards prepared ahead in a practice session. */
+async function settle(j: { busy(): boolean }) {
+  for (let i = 0; i < 100 && j.busy(); i++) await new Promise((r) => setTimeout(r, 20));
+  assert.equal(j.busy(), false, 'background work should finish');
+}
 test('a real journal carries chat into practice and retains the served exercise and outcome on reopen', async () => {
   const folder = mkdtempSync(join(tmpdir(), 'mandarin-journal-test-')),
     path = join(folder, 'journal.db');
@@ -34,8 +39,10 @@ test('a real journal carries chat into practice and retains the served exercise 
     j.close();
     j = openJournal(path, demo);
     assert.equal(j.get().practice.result?.correct, null);
+    await settle(j);
     const next = await j.act({ id: randomUUID(), type: 'next', cardId });
-    assert.equal(next.practice.done, true);
+    assert.equal(next.practice.done, false, 'the session goes on with a card prepared in the background');
+    assert.ok(next.practice.card && next.practice.card.id !== cardId);
     await assert.rejects(j.act({ id: randomUUID(), type: 'answer', cardId, answer: '修复' }), /changed/);
   } finally {
     j.close();
@@ -173,7 +180,7 @@ test('the tutor can confirm a queued exercise, discuss its exact attempt and con
           exercise: {
             kind: 'open',
             prompt,
-            choices: [],
+            accepted: [], choices: [],
             answer: '只在门外等。',
             explanation: 'Limit the place.',
           },
@@ -191,6 +198,9 @@ test('the tutor can confirm a queued exercise, discuss its exact attempt and con
     assert.equal(j.get().activity.filter((row) => row.text.includes('Queued')).length, 1);
     const start = await j.act({ id: randomUUID(), type: 'practice', mode: 'Daily mix' });
     const cardId = start.practice.card!.id;
+    assert.equal(generated, 0, 'a queued card opens the session without a model call');
+    await settle(j);
+    assert.equal(j.get().practice.session?.ready, 2, 'two cards are prepared ahead');
     const finish = await j.act({ id: randomUUID(), type: 'answer', cardId, answer: '我只在咖啡店外面等。' });
     const attempt = finish.attempts.at(-1)!;
     assert.equal(finish.practice.result?.feedback, '只放在地点前，很清楚。');
@@ -198,11 +208,9 @@ test('the tutor can confirm a queued exercise, discuss its exact attempt and con
     assert.equal(finish.tutor.filter((t) => t.text === attempt.result.feedback).length, 0);
     await ask('Why there?', attempt.id);
     assert.match(inputs.at(-1)!.source, /只放在地点前，很清楚/);
-    await j.act({ id: randomUUID(), type: 'next', cardId });
-    const continued = await j.act({ id: randomUUID(), type: 'practice', mode: 'Daily mix', continue: true });
-    assert.match(continued.practice.card!.prompt, /another scene/);
-    assert.equal(generated, 3);
-    assert.ok(inputs.at(-1)?.previousPrompts?.includes('Where did you wait?'));
+    const continued = await j.act({ id: randomUUID(), type: 'next', cardId });
+    assert.match(continued.practice.card!.prompt, /another scene 1/);
+    assert.ok(inputs.find((ctx) => ctx.trigger === 'practice')?.previousPrompts?.includes('Where did you wait?'));
     // Changing mode keeps unattempted generated cards.
     await j.act({ id: randomUUID(), type: 'practice', mode: 'Past mistakes' });
     const back = await j.act({ id: randomUUID(), type: 'practice', mode: 'Daily mix' });
@@ -268,7 +276,7 @@ test('existing journals promote their original conversation and link prior feedb
     id: 'old-cafe',
     kind: 'open',
     prompt: 'Describe where you waited.',
-    choices: [],
+    accepted: [], choices: [],
     answer: '只在外面等。',
     explanation: 'Placement',
   };
@@ -680,7 +688,7 @@ test('a tutor’s practice rationale stays with its card and never returns as le
           exercise: {
             kind: 'open' as const,
             prompt: 'Say you are just waiting ' + ++generated,
-            choices: [],
+            accepted: [], choices: [],
             answer: '我只是在等。',
             explanation: 'Limit the activity.',
           },
@@ -710,8 +718,8 @@ test('a tutor’s practice rationale stays with its card and never returns as le
     const start = await j.act({ id: randomUUID(), type: 'practice', mode: 'Daily mix' });
     const cardId = start.practice.card!.id;
     await j.act({ id: randomUUID(), type: 'answer', cardId, answer: '我只是在等。' });
-    await j.act({ id: randomUUID(), type: 'next', cardId });
-    const continued = await j.act({ id: randomUUID(), type: 'practice', mode: 'Daily mix', continue: true });
+    await settle(j);
+    const continued = await j.act({ id: randomUUID(), type: 'next', cardId });
     assert.ok(continued.practice.card);
     assert.ok(inputs.some((ctx) => ctx.trigger === 'practice'));
     for (const ctx of inputs) assert.doesNotMatch(JSON.stringify(ctx), /probably confuses|Legacy rationale/);
@@ -740,7 +748,7 @@ test('a generated exercise matching a card from the replaced session is served, 
           kind: 'practice',
           title: 'Restoring data',
           detail: 'Collocation.',
-          exercise: { kind, prompt, choices, answer, explanation },
+          exercise: { kind, prompt, choices, answer, explanation, accepted: [] },
         },
       };
     },

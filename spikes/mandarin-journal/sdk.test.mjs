@@ -130,6 +130,7 @@ test('real SDK runs each situation with its own schema and instructions, uses re
         exercise: {
           kind: 'choice',
           choices: ['词一', '词二'],
+          accepted: [],
           prompt: '测试',
           answer: '词三',
           explanation: 'Example.',
@@ -151,6 +152,7 @@ test('real SDK runs each situation with its own schema and instructions, uses re
       kind: 'open',
       prompt: 'Describe the scene.',
       choices: [],
+      accepted: [],
       answer: '在窗边等。',
       explanation: 'Give the location.',
     },

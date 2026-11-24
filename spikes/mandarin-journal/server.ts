@@ -34,6 +34,7 @@ const files = new Map([
   ['/', ['index.html', 'text/html']],
   ['/app.js', ['app.js', 'text/javascript']],
   ['/capture.js', ['capture.js', 'text/javascript']],
+  ['/teaching.js', ['teaching.js', 'text/javascript']],
   ['/annotations.js', ['annotations.js', 'text/javascript']],
   ['/annotations.css', ['annotations.css', 'text/css']],
   ['/pdf-import.js', ['pdf-import.js', 'text/javascript']],

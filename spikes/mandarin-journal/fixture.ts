@@ -16,7 +16,7 @@ const offline = {
 type Journal = ReturnType<typeof openJournal>;
 type State = Awaited<ReturnType<Journal['act']>>;
 
-// Waits for background word preparation and picture considerations.
+// Waits for background word preparation, picture considerations and practice cards.
 async function settle(j: Journal) {
   for (let i = 0; i < 100; i++) {
     if (!j.busy()) return;
@@ -58,6 +58,8 @@ export async function buildFixture(path: string) {
     }
     await settle(j);
     await act({ type: 'practice', mode: 'Daily mix' });
+    // The session's next cards are prepared in the background.
+    await settle(j);
     return j.get();
   } finally {
     j.close();
