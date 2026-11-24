@@ -6,14 +6,17 @@ import type { MediaConsideration, MediaRequest } from './situations/media.ts';
 import type { Notice, NoticeRequest } from './situations/notice.ts';
 import type { RawBeat } from './situations/teach.ts';
 import type { TeachRequest } from './teaching.ts';
+import type { AdmissionDecision, AdmissionRequest } from './admission.ts';
 import { instructionsFor, situationFor, situations, type Reflection, type SituationName, type TutorAction } from './situations/index.ts';
 
 export interface TurnContext {
-  trigger: 'capture' | 'ask' | 'miss' | 'practice' | 'reflect' | 'answer' | 'wordIntake' | 'mediaConsider' | 'notice' | 'teach';
+  trigger: 'capture' | 'ask' | 'miss' | 'practice' | 'reflect' | 'answer' | 'wordIntake' | 'mediaConsider' | 'notice' | 'teach' | 'admit';
   captureFollowUp?: { text: string; question: string; previousReply?: string };
   wordIntake?: WordRequest;
   teach?: TeachRequest;
   notice?: NoticeRequest;
+  /** Admission: whether something the learner asked about should also be taught. */
+  admission?: AdmissionRequest;
   media?: MediaRequest;
   practiceWord?: { title: string } & WordContent;
   message: string;
@@ -50,6 +53,7 @@ export type TutorResult = {
   media?: MediaConsideration | null;
   notice?: Notice | null;
   beats?: RawBeat[] | null;
+  admission?: { decisions: AdmissionDecision[] } | null;
 };
 
 const recallInput = z.object({

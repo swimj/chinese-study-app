@@ -93,7 +93,9 @@ test('a word waiting for its first recall is first in line; a due recall ranks h
   assert.equal(waiting.length, 0, 'B waits three days after the first clean recall');
   const fresh = Array.from({ length: 6 }, (_, i) => ({ ...target('新' + i) }));
   const busy = Array.from({ length: 8 }, (_, i) => lesson('词' + i, 'C', at(1, 9)));
-  const blocked = rank([...fresh, ...busy.map((s) => target(s.form))], busy.flatMap((s) => [s, recalled(s.form, 1)]), day(1));
+  const admitted = new Map(fresh.map((t) => [t.form, 'explicit save']));
+  assert.ok(rank(fresh, [], day(1), admitted).some((r) => r.fresh), 'with nothing open, admitted new words are offered');
+  const blocked = rank([...fresh, ...busy.map((s) => target(s.form))], busy.flatMap((s) => [s, recalled(s.form, 1)]), day(1), admitted);
   assert.equal(blocked.filter((r) => r.fresh).length, 0, 'settling words not yet due still hold back new ones');
   const due = rank([target('透透气'), target('修复')], [lesson('透透气', 'B'), recalled('透透气', 2), ...needs], day(5));
   assert.deepEqual(due.map((r) => [r.target.form, r.stage]), [['透透气', 'scheduled'], ['修复', undefined]]);

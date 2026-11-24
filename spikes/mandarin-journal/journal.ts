@@ -31,8 +31,10 @@ import { validateTurn, type Reflection as TutorReflection, type SituationName, t
 
 import {
   addWord, addWordAction, clarifyWordAction, retryWordAction, resumeWord, reusableWord, finishWord, wordRequest,
+  describeSaved, intakeReply, isExplicitSave, needsChoice,
   OfflineWordUnavailable, type WordIntake, type WordContent, type WordDecision,
 } from './word-intake.ts';
+import { admitted, ADMIT_PROMPT, explicitAdmission, type AdmissionBody, type AdmissionDecision, type AdmissionRequest } from './admission.ts';
 import { withMediaDefaults, type MediaState } from './media/model.ts';
 import { anchorIds, applyOutcome, DAILY_LIMIT, finishJob, mediaRequestFor, queueMediaJobs, ranToday } from './media/job.ts';
 import { OfflineMediaUnavailable } from './media/demo.ts';
@@ -40,7 +42,7 @@ import type { MediaOutcome } from './situations/media.ts';
 import type { NoticeRequest } from './situations/notice.ts';
 import {
   addJudgment, appendEvent, createRecordTables, events as recordEvents, formsIn, judgedToday, judgments as recordJudgments,
-  meta, nextUnjudged, setMeta, targets as recordTargets, upsertTarget, type NewEvent, type JudgmentRecord,
+  eventById, meta, nextUnjudged, setMeta, targets as recordTargets, upsertTarget, type NewEvent, type JudgmentRecord,
 } from './record.ts';
 import { rank, signalsFrom, type ChoiceJudgment, type Ranked } from './priority.ts';
 import {
@@ -140,6 +142,8 @@ type Message = TurnContext['tutorHistory'][number] & {
   kind?: 'observation';
   wordIntakeId?: string;
   wordRequestId?: string;
+  /** A status line while an intake is prepared; its outcome replaces it. */
+  lookingInto?: string;
   captureOriginId?: string;
   captureQuestionId?: string;
   captureResolved?: boolean;
@@ -169,7 +173,8 @@ type QueuedCard = Omit<Card, 'kind'> & {
   targets?: string[]; purpose?: Purpose; stage?: Stage;
 };
 /** What an action records beside the journal: events, and rule judgments made on the spot. */
-type Outbox = { events: NewEvent[]; judgments: JudgmentRecord[]; priority: () => Ranked[] };
+/** admitted: forms admitted as targets to teach, with the reason (admission.ts). */
+type Outbox = { events: NewEvent[]; judgments: JudgmentRecord[]; priority: () => Ranked[]; admitted: () => Map<string, string> };
 type Item = { word?: WordContent; id: string; kind: string; title: string; detail: string; source: string; reference?: Reference };
 /** landed: whether an open answer landed as an apt reply, judged by the feedback; not shown as a grade. */
 type Result = { correct: boolean | null; feedback: string; landed?: boolean };
@@ -365,10 +370,15 @@ function keep(s: State, kind: string, title: string, detail: string, src: string
     logActivity(s, 'Saved ' + kind.toLowerCase() + ' · ' + title, reference?.label ?? src, reference);
   }
 }
-function applyAction(s: State, a: TutorAction | null, ctx: TurnContext, reference?: Reference) {
+/**
+ * Applies a tutor's action. A stash happens only on the learner's explicit request to
+ * keep a word, so it admits the word, recorded against the event that asked (eventId).
+ */
+function applyAction(s: State, a: TutorAction | null, ctx: TurnContext, outbox: Outbox, eventId: string, reference?: Reference) {
   if (!a) return;
   if (a.kind === 'stash' || a.kind === 'note') {
     keep(s, a.kind === 'stash' ? 'Word' : 'Note', a.title, a.detail, ctx.source, reference);
+    if (a.kind === 'stash') outbox.judgments.push(explicitAdmission(eventId, [a.title], 'asked the tutor to keep it'));
     return;
   }
   const card = exerciseCard(a, ctx);
@@ -386,9 +396,10 @@ function exerciseCard(a: TutorAction | null, ctx: TurnContext): QueuedCard | und
   if (a?.kind !== 'practice' || !a.exercise) return;
   return { ...a.exercise, id: randomUUID(), title: a.title, rationale: a.detail, source: ctx.source };
 }
-function practiceSources(s: State, mode: string): string[] {
+/** Recent material for exercises. A saved word is material only once admitted; a word only asked about stays a piece. */
+function practiceSources(s: State, mode: string, admittedForms: Map<string, string>): string[] {
   const words = s.saved
-    .filter((item) => item.kind === 'Word')
+    .filter((item) => item.kind === 'Word' && admittedForms.has(item.title))
     .slice(-8)
     .reverse()
     .map((item) => item.title + ' · ' + item.detail);
@@ -413,8 +424,10 @@ function practiceSources(s: State, mode: string): string[] {
     ([doc, paragraph]) => 'Encountered in reading: ' + readingSource(s.reading, doc + '/' + paragraph),
   );
   // The learner's own requests to the tutor, with what they were looking at.
+  // Turns that brought a word in are represented by the word itself, once admitted.
+  const intakeTurns = new Set(s.wordIntakes.map((w) => w.id));
   const requests = s.tutor
-    .filter((m) => m.role === 'user')
+    .filter((m) => m.role === 'user' && !m.wordIntakeId && !(m.id && intakeTurns.has(m.id)))
     .slice(-4)
     .reverse()
     .map((m) => 'Asked the tutor · ' + m.text + (m.source ? ' · about: ' + m.source.slice(0, 600) : ''));
@@ -510,14 +523,14 @@ function sessionRecalls(p: Practice): PracticeSource[] {
     });
 }
 /** What the next card of the current session could be about, best first. */
-function sessionSources(s: State, ranked: () => Ranked[]): PracticeSource[] {
+function sessionSources(s: State, ranked: () => Ranked[], admittedForms: () => Map<string, string>): PracticeSource[] {
   const p = s.practice;
   const skipped = new Set(p.session?.skipped ?? []);
   const recalls = sessionRecalls(p).filter((x) => !skipped.has(x.source));
   // Past the box, the session only finishes its open work.
   if (wrappingUp(p)) return recalls;
   const prioritized = p.mode === 'Daily mix' ? prioritySources(s, ranked(), freshAllowed(p), dueAllowed(p.cards)) : [];
-  const material = practiceSources(s, p.mode).map((source): PracticeSource => ({ source, purpose: 'material' }));
+  const material = practiceSources(s, p.mode, admittedForms()).map((source): PracticeSource => ({ source, purpose: 'material' }));
   const all = [...prioritized, ...material].filter((x) => !skipped.has(x.source));
   // Priority targets go in order; plain material rotates, least used first.
   const uses = p.session?.uses ?? {};
@@ -647,10 +660,10 @@ function applyGenerated(s: State, pick: PracticeSource | undefined, outcome: Gen
 }
 /** Prepares the card in front of the learner inside the action, when nothing is ready. */
 const MAX_EMPTIES = 3;
-async function generateNow(s: State, backend: Backend, ranked: () => Ranked[], now: Date) {
+async function generateNow(s: State, backend: Backend, ranked: () => Ranked[], admittedForms: () => Map<string, string>, now: Date) {
   // The learner waits for this card. A lesson is a slower, deliberate model call,
   // so another priority item opens the session when there is one.
-  const sources = sessionSources(s, ranked);
+  const sources = sessionSources(s, ranked, admittedForms);
   const pick =
     sources[0]?.purpose === 'teach'
       ? (sources.find((source) => source.purpose !== 'teach' && source.purpose !== 'material') ?? sources[0])
@@ -693,7 +706,7 @@ async function startPractice(s: State, mode: string, backend: Backend, keepGoing
         p.cards = missedCards(s, session.budget - session.spent);
         p.index = 0;
         p.result = null;
-      } else if (p.index >= p.cards.length) await generateNow(s, backend, outbox.priority, now);
+      } else if (p.index >= p.cards.length) await generateNow(s, backend, outbox.priority, outbox.admitted, now);
       session.shownAt = p.index < p.cards.length ? now.toISOString() : null;
       return;
     }
@@ -712,11 +725,11 @@ async function startPractice(s: State, mode: string, backend: Backend, keepGoing
     const firstRecall = (c: QueuedCard) => c.purpose === 'settle' && c.stage === 'first';
     s.pending.sort((a, b) => Number(firstRecall(b)) - Number(firstRecall(a)));
     if (mode === 'Daily mix' && !s.pending.some(firstRecall) && prioritySources(s, outbox.priority()).some((x) => x.stage === 'first'))
-      await generateNow(s, backend, outbox.priority, now);
+      await generateNow(s, backend, outbox.priority, outbox.admitted, now);
     s.practice.cards.push(...s.pending.splice(0, 3));
     // The first card costs at most one model call; the rest are prepared ahead.
     if (!s.practice.cards.length) {
-      if (sessionSources(s, outbox.priority).length) await generateNow(s, backend, outbox.priority, now);
+      if (sessionSources(s, outbox.priority, outbox.admitted).length) await generateNow(s, backend, outbox.priority, outbox.admitted, now);
       else {
         // A fresh journal has no material yet: the starter catalogue.
         const seen = new Map(s.attempts.map((attempt, i) => [attempt.card.id, i]));
@@ -838,7 +851,7 @@ async function postAnnotation(
       { role: 'assistant', text: response.reply, at: new Date().toISOString() },
     );
     // Persist the compact source link with any study action. The full discussion belongs to the annotation.
-    applyAction(s, response.action, { ...ctx, source: reference.label + ' · ' + reference.quote }, reference);
+    applyAction(s, response.action, { ...ctx, source: reference.label + ' · ' + reference.quote }, outbox, action.id, reference);
   } else {
     thread.messages.push({ id: action.id, role: 'user', text: message, at });
   }
@@ -929,12 +942,16 @@ async function handleHomeCapture(
   }
   if (route.kind === 'word') {
     const wordContext = [source, original?.text, a.text === route.target ? '' : a.text].filter(Boolean).join('\n');
-    addWord(s.wordIntakes, s.saved, { type: 'addWord', id: a.id, text: route.target, context: wordContext });
-    outbox.events.push({ id: a.id, at: new Date().toISOString(), kind: 'addWord', surface: 'home', text: route.target, context: { context: wordContext, sent: a.text } });
-    const ready = s.wordIntakes.at(-1)?.status === 'ready';
-    s.tutor.push(learner, { role: 'assistant', text: ready
-      ? route.target + ' is already in your vocabulary.'
-      : 'I’ll prepare ' + route.target + ' for vocabulary practice.' });
+    addWord(s.wordIntakes, s.saved, { type: 'addWord', id: a.id, text: route.target, context: wordContext }, route.intent);
+    outbox.events.push({
+      id: a.id, at: new Date().toISOString(), kind: 'addWord', surface: 'home', text: route.target,
+      context: { context: wordContext, sent: a.text, intent: route.intent },
+    });
+    const intake = s.wordIntakes.at(-1)!;
+    s.tutor.push(learner);
+    // Only an explicit save of a word already in the journal finishes at once.
+    if (intake.status === 'ready') finishSavedAtOnce(s, intake, outbox);
+    else s.tutor.push({ role: 'assistant', text: 'Looking into ' + route.target + '…', lookingInto: intake.id });
     return;
   }
   const askContext: TurnContext = { ...ctx, trigger: 'ask' };
@@ -944,7 +961,23 @@ async function handleHomeCapture(
     id: a.id, at: new Date().toISOString(), kind: 'ask', surface: 'home', text: a.text,
     context: { respondingTo: source.slice(0, 600) || undefined, tutorSaid: response.reply },
   });
-  applyAction(s, response.action, askContext);
+  applyAction(s, response.action, askContext, outbox, a.id);
+}
+
+/** An explicit save that reused an existing word: admitted by rule, explained from what was prepared before. */
+function finishSavedAtOnce(s: State, intake: WordIntake, outbox: Outbox) {
+  const items = savedOf(s, intake);
+  outbox.judgments.push(explicitAdmission(intake.id, items.map((item) => item.title), 'explicit save'));
+  recordWordOutcome(s, intake, intakeReply(items.map(describeSaved).join('\n\n'), items.map((item) => item.title)));
+}
+function savedOf(s: State, intake: WordIntake) {
+  const items = (intake.savedIds ?? []).map((id) => {
+    const item = s.saved.find((item) => item.id === id);
+    if (!item) throw new Error('Missing prepared word');
+    return item;
+  });
+  if (!items.length) throw new Error('Word preparation produced no saved items');
+  return items;
 }
 
 function answerEvent(attempt: Attempt, at: string | null): NewEvent {
@@ -988,9 +1021,14 @@ async function mutate(
     case 'capture':
       if (isReadingLink(a.text)) return;
       return handleHomeCapture(s, backend, a, outbox);
-    case 'addWord':
-      outbox.events.push({ id: a.id, at: now, kind: 'addWord', surface: 'home', text: a.text, context: { context: a.context } });
-      return addWord(s.wordIntakes, s.saved, a);
+    case 'addWord': {
+      // Adding a word by name is an explicit save.
+      outbox.events.push({ id: a.id, at: now, kind: 'addWord', surface: 'home', text: a.text, context: { context: a.context, intent: 'save' } });
+      addWord(s.wordIntakes, s.saved, a, 'save');
+      const intake = s.wordIntakes.at(-1)!;
+      if (intake.status === 'ready') outbox.judgments.push(explicitAdmission(a.id, savedOf(s, intake).map((item) => item.title), 'explicit save'));
+      return;
+    }
     case 'clarifyWord':
     case 'retryWord':
       return resumeWord(s.wordIntakes, a);
@@ -1135,7 +1173,7 @@ async function mutate(
         { id: a.id, role: 'user', text: a.message, source: ctx.source, sourceLabel: a.sourceLabel, reference: anchor?.reference },
         { role: 'assistant', text: response.reply, source: ctx.source, reference: anchor?.reference },
       );
-      applyAction(s, response.action, ctx, anchor?.reference);
+      applyAction(s, response.action, ctx, outbox, a.id, anchor?.reference);
       return;
     }
     case 'saveReading': {
@@ -1244,7 +1282,8 @@ async function mutate(
   }
 }
 
-function recordWordOutcome(s: State, intake: WordIntake) {
+/** The tutor's turn for an intake's outcome. A ready intake's reply is composed by the caller (intakeReply). */
+function recordWordOutcome(s: State, intake: WordIntake, reply?: string) {
   let text: string;
   switch (intake.status) {
     case 'clarify':
@@ -1255,19 +1294,15 @@ function recordWordOutcome(s: State, intake: WordIntake) {
       if (!intake.error) throw new Error('Missing word preparation error');
       text = intake.error;
       break;
-    case 'ready': {
-      const titles = intake.savedIds?.map(id => {
-        const item = s.saved.find(item => item.id === id);
-        if (!item) throw new Error('Missing prepared word');
-        return item.title;
-      });
-      if (!titles?.length) throw new Error('Word preparation produced no saved items');
-      text = 'Ready for vocabulary practice: ' + titles.join('、') + '.';
+    case 'ready':
+      if (!reply) throw new Error('A ready word needs its reply');
+      text = reply;
       break;
-    }
     case 'pending':
       throw new Error('Cannot report unfinished word preparation');
   }
+  const status = s.tutor.findIndex((m) => m.lookingInto === intake.id);
+  if (status >= 0) s.tutor.splice(status, 1);
   s.tutor.push({ role: 'assistant', text, source: intake.text, wordIntakeId: intake.id, wordRequestId: intake.requestId });
 }
 
@@ -1348,7 +1383,7 @@ function upgrade(body: string): State {
  * model never reads converted history.
  */
 function convertHistory(s: State): Outbox {
-  const out: Outbox = { events: [], judgments: [], priority: () => [] };
+  const out: Outbox = { events: [], judgments: [], priority: () => [], admitted: () => new Map() };
   for (const thread of s.threads)
     thread.turns.forEach((m, i) => {
       if (m.role !== 'user') return;
@@ -1388,7 +1423,13 @@ function syncTargets(db: DatabaseSync, s: State) {
 /** The current priority ranking over a journal database. */
 export function priorityOf(db: DatabaseSync, now = new Date()) {
   const byId = new Map(recordEvents(db).map((e) => [e.id, e]));
-  return rank(recordTargets(db), signalsFrom(recordJudgments(db), byId), now);
+  const judgmentList = recordJudgments(db);
+  const targetList = recordTargets(db);
+  return rank(targetList, signalsFrom(judgmentList, byId), now, admitted(judgmentList, targetList, meta(db, 'admit_from')));
+}
+/** Forms admitted as targets to teach, derived from the record. */
+export function admittedOf(db: DatabaseSync) {
+  return admitted(recordJudgments(db), recordTargets(db), meta(db, 'admit_from'));
 }
 
 /**
@@ -1438,6 +1479,20 @@ export function openJournal(path: string, backend: Backend = engine) {
       throw error;
     }
   }
+  // Admission is judged from this version on. Words saved before it were saved under
+  // the old rule that every save is studied, and stay admitted (admission.ts).
+  if (!meta(db, 'admit_from')) {
+    db.exec('BEGIN IMMEDIATE');
+    try {
+      syncTargets(db, read().s);
+      setMeta(db, 'admit_from', new Date().toISOString());
+      db.exec('COMMIT');
+    } catch (error) {
+      db.exec('ROLLBACK');
+      throw error;
+    }
+  }
+  const admitSource = (backend.mode === 'live' ? 'model:' + (process.env.JOURNAL_MODEL || 'gpt-6.2-sol') : 'demo') + '/' + ADMIT_PROMPT;
   const judgeFrom = meta(db, 'judge_from')!;
   const noticeSource = backend.mode === 'live' ? 'model:' + (process.env.JOURNAL_MODEL || 'gpt-6.2-sol') + '/notice-v1' : 'demo:notice-v1';
   let tail: Promise<unknown> = Promise.resolve();
@@ -1470,6 +1525,35 @@ export function openJournal(path: string, backend: Backend = engine) {
             ? error.message
             : 'The tutor could not prepare this word. Try again.';
       }
+      // The explanation comes first; then, for an ask, the admission judgment decides
+      // whether the word is also taught. An explicit save is admitted by rule.
+      let explanation: string | undefined;
+      let admission: { decisions?: AdmissionDecision[]; request?: AdmissionRequest; failed?: string } | undefined;
+      const words = reuse
+        ? [{ title: reuse.title, pinyin: reuse.word!.pinyin, meaning: reuse.word!.meaning, example: reuse.word!.example }]
+        : decision?.kind === 'ready' && !needsChoice(job, decision) ? decision.words : undefined;
+      const explicit = isExplicitSave(job, decision);
+      if (words) {
+        explanation = reuse ? describeSaved(reuse) : decision!.kind === 'ready' ? decision!.explanation : undefined;
+        if (!explicit && explanation) {
+          const sent = eventById(db, job.id)?.context.sent;
+          const request: AdmissionRequest = {
+            forms: words.map((w) => ({ form: w.title, pinyin: w.pinyin, gloss: w.meaning, example: w.example })),
+            sent: typeof sent === 'string' ? sent : job.text,
+            ...(job.context ? { context: job.context } : {}),
+            replies: job.history.map((x) => x.reply),
+            explanation,
+          };
+          const actx = context(s, 'admit', job.text, 'Add word', job.context || '');
+          actx.admission = request;
+          try {
+            admission = { decisions: await consult(backend, 'admit', actx), request };
+          } catch (error) {
+            console.error('Admission judgment failed:', error);
+            admission = { failed: String((error as Error).message ?? error), request };
+          }
+        }
+      }
       await enqueue(() => {
         if (closed) return;
         db.exec('BEGIN IMMEDIATE');
@@ -1494,7 +1578,21 @@ export function openJournal(path: string, backend: Backend = engine) {
               intake.status = 'failed';
               intake.error = failure;
             }
-            recordWordOutcome(latest, intake);
+            let reply: string | undefined;
+            if (intake.status === 'ready') {
+              if (!explanation) throw new Error('A ready word has no explanation');
+              const titles = savedOf(latest, intake).map((item) => item.title);
+              const at = new Date().toISOString();
+              if (explicit) addJudgment(db, explicitAdmission(intake.id, titles, 'explicit save', at));
+              else if (admission) {
+                const body: AdmissionBody = { decisions: admission.decisions ?? [], request: admission.request, ...(admission.failed ? { failed: admission.failed } : {}) };
+                addJudgment(db, { id: randomUUID(), eventId: intake.id, at, source: admitSource, body });
+              }
+              // The practice line names what is admitted now, by this judgment or before.
+              const admittedNow = admittedOf(db);
+              reply = intakeReply(explanation, titles.filter((title) => admittedNow.has(title)));
+            }
+            recordWordOutcome(latest, intake, reply);
             db.prepare('UPDATE journal SET body=?,revision=revision+1 WHERE id=1').run(
               JSON.stringify(latest),
             );
@@ -1611,7 +1709,7 @@ export function openJournal(path: string, backend: Backend = engine) {
       const { s } = read();
       const session = s.practice.session;
       if (!session || !needsCard(s.practice)) return;
-      const pick = sessionSources(s, () => priorityOf(db))[0];
+      const pick = sessionSources(s, () => priorityOf(db), () => admittedOf(db))[0];
       let outcome: Generated = null;
       if (pick)
         try {
@@ -1689,7 +1787,7 @@ export function openJournal(path: string, backend: Backend = engine) {
       return result();
     }
     const before = anchorIds(s);
-    const outbox: Outbox = { events: [], judgments: [], priority: () => priorityOf(db) };
+    const outbox: Outbox = { events: [], judgments: [], priority: () => priorityOf(db), admitted: () => admittedOf(db) };
     await mutate(s, a, backend, reviewImport, outbox, onChatText);
     queueMediaJobs(s, before);
     db.exec('BEGIN IMMEDIATE');

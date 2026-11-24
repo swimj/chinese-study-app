@@ -130,6 +130,11 @@ function eventFrom(row: Record<string, unknown>): RecordedEvent {
   };
 }
 
+export function eventById(db: DatabaseSync, id: string): RecordedEvent | undefined {
+  const row = db.prepare('SELECT * FROM events WHERE id=?').get(id);
+  return row ? eventFrom(row) : undefined;
+}
+
 export function events(db: DatabaseSync): RecordedEvent[] {
   return db.prepare('SELECT * FROM events ORDER BY seq').all().map(eventFrom);
 }
@@ -164,10 +169,10 @@ export function judgments(db: DatabaseSync): JudgmentRecord[] {
     }));
 }
 
-/** Model judgments made today, for the daily limit. */
+/** Model notice judgments made today, for the daily limit. Admission judgments are not limited. */
 export function judgedToday(db: DatabaseSync, now = new Date()) {
   const day = now.toISOString().slice(0, 10);
-  const row = db.prepare("SELECT count(*) n FROM judgments WHERE source LIKE 'model:%' AND substr(at,1,10) = ?").get(day);
+  const row = db.prepare("SELECT count(*) n FROM judgments WHERE source LIKE 'model:%' AND source NOT LIKE '%/admit-v%' AND substr(at,1,10) = ?").get(day);
   return Number(row?.n ?? 0);
 }
 

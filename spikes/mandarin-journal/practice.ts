@@ -1,5 +1,6 @@
 import { demoCapture, requestsCaptureNote } from './situations/capture.ts';
-import { demoIntake, demoStashGlosses } from './word-intake-demo.ts';
+import { demoIntake, demoStashGlosses, isDemoWord } from './word-intake-demo.ts';
+import { demoAdmission } from './situations/admit.ts';
 import { demoMedia } from './media/demo.ts';
 import { demoNotice } from './situations/notice.ts';
 import type { Beat, BeatPart, TeachTarget } from './teaching.ts';
@@ -487,6 +488,9 @@ function demoTurn(input: TurnContext): TutorResult {
     case 'teach':
       if (!input.teach) throw new Error('Missing teaching target');
       return { beats: demoTeaching(input.teach) };
+    case 'admit':
+      // Offline: admit the curated words the demo can teach, except one too basic to need teaching.
+      return { admission: { decisions: demoAdmission(input, (form) => isDemoWord(form) && form !== '图书馆') } };
     case 'wordIntake':
       if (!input.wordIntake) throw new Error('Missing word intake');
       return { reply: '', action: null, wordDecision: demoIntake(input.wordIntake) };

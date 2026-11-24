@@ -105,6 +105,9 @@ demoWords['行（行业）'] = {
   translation: 'I have worked in this line of business for ten years.',
 };
 
+/** Whether the offline demo has a prepared word with this title. */
+export const isDemoWord = (title: string) => Object.values(demoWords).some((w) => w.title === title);
+
 export function recognizesDemoWord(text: string) {
   return Object.hasOwn(demoWords, text) || ['行', '蜘', '蛛'].includes(text);
 }
@@ -113,8 +116,12 @@ export function demoIntake(request: WordRequest): WordDecision {
   const { text, context, history, localWords } = request;
   const reply = history.at(-1)?.reply ?? '';
   function ready(...keys: string[]): WordDecision {
+    const words = keys.map((key) => demoWords[key]).filter(Boolean);
     return {
       kind: 'ready',
+      // Offline, the explanation is the prepared gloss and example; the live tutor explains in context.
+      explanation: words.map((w) => `${w.title} (${w.pinyin}): ${w.meaning}\n${w.example} ${w.translation}`).join('\n\n'),
+      saveRequested: /\b(?:save|keep|learn|study|practi[cs]e|add)\b|收藏|记住|学一下/i.test(reply),
       words: keys.map((key) => {
         const word = demoWords[key];
         if (!word) throw new Error('Unknown offline word fixture');

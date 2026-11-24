@@ -15,6 +15,10 @@
 // only typed recall counts toward its graduation, due recalls rank high, and a word
 // whose first recall has not happened yet is first in line. An exercise the learner
 // flagged as bad counts for nothing either way.
+//
+// A saved word waits to be taught only once admitted (admission.ts): an explicit save
+// admits it; a word the learner only asked about is admitted by a separate judgment.
+import { isAdmission } from './admission.ts';
 import { isDue, lifecycle, type Assignment, type Lifecycle } from './lifecycle.ts';
 import type { Notice } from './situations/notice.ts';
 import type { JudgmentRecord, RecordedEvent, Target } from './record.ts';
@@ -69,6 +73,8 @@ export function signalsFrom(judgmentList: JudgmentRecord[], eventsById: Map<stri
   const flagged = new Set([...eventsById.values()].filter((e) => e.kind === 'flag' && e.ref).map((e) => e.ref!));
   // Judgments can be rerun: only the newest model reading of each event counts.
   const latest = new Map<string, JudgmentRecord>();
+  // Admission judgments say what may be taught, not what the learner's language shows.
+  judgmentList = judgmentList.filter((j) => !isAdmission(j.source));
   for (const j of judgmentList) {
     if (j.source.startsWith('rule:') || (j.body as { failed?: string }).failed) continue;
     const seen = latest.get(j.eventId);
@@ -146,8 +152,13 @@ function hostedScore(t: Target, now: number): { score: number; reason?: string }
   };
 }
 
-/** Ranks targets by priority, highest first. Dismissed and zero-priority targets are left out. */
-export function rank(targetList: Target[], signals: Signal[], nowDate = new Date()): Ranked[] {
+/**
+ * Ranks targets by priority, highest first. Dismissed and zero-priority targets are left out.
+ * admitted: forms admitted to be taught, with the reason (admission.ts). A saved word that
+ * was only asked about and not admitted is never offered for teaching; with no admissions
+ * passed, none is.
+ */
+export function rank(targetList: Target[], signals: Signal[], nowDate = new Date(), admitted: ReadonlyMap<string, string> = new Map()): Ranked[] {
   const now = nowDate.getTime();
   const today = nowDate.toISOString().slice(0, 10);
   const byForm = new Map<string, Signal[]>();
@@ -220,13 +231,13 @@ export function rank(targetList: Target[], signals: Signal[], nowDate = new Date
             (cleanDays ? ` · ${cleanDays} clean day since` : ''),
         );
       }
-    } else if (!own.length && (t.origin === 'saved' || (t.hosted?.inStash && t.hosted.mode === 'unstudied'))) {
-      // A word the learner chose and has not studied waits to be taught, from
-      // the journal or from the old app's stash alike.
+    } else if (!own.length && ((t.origin === 'saved' && admitted.has(t.form)) || (t.hosted?.inStash && t.hosted.mode === 'unstudied'))) {
+      // A word admitted to be taught and not studied yet waits to be taught, from the
+      // journal or from the old app's stash (an explicit save there) alike.
       score += decay(ageDays(t.createdAt, now), 21);
       fresh = true;
       purpose = 'teach';
-      reasons.push(t.origin === 'saved' ? 'saved, not practiced yet' : 'in the old stash, never taught');
+      reasons.push(t.origin === 'saved' ? 'saved, not practiced yet · admitted: ' + admitted.get(t.form) : 'in the old stash, never taught');
     }
 
     const hosted = hostedScore(t, now);
@@ -255,6 +266,6 @@ export function rank(targetList: Target[], signals: Signal[], nowDate = new Date
   ranked.sort((a, b) => b.score - a.score);
   // Backpressure on new words: a daily limit, and none while too much is still open.
   const allowance = open >= PRESSING_LIMIT ? 0 : Math.max(0, NEW_PER_DAY - taughtToday);
-  let admitted = 0;
-  return ranked.filter((r) => !r.fresh || admitted++ < allowance);
+  let offered = 0;
+  return ranked.filter((r) => !r.fresh || offered++ < allowance);
 }
