@@ -87,10 +87,9 @@ test('word submission acknowledges durably, keeps user actions during generation
     assert.equal(reuse.wordIntakes[1].status, 'ready');
     assert.deepEqual(reuse.wordIntakes[1].savedIds, ready.savedIds);
     assert.equal(intakes, 1);
-    const practice = await j.act({ type: 'practice', mode: 'Build vocabulary', id: randomUUID() });
-    assert.match(practice.practice.card?.introduction ?? '', /报备/);
-    assert.equal(practice.practice.card?.kind, 'recall', 'a word taught from material is checked by recall');
-    assert.match(practice.practice.card?.prompt ?? '', /Notify someone/);
+    const practice = await j.act({ type: 'practice', mode: 'Daily mix', id: randomUUID() });
+    assert.equal(practice.practice.card?.kind, 'lesson', 'the saved word is taught on a lesson card');
+    assert.equal(practice.practice.card?.prompt, '报备');
   } finally {
     finish.resolve();
     friendFinish.resolve();

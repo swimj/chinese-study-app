@@ -77,7 +77,7 @@ export const actionSchema = z.discriminatedUnion('type', [
   z.object({
     id,
     type: z.literal('practice'),
-    mode: z.enum(['Daily mix', 'Past mistakes', 'Build vocabulary']),
+    mode: z.enum(['Daily mix', 'Past mistakes']),
     continue: z.boolean().optional(),
   }),
   z.object({
@@ -169,8 +169,8 @@ type Activity = { id: string; at: string; text: string; source: string; referenc
 // stage is where a settling word's recall sits in its lifecycle.
 // A lesson card (kind lesson, purpose teach) carries only teaching: the beat sequence
 // that introduces a never-studied target; it asks nothing, and the word's recall comes
-// on a later card. introduction is the practice generator's own paragraph on a Build
-// vocabulary card, which still teaches from material before its exercise.
+// on a later card. introduction appears only on cards in older history: the removed
+// Build vocabulary mode taught from material on the exercise card itself.
 type QueuedCard = Omit<Card, 'kind'> & {
   kind: Card['kind'] | 'lesson'; title?: string; introduction?: string; teaching?: Beat[]; rationale?: string;
   targets?: string[]; purpose?: Purpose; stage?: Stage;
@@ -287,7 +287,6 @@ function publicState(s: State, mode: Backend['mode'], now = new Date()) {
             kind: current.kind,
             prompt: current.prompt,
             choices: current.choices,
-            introduction: current.introduction,
             purpose: current.purpose,
             teaching: current.teaching,
           }
@@ -400,7 +399,7 @@ function exerciseCard(a: TutorAction | null, ctx: TurnContext): QueuedCard | und
   return { ...a.exercise, id: randomUUID(), title: a.title, rationale: a.detail, source: ctx.source };
 }
 /** Recent material for exercises. A saved word is material only once admitted; a word only asked about stays a piece. */
-function practiceSources(s: State, mode: string, admittedForms: Map<string, string>): string[] {
+function practiceSources(s: State, admittedForms: Map<string, string>): string[] {
   const words = s.saved
     .filter((item) => item.kind === 'Word' && admittedForms.has(item.title))
     .slice(-8)
@@ -434,13 +433,7 @@ function practiceSources(s: State, mode: string, admittedForms: Map<string, stri
     .slice(-4)
     .reverse()
     .map((m) => 'Asked the tutor · ' + m.text + (m.source ? ' · about: ' + m.source.slice(0, 600) : ''));
-  return [
-    ...new Set(
-      mode === 'Build vocabulary'
-        ? [...words, ...discussions, ...turns, ...readings, ...places, ...requests]
-        : [...turns, ...discussions, ...words, ...readings, ...places, ...requests],
-    ),
-  ];
+  return [...new Set([...turns, ...discussions, ...words, ...readings, ...places, ...requests])];
 }
 /** What a card on a target needs to know about it. */
 type TargetInfo = Pick<Ranked['target'], 'form' | 'gloss' | 'pinyin'>;
@@ -533,7 +526,7 @@ function sessionSources(s: State, ranked: () => Ranked[], admittedForms: () => M
   // Past the box, the session only finishes its open work.
   if (wrappingUp(p)) return recalls;
   const prioritized = p.mode === 'Daily mix' ? prioritySources(s, ranked(), freshAllowed(p), dueAllowed(p.cards)) : [];
-  const material = practiceSources(s, p.mode, admittedForms()).map((source): PracticeSource => ({ source, purpose: 'material' }));
+  const material = practiceSources(s, admittedForms()).map((source): PracticeSource => ({ source, purpose: 'material' }));
   const all = [...prioritized, ...material].filter((x) => !skipped.has(x.source));
   // Priority targets go in order; plain material rotates, least used first.
   const uses = p.session?.uses ?? {};
@@ -584,17 +577,8 @@ async function generateCard(s: State, pick: PracticeSource, backend: Backend): P
       explanation: target.gloss ?? '', source: pick.source, teaching: beats, targets: [target.form], purpose: 'teach',
     };
   }
-  // Build vocabulary teaches from material, so its check is a taught word's.
-  const forms = mode === 'Build vocabulary' ? formsFor('teach') : formsFor(pick.purpose, pick.contrast);
-  const ctx = context(
-    s,
-    'practice',
-    mode === 'Build vocabulary'
-      ? 'Teach one useful word or sense from the supplied material, then check it with typed recall in a different situation.'
-      : purposeMessage(pick.purpose, forms),
-    mode,
-    pick.source,
-  );
+  const forms = formsFor(pick.purpose, pick.contrast);
+  const ctx = context(s, 'practice', purposeMessage(pick.purpose, forms), mode, pick.source);
   ctx.exerciseForms = forms;
   if (savedWord?.word) ctx.practiceWord = { title: savedWord.title, ...savedWord.word };
   else if (target?.gloss)
@@ -609,7 +593,6 @@ async function generateCard(s: State, pick: PracticeSource, backend: Backend): P
   card.purpose = pick.purpose;
   if (pick.stage) card.stage = pick.stage;
   if (target) card.targets = [target.form];
-  if (mode === 'Build vocabulary') card.introduction = response.reply.trim() || undefined;
   return card;
 }
 /** One generation: a card, nothing new (null), or the error that stopped it. */
@@ -737,7 +720,7 @@ async function startPractice(s: State, mode: string, backend: Backend, keepGoing
         // A fresh journal has no material yet: the starter catalogue.
         const seen = new Map(s.attempts.map((attempt, i) => [attempt.card.id, i]));
         s.practice.cards = catalogue
-          .filter((c) => mode !== 'Build vocabulary' || c.source.startsWith('Build vocabulary'))
+          .slice()
           .sort((a, b) => (seen.get(a.id) ?? -1) - (seen.get(b.id) ?? -1))
           .slice(0, 3);
         fresh.stopped = 'exhausted';
@@ -991,7 +974,7 @@ function answerEvent(attempt: Attempt, at: string | null): NewEvent {
       kind: c.kind, prompt: c.prompt, reference: c.answer, explanation: c.explanation,
       correct: attempt.result.correct, tutorSaid: attempt.result.feedback,
       ...(attempt.result.landed !== undefined ? { landed: attempt.result.landed } : {}),
-      // A card that introduced its target taught it.
+      // A card that introduced its target taught it (in older history, an exercise card could).
       taught: (!!c.introduction || !!c.teaching?.length) && !!c.targets?.length,
       purpose: c.purpose ?? null,
       ...(c.stage ? { stage: c.stage } : {}),
@@ -1371,10 +1354,14 @@ function upgrade(body: string): State {
       );
     }
   }
+  const practice = parsed.practice;
+  // Build vocabulary, removed, taught on its exercise cards. Its deck or session is
+  // put away without returning those cards, and its cards left in the queue are dropped.
+  parsed.pending = parsed.pending.filter((c) => !c.introduction);
+  if ((practice.mode as string) === 'Build vocabulary') parsed.practice = { mode: 'Daily mix', cards: [], index: 0, result: null };
   // A deck saved before practice ran in timed sessions is put away: its personal
   // cards return to the queue and the next visit starts a session from current material.
-  const practice = parsed.practice;
-  if (!practice.session && practice.cards.length) {
+  else if (!practice.session && practice.cards.length) {
     if (practice.mode !== 'Past mistakes') {
       const remaining = practice.cards.slice(practice.index + (practice.result ? 1 : 0));
       parsed.pending.unshift(...remaining.filter((c) => !catalogue.some((seed) => seed.id === c.id)));

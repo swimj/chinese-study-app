@@ -83,10 +83,8 @@ test('a word the judgment does not admit stays a quiet piece and is never taught
     assert.deepEqual((judgment.body as AdmissionBody).decisions.map((d) => [d.form, d.admit]), [['图书馆', false]]);
     assert.ok(j.get().saved.some((item) => item.title === '图书馆'), 'it is a piece on the board');
     assert.deepEqual(teachable(j), ['报备']);
-    for (const mode of ['Daily mix', 'Build vocabulary'] as const) {
-      await j.act({ id: randomUUID(), type: 'practice', mode });
-      await settle(j);
-    }
+    await j.act({ id: randomUUID(), type: 'practice', mode: 'Daily mix' });
+    await settle(j);
     assert.ok(asked.length > 1, 'practice was prepared from the journal');
     assert.ok(asked.every((ctx) => !JSON.stringify([ctx.source, ctx.teach ?? null]).includes('图书馆')), 'not material for exercises either');
   } finally {

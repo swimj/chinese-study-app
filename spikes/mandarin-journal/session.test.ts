@@ -31,7 +31,7 @@ function sandbox() {
   return { path: join(folder, 'journal.db'), done: () => rmSync(folder, { recursive: true, force: true }) };
 }
 /** Reads or rewrites the stored journal body between actions. */
-type Stored = { practice: { mode: string; cards: { targets?: string[]; purpose: Purpose; introduction?: string; teaching?: unknown[] }[]; session: Session } };
+type Stored = { practice: { mode: string; cards: { targets?: string[]; purpose: Purpose; teaching?: unknown[] }[]; session: Session } };
 function body(path: string, change?: (b: Stored) => void): Stored {
   const db = new DatabaseSync(path);
   try {
@@ -58,12 +58,12 @@ function recallCard(label = 'Pick'): TutorResult {
     },
   };
 }
-const card = (kind: 'choice' | 'open', purpose?: Purpose) => ({ kind, purpose, introduction: purpose === 'teach' ? 'x' : undefined });
+const card = (kind: 'choice' | 'open', purpose?: Purpose) => ({ kind, purpose });
 
 test('cards are estimated by form, and real time counts up to a cap', () => {
   assert.equal(cardSeconds(card('choice')), 20);
   assert.equal(cardSeconds(card('open')), 90);
-  assert.equal(cardSeconds(card('choice', 'teach')), 80);
+  assert.equal(cardSeconds({ kind: 'lesson', purpose: 'teach' }), 60, 'a lesson is a read');
   const now = new Date('2026-11-24T12:00:00Z');
   assert.equal(cardTime(card('choice'), '2026-11-24T11:59:30Z', now), 30);
   assert.equal(cardTime(card('choice'), '2026-11-24T10:00:00Z', now), 60, 'a walk away counts at most three estimates');
@@ -391,6 +391,39 @@ test('a deck saved before sessions existed is put away, and the next visit start
     await settle(j);
     const ids = body(box.path).practice.cards.map((c) => (c as { id?: string }).id);
     assert.ok(!ids.some((id) => catalogue.some((seed) => seed.id === id)), 'starter cards are dropped');
+  } finally {
+    j.close();
+    box.done();
+  }
+});
+
+test('a stored Build vocabulary session is put away on open, and its cards that taught on the exercise are dropped', async () => {
+  const box = sandbox();
+  const tutor = async (ctx: TurnContext) => (ctx.trigger === 'practice' ? recallCard() : demoTutor(ctx));
+  const j0 = openJournal(box.path, { ...demo, tutor });
+  await j0.act({ id: randomUUID(), type: 'chat', message: '我想去外面透透气。', source: '' });
+  await settle(j0);
+  j0.close();
+  // The shape a Build vocabulary session had: a card teaching on the exercise itself.
+  const taughtOnCard = (id: string) => ({
+    id, kind: 'recall', source: 'Chat', prompt: 'Get some air: ' + id, accepted: [], choices: [], answer: '透透气', explanation: 'e',
+    introduction: '透透气 is a short break outside.', purpose: 'material',
+  });
+  const queued = { id: 'queued', kind: 'recall', source: 'Chat', prompt: 'Also, too.', accepted: [], choices: [], answer: '也', explanation: 'e' };
+  body(box.path, (b) => {
+    const session = { id: 'old', startedAt: new Date().toISOString(), budget: 600, spent: 0, estimated: 0, shownAt: null, lastAt: new Date().toISOString(), failures: 0, attempts: 0, skipped: [], uses: {} };
+    b.practice = { mode: 'Build vocabulary', cards: [taughtOnCard('front'), taughtOnCard('next')], index: 0, result: null, session } as unknown as Stored['practice'];
+    (b as unknown as { pending: unknown[] }).pending = [taughtOnCard('pending'), queued];
+  });
+  const j = openJournal(box.path, { ...demo, tutor });
+  try {
+    let s = j.get();
+    assert.deepEqual([s.practice.mode, s.practice.card], ['Daily mix', null], 'the old session is put away');
+    s = await j.act({ id: randomUUID(), type: 'practice', mode: 'Daily mix' });
+    assert.equal(s.practice.card?.id, 'queued', 'an ordinary queued card still comes back');
+    await settle(j);
+    const ids = body(box.path).practice.cards.map((c) => (c as { id?: string }).id);
+    assert.ok(!ids.some((id) => ['front', 'next', 'pending'].includes(id!)), 'cards that taught on the exercise never return');
   } finally {
     j.close();
     box.done();

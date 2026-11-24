@@ -590,7 +590,6 @@ function renderPractice() {
   const focusExercise = () => settleFocus(exercise.querySelector(result ? 'button.primary' : '.recall input') ?? exercise.querySelector('.prompt'));
   const beats = card.teaching?.length ? card.teaching : null;
   if (!beats) {
-    if (card.introduction) body.append(node('p', card.introduction, 'word-introduction'));
     body.append(exercise);
     focusExercise();
     return;

@@ -18,8 +18,7 @@ export type CardKind = 'choice' | 'open' | 'recall';
  * recognition, so it is offered only for a contrast the learner has demonstrably
  * confused (contrast), and never for a word settling after teaching, where only typed
  * recall counts. Open production is conversation drawn from material, not the test
- * of one expression. (Build vocabulary still teaches from material on an exercise
- * card, and asks for the teach forms.)
+ * of one expression.
  */
 export function formsFor(purpose: Purpose, contrast = false): CardKind[] {
   if (purpose === 'material') return ['recall', 'open'];
@@ -73,7 +72,7 @@ export type Session = {
 
 /** A lesson card teaches in beats and asks nothing; every other kind is an exercise. */
 type CardLike = {
-  kind: 'choice' | 'open' | 'recall' | 'lesson'; introduction?: string; teaching?: unknown[]; purpose?: Purpose; stage?: Stage; targets?: string[];
+  kind: 'choice' | 'open' | 'recall' | 'lesson'; teaching?: unknown[]; purpose?: Purpose; stage?: Stage; targets?: string[];
 };
 type PracticeLike<C extends CardLike> = { mode: string; cards: C[]; index: number; result: unknown; session?: Session };
 
@@ -82,15 +81,10 @@ export function newSession(now: Date, budget = SESSION_SECONDS): Session {
   return { id: randomUUID(), startedAt: at, budget, spent: 0, estimated: 0, shownAt: null, lastAt: at, failures: 0, attempts: 0, skipped: [], uses: {} };
 }
 
-/** Whether a card teaches its expression before the exercise. */
-export function teaches(c: CardLike): boolean {
-  return !!c.introduction || !!c.teaching?.length;
-}
-
-/** Expected seconds for a card: a choice is quick, open production slower, teaching is a read. */
+/** Expected seconds for a card: a choice is quick, open production slower, a lesson is a read. */
 export function cardSeconds(c: CardLike): number {
   if (c.kind === 'lesson') return 60;
-  return (c.kind === 'choice' ? 20 : c.kind === 'recall' ? 25 : 90) + (teaches(c) ? 60 : 0);
+  return c.kind === 'choice' ? 20 : c.kind === 'recall' ? 25 : 90;
 }
 
 /** Real seconds a finished card took, capped at three times its estimate. */
