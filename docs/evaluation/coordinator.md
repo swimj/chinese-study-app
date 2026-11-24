@@ -14,12 +14,11 @@ interacting states, or a change to an important action. A backend Save/Apply
 change can qualify; a large mechanical diff need not. Use proportional judgment
 for small changes rather than requiring a separate evaluation ritual each time.
 
-Alongside the implementation approach, give Justin a concise evaluation plan:
-representative user goals, important consequences, suitable preview environments,
-and where independent UI evaluation will help. Derive these from the request
-and product contract, not only the implementation's happy path. Write the brief
-yourself; Justin should be able to say “also try this” or correct an expectation
-without writing a test plan.
+Before implementation, identify representative user goals and important
+consequences from the request and product contract. Choose a suitable preview
+and decide where independent evaluation would help. When plausible
+interpretations would materially change the outcome, share a concrete scenario
+early enough for Justin to correct your assumption. Prepare the brief yourself.
 
 For example:
 

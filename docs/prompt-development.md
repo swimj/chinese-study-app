@@ -1,13 +1,22 @@
 # Developing and adapting prompts
 
-Use this guide when creating, adapting, or reviewing a model prompt. Its purpose
-is to preserve demonstrated teaching and judgment quality while changing the
-software contract, and to make deliberate behavioral experiments reviewable.
+Use this guide when creating, adapting, or reviewing a model prompt. It covers
+how to design the call, carry useful principles forward from a reference,
+and check the quality of the resulting decisions or content.
+
+## Outline the task before drafting
+
+For a substantive prompt, sketch what a good result accomplishes, what the
+model can observe, and the steps connecting that evidence to the result. Use
+the outline to draft once the intended behavior is clear. If two plausible
+approaches would handle a consequential case differently and the goal leaves
+the choice open, show Justin the case and recommend an approach.
 
 ## Start from the closest working prompt
 
-A proven prompt is a behavioral asset. Before drafting, find and read the
-closest working prompt in full, along with its caller, input/output schema,
+A reference can supply a useful principle even when the new call needs an
+original prompt. When a relevant working prompt exists, read it in full,
+along with its caller, input/output schema,
 relevant contract, and evidence of its results. Look through its lineage when
 the current file does not explain a consequential choice. Name the baseline
 file and revision in the task or review so the comparison is reproducible.
@@ -16,6 +25,14 @@ Identify what makes that prompt work: its communicative strategy, linguistic
 philosophy, reasoning sequence, examples, teaching style, and treatment of
 uncertainty. Carry those elements into the adaptation. Their value may depend
 on how they work together, rather than on isolated rules.
+
+For each warning, identify a plausible mistake given this call's inputs,
+responsibilities, or observed outputs. Cut the warning if there is no such
+mistake. For each example, identify the distinction it illustrates and include
+enough detail to explain the result. One way to check the example is to vary
+the decisive detail. For instance, keep a tapped word fixed but change the
+surrounding sentence so a different sense fits. Inspect whether the selector
+follows the contextual evidence on both inputs.
 
 Distinguish the model's reasoning needs from the reader's attention budget.
 Learner feedback can require careful linguistic assessment while presenting

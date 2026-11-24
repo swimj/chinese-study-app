@@ -52,10 +52,10 @@ or authorize parts of the feature to be dispatched independently.
 
 ## Orientation and review-unit choice
 
-Before substantial implementation, inspect the relevant code and focused tests,
-then state the delivery judgment: either a single cohesive pull request or the
-likely direction of a multi-branch stack. Do not fix a final stack size before
-the work warrants it. The human may override that judgment in the task prompt.
+Before substantial implementation, inspect the relevant code and focused tests.
+When splitting or sequencing the work would materially affect review, explain
+the proposed split early. Let the final stack size follow the work and honor
+any delivery boundary Justin sets for the task.
 
 For a complex task, pause after read-only orientation when the task names an
 orientation gate or when material ambiguity, conflicting authority, or overlap
