@@ -1,4 +1,5 @@
 import type { TurnContext, TutorResult } from '../tutor.ts';
+import { capture } from './capture.ts';
 import { ask } from './ask.ts';
 import { feedback } from './feedback.ts';
 import { practiceGen } from './practice.ts';
@@ -10,12 +11,14 @@ import { voice } from './core.ts';
 export { voice, type TutorAction } from './core.ts';
 export type { Reflection } from './reflect.ts';
 
-export const situations = { ask, wordIntake, reflect, feedback, practiceGen, mediaConsider };
+export const situations = { ask, capture, wordIntake, reflect, feedback, practiceGen, mediaConsider };
 export type SituationName = keyof typeof situations;
 export type SituationOutput<K extends SituationName> = ReturnType<(typeof situations)[K]['validate']>;
 
 export function situationFor(trigger: TurnContext['trigger']): SituationName {
   switch (trigger) {
+    case 'capture':
+      return 'capture';
     case 'ask':
       return 'ask';
     case 'miss':
@@ -39,6 +42,7 @@ export function instructionsFor(name: SituationName): string {
 
 const validators: { [K in SituationName]: (result: TutorResult, input: TurnContext) => SituationOutput<K> } = {
   ask: ask.validate,
+  capture: capture.validate,
   wordIntake: wordIntake.validate,
   reflect: reflect.validate,
   feedback: feedback.validate,

@@ -18,7 +18,7 @@
           ><span class="seal" lang="zh" aria-hidden="true">记</span>Mandarin journal</a
         >
         <nav aria-label="Journal">
-          <a href="#home/words" id="word-attention" hidden></a>
+          <a href="#home/words" id="tutor-attention" hidden>Tutor has a question</a>
           <a href="#saved" id="saved-link">List</a>
         </nav>
       </header>
@@ -65,14 +65,12 @@
             </dialog>
             <section class="capture" aria-labelledby="word-heading">
               <h2 id="word-heading" class="sr">Drop something</h2>
-              <ul id="word-items" class="word-items"></ul>
-              <button id="word-more" class="text-button" type="button" aria-expanded="false" aria-controls="word-items" hidden></button>
               <p id="word-refresh-error" class="sub" hidden></p>
               <form id="word-form">
                 <div class="intake-line">
                   <label for="word-text" class="sr">A word, a link, or a sentence</label>
                   <input id="word-text" maxlength="2048" required placeholder="A word, a link, a sentence…" autocomplete="off" />
-                  <button class="primary" id="capture-submit" data-mutation>Add word</button>
+                  <button class="primary" id="capture-submit" data-mutation>Send</button>
                 </div>
                 <details id="word-context-toggle" class="word-context">
                   <summary>Where you met it</summary>
@@ -80,7 +78,6 @@
                   <textarea id="word-context" maxlength="2000" rows="2" placeholder="A sentence, a place, a person…"></textarea>
                 </details>
               </form>
-              <p id="word-status" class="sr" role="status"></p>
             </section>
           </section>
           <section data-page="read" hidden class="page article"></section>

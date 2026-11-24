@@ -42,12 +42,18 @@ const id = z.string().uuid();
 export const actionSchema = z.discriminatedUnion('type', [
   addWordAction, clarifyWordAction, retryWordAction,
   z.object({
+    id, type: z.literal('capture'), text: z.string().trim().min(1).max(2048),
+    context: z.string().trim().max(2000).optional(),
+  }),
+  z.object({
     id,
     type: z.literal('tutor'),
     message: text,
     surface: text,
     source,
     referenceId: text.optional(),
+    wordReplyTo: z.object({ intakeId: id, requestId: id }).optional(),
+    captureQuestionId: id.optional(),
   }),
   z.object({ id, type: z.literal('chat'), message: text, source, threadId: text.optional() }),
   z.object({ id, type: z.literal('reflect'), source, threadId: text.optional() }),
@@ -116,6 +122,11 @@ type Message = TurnContext['tutorHistory'][number] & {
   id?: string;
   reference?: Reference;
   kind?: 'observation';
+  wordIntakeId?: string;
+  wordRequestId?: string;
+  captureOriginId?: string;
+  captureQuestionId?: string;
+  captureResolved?: boolean;
 };
 type Thread = { id: string; title: string; source?: string; turns: (Message & { id: string })[] };
 type Reflection = {
@@ -186,7 +197,7 @@ function publicState(s: State, mode: Backend['mode']) {
     current = p.cards[p.index];
   return {
     mode,
-    wordIntakes: s.wordIntakes.map(({ requestId, ...item }) => item),
+    wordIntakes: s.wordIntakes,
     tutor: s.tutor,
     activeThreadId: s.activeThreadId,
     threads: s.threads.map(({ turns, ...thread }) => thread),
@@ -561,9 +572,53 @@ async function reflect(s: State, backend: Backend, source: string) {
   });
   logActivity(s, 'Reflected on ' + thread.title, thread.title, reference);
 }
+type CaptureResult = { id: string; kind: 'reading'; url: string } | { id: string; kind: 'word' | 'tutor' };
+function isReadingLink(text: string) {
+  return /^https?:\/\/\S+$/i.test(text);
+}
+
+async function handleHomeCapture(
+  s: State, backend: Backend, a: { id: string; text: string; context?: string }, followUpTo?: Message,
+) {
+  const original = followUpTo?.captureOriginId
+    ? s.tutor.find(turn => turn.role === 'user' && turn.id === followUpTo.captureOriginId)
+    : followUpTo;
+  if (followUpTo && !original) throw new Error('Missing original capture');
+  const source = original?.source ?? a.context ?? '';
+  const ctx = context(s, 'capture', a.text, 'home', source);
+  if (followUpTo && original) {
+    const question = s.tutor.find(turn => turn.role === 'assistant' && turn.captureQuestionId === followUpTo.id);
+    if (!question) throw new Error('Missing capture clarification');
+    ctx.captureFollowUp = { text: original.text, question: question.text,
+      previousReply: original === followUpTo ? undefined : followUpTo.text };
+  }
+  const route = await consult(backend, 'capture', ctx);
+  const learner: Message = { role: 'user', id: a.id, text: a.text, source, captureOriginId: original?.id };
+  if (route.kind === 'clarify') {
+    s.tutor.push(learner, { role: 'assistant', text: route.question, captureQuestionId: a.id });
+    return;
+  }
+  if (route.kind === 'word') {
+    const wordContext = [source, original?.text, a.text === route.target ? '' : a.text].filter(Boolean).join('\n');
+    addWord(s.wordIntakes, s.saved, { type: 'addWord', id: a.id, text: route.target, context: wordContext });
+    const ready = s.wordIntakes.at(-1)?.status === 'ready';
+    s.tutor.push(learner, { role: 'assistant', text: ready
+      ? route.target + ' is already in your vocabulary.'
+      : 'I’ll prepare ' + route.target + ' for vocabulary practice.' });
+    return;
+  }
+  const askContext: TurnContext = { ...ctx, trigger: 'ask' };
+  const response = await consult(backend, 'ask', askContext);
+  s.tutor.push(learner, { role: 'assistant', text: response.reply, source });
+  applyAction(s, response.action, askContext);
+}
+
 async function mutate(s: State, a: Action, backend: Backend, reviewImport: ReturnType<typeof createImportReviewer>) {
   s.notice = '';
   switch (a.type) {
+    case 'capture':
+      if (isReadingLink(a.text)) return;
+      return handleHomeCapture(s, backend, a);
     case 'addWord':
       return addWord(s.wordIntakes, s.saved, a);
     case 'clarifyWord':
@@ -669,6 +724,26 @@ async function mutate(s: State, a: Action, backend: Backend, reviewImport: Retur
       return;
     }
     case 'tutor': {
+      if ([a.referenceId, a.captureQuestionId, a.wordReplyTo].filter(Boolean).length > 1)
+        throw new JournalConflict('Choose one item to reply to.');
+      if (a.wordReplyTo) {
+        const { intakeId, requestId } = a.wordReplyTo;
+        const intake = s.wordIntakes.find(item => item.id === intakeId);
+        if (!intake || intake.requestId !== requestId)
+          throw new JournalConflict('This word question has changed.');
+        resumeWord(s.wordIntakes, { type: 'clarifyWord', id: a.id, intakeId, reply: a.message });
+        s.tutor.push({ role: 'user', text: a.message, source: intake.text, wordIntakeId: intakeId, wordRequestId: requestId });
+        return;
+      }
+      if (a.captureQuestionId) {
+        const question = s.tutor.find(m => m.role === 'assistant' && m.captureQuestionId === a.captureQuestionId);
+        const original = s.tutor.find(m => m.role === 'user' && m.id === a.captureQuestionId);
+        if (!question || question.captureResolved || !original)
+          throw new JournalConflict('This tutor question is no longer waiting for a reply.');
+        await handleHomeCapture(s, backend, { id: a.id, text: a.message }, original);
+        question.captureResolved = true;
+        return;
+      }
       const anchor = a.referenceId ? resolveReference(s, a.referenceId, a.source) : undefined;
       const ctx = context(s, 'ask', a.message, a.surface, anchor?.source ?? a.source);
       if (anchor?.reference.kind === 'reading') ctx.readingContext = anchor.source;
@@ -758,10 +833,44 @@ async function mutate(s: State, a: Action, backend: Backend, reviewImport: Retur
   }
 }
 
+function recordWordOutcome(s: State, intake: WordIntake) {
+  let text: string;
+  switch (intake.status) {
+    case 'clarify':
+      if (!intake.question) throw new Error('Missing word question');
+      text = intake.question;
+      break;
+    case 'failed':
+      if (!intake.error) throw new Error('Missing word preparation error');
+      text = intake.error;
+      break;
+    case 'ready': {
+      const titles = intake.savedIds?.map(id => {
+        const item = s.saved.find(item => item.id === id);
+        if (!item) throw new Error('Missing prepared word');
+        return item.title;
+      });
+      if (!titles?.length) throw new Error('Word preparation produced no saved items');
+      text = 'Ready for vocabulary practice: ' + titles.join('、') + '.';
+      break;
+    }
+    case 'pending':
+      throw new Error('Cannot report unfinished word preparation');
+  }
+  s.tutor.push({ role: 'assistant', text, source: intake.text, wordIntakeId: intake.id, wordRequestId: intake.requestId });
+}
+
 // Opens a stored body in the current shape; older journal shapes are upgraded in memory.
 function upgrade(body: string): State {
   const parsed = JSON.parse(body) as State & { chat?: Message[] };
   parsed.wordIntakes ??= [];
+  // Before word questions lived in the tutor, unresolved requests appeared above the Home bar.
+  for (const intake of parsed.wordIntakes) {
+    if ((intake.status === 'clarify' || intake.status === 'failed') &&
+        !parsed.tutor.some(m => m.role === 'assistant' && m.wordIntakeId === intake.id && m.wordRequestId === intake.requestId)) {
+      recordWordOutcome(parsed, intake);
+    }
+  }
   withMediaDefaults(parsed);
   if (!parsed.threads) {
     const turns = (parsed.chat ?? []).map((turn, i) => ({ ...turn, id: 'legacy-turn-' + i }));
@@ -892,6 +1001,7 @@ export function openJournal(path: string, backend: Backend = engine) {
               intake.status = 'failed';
               intake.error = failure;
             }
+            recordWordOutcome(latest, intake);
             db.prepare('UPDATE journal SET body=?,revision=revision+1 WHERE id=1').run(
               JSON.stringify(latest),
             );
@@ -988,10 +1098,20 @@ export function openJournal(path: string, backend: Backend = engine) {
     const hash = createHash('sha256').update(JSON.stringify(a)).digest('hex');
     const old = db.prepare('SELECT fingerprint FROM receipts WHERE id=?').get(a.id);
     const { s, revision } = read();
+    // Intake IDs are immutable. Reconstruct the presentation result on receipt
+    // replay, even after another action or a background worker has run.
+    const result = (): ReturnType<typeof publicState> & { captureResult?: CaptureResult } => {
+      const state = publicState(s, backend.mode);
+      if (a.type !== 'capture') return state;
+      const captureResult: CaptureResult = isReadingLink(a.text)
+        ? { id: a.id, kind: 'reading', url: a.text }
+        : { id: a.id, kind: s.wordIntakes.some(item => item.id === a.id) ? 'word' : 'tutor' };
+      return { ...state, captureResult };
+    };
     if (old) {
       if (old.fingerprint !== hash)
         throw new JournalConflict('This action ID already identifies a different request.');
-      return publicState(s, backend.mode);
+      return result();
     }
     const before = anchorIds(s);
     await mutate(s, a, backend, reviewImport);
@@ -1010,9 +1130,9 @@ export function openJournal(path: string, backend: Backend = engine) {
       db.exec('ROLLBACK');
       throw error;
     }
-    if (a.type === 'addWord' || a.type === 'clarifyWord' || a.type === 'retryWord') wakeWords();
+    if (s.wordIntakes.some(item => item.status === 'pending')) wakeWords();
     if (s.mediaJobs.some((job) => job.status === 'pending')) wakeMedia();
-    return publicState(s, backend.mode);
+    return result();
   }
   wakeWords();
   wakeMedia();

@@ -74,6 +74,17 @@ test('real SDK runs each situation with its own schema and instructions, uses re
   assert.equal(ask.readingContext, input.readingContext);
   assert.equal(ask.recentChatTurns, undefined);
   assert.equal(ask.previousPrompts, undefined);
+  const captureInput = {
+    ...input, trigger: 'capture', surface: 'home', message: '这本书值得再读一遍。', source: 'Book club',
+  };
+  const captureResult = { kind: 'clarify', question: 'Which part would you like to explore?' };
+  replies = [structured({ capture: captureResult })];
+  assert.deepEqual(validateTurn('capture', await tutorTurn(captureInput), captureInput), captureResult);
+  const captureRequest = requests.at(-1);
+  assert.deepEqual(required(captureRequest), ['capture']);
+  assert.deepEqual(captureRequest.tools ?? [], []);
+  assert.equal(userPayload(captureRequest).message, captureInput.message);
+  assert.equal(userPayload(captureRequest).source, captureInput.source);
   replies = [
     {
       type: 'function_call',

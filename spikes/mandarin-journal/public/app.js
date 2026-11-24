@@ -1,4 +1,4 @@
-import { createWordInbox } from './words.js';
+import { createCapture, replyTarget, wordForTurn } from './capture.js';
 import { createAnnotations } from './annotations.js';
 import { createReading, readingLabel, referenceForSource } from './reading.js';
 import { createScrapbook, todayStep } from './scrapbook.js';
@@ -75,7 +75,11 @@ let renderedPractice;
 const chatDraft = get('chat-draft');
 const tutorDraft = get('tutor-draft');
 tutorDraft.value = ui.tutorDraft || '';
-tutorDraft.oninput = () => { ui.tutorDraft = tutorDraft.value; persist(); };
+tutorDraft.oninput = () => {
+  if (!ui.tutorDraft && !ui.tutorContext && !ui.tutorReply) ui.tutorReply = defaultReply();
+  ui.tutorDraft = tutorDraft.value;
+  persist();
+};
 chatDraft.oninput = () => {
   if (!state) return;
   ui.chatDrafts ??= {};
@@ -95,23 +99,8 @@ const annotations = createAnnotations({
   getState: () => state,
   canSubmit: () => Boolean(state && !busy && !ui.pending),
 });
-const wordInbox = createWordInbox({
-  get, node, button, submit, ui, persist,
-  hideReady: true,
-  intercept: (text, context) => {
-    const kind = captureKind(text);
-    if (kind === 'link') {
-      importUrl = text;
-      location.hash = 'home/import';
-      return true;
-    }
-    if (kind === 'passage') {
-      setTutor(true);
-      submit({ type: 'tutor', message: [text, context].filter(Boolean).join('\n'), surface: 'home', source: context || '' });
-      return true;
-    }
-    return false;
-  },
+const capture = createCapture({
+  get, submit, ui, persist,
   canSubmit: () => Boolean(state && !busy && !ui.pending),
   refresh: async () => {
     const revision = requestRevision;
@@ -121,7 +110,14 @@ const wordInbox = createWordInbox({
     state.wordIntakes = updated.wordIntakes;
     state.saved = updated.saved;
     state.activity = updated.activity;
+    state.tutor = updated.tutor;
+    renderTutor();
+    capture.watch(state.wordIntakes);
     if (page === 'saved') renderSaved();
+    if (page === 'home') {
+      renderToday();
+      scrapbook.render();
+    }
   },
 });
 const reader = createReading({
@@ -144,17 +140,6 @@ function dismissImport() {
 get('close-import').onclick = dismissImport;
 importDialog.oncancel = event => { event.preventDefault(); dismissImport(); };
 
-// A drop is a word unless it is plainly a link or a whole sentence.
-function captureKind(text) {
-  const value = text.trim();
-  if (/^https?:\/\/\S+$/i.test(value)) return 'link';
-  if (value.length > 24 || /[。！？!?；;]|[，,].{4,}/.test(value)) return 'passage';
-  return 'word';
-}
-const captureLabels = { word: 'Add word', link: 'Import reading', passage: 'Ask tutor' };
-get('word-text').addEventListener('input', () => {
-  get('capture-submit').textContent = captureLabels[captureKind(get('word-text').value)];
-});
 const scrapbook = createScrapbook({
   host: get('scrapbook'), viewport: get('scrap-viewport'), world: get('scrap-world'),
   node, link, ui, persist, readingLabel, compose,
@@ -215,18 +200,43 @@ get('tutor-toggle').onclick = event => setTutor(get('tutor-body').inert, true, t
 get('tutor').addEventListener('keydown', (e) => {
   if (e.key === 'Escape') { e.preventDefault(); setTutor(false, true); }
 });
+function defaultReply() {
+  if (page !== 'home' || ui.tutorContext || !state || importDialog.open) return;
+  const reply = replyTarget(state, state.tutor.at(-1));
+  if (reply && (reply.captureQuestionId || reply.wordReplyTo.requestId) !== ui.dismissedQuestion) return reply;
+}
+function activeReply() {
+  return ui.tutorReply || (!tutorDraft.value.trim() && defaultReply());
+}
 function renderTutorContext() {
-  get('tutor-context').hidden = !ui.tutorContext;
-  get('tutor-context-label').textContent = ui.tutorContext ? 'About ' + ui.tutorContext.label : '';
+  const target = ui.tutorContext || activeReply();
+  get('tutor-context').hidden = !target;
+  get('tutor-context-label').textContent = target ? 'About ' + target.label : '';
 }
 function primeTutor(context) {
+  delete ui.tutorReply;
   ui.tutorContext = context;
+  renderTutorContext();
+  setTutor(true, true);
+}
+function chooseReply(reply) {
+  scrapbook.clearAsked();
+  delete ui.tutorContext;
+  ui.tutorReply = reply;
+  const legacyDraft = ui.wordReplies?.[reply.wordReplyTo?.intakeId];
+  const item = state.wordIntakes.find(i => i.id === reply.wordReplyTo?.intakeId);
+  if (item && !tutorDraft.value && legacyDraft?.question === item.question) {
+    ui.tutorDraft = tutorDraft.value = legacyDraft.text;
+  }
   renderTutorContext();
   setTutor(true, true);
 }
 get('clear-context').onclick = () => {
   scrapbook.clearAsked();
   delete ui.tutorContext;
+  const reply = ui.tutorReply || defaultReply();
+  if (reply) ui.dismissedQuestion = reply.captureQuestionId || reply.wordReplyTo.requestId;
+  delete ui.tutorReply;
   persist();
   renderTutorContext();
   tutorDraft.focus();
@@ -241,7 +251,7 @@ function markBusy(value) {
   busy = value;
   const waiting = value || !state;
   const action = ui.pending?.type;
-  const label = (action === 'importReading' || action === 'importPdf') ? 'Importing reading…' : action === 'addWord' ? 'Adding word…' : action === 'chat' ? 'Waiting for a reply…' : action === 'reflect' ? 'Reflecting…' : 'Working…';
+  const label = (action === 'importReading' || action === 'importPdf') ? 'Importing reading…' : action === 'capture' ? 'Sending…' : action === 'chat' ? 'Waiting for a reply…' : action === 'reflect' ? 'Reflecting…' : 'Working…';
   get('pending').textContent = value ? label : '';
   document.body.dataset.waiting = String(value);
   get('runtime').textContent = [
@@ -286,13 +296,36 @@ function renderTutor() {
   const log = get('tutor-messages');
   const atEnd = log.scrollHeight - log.scrollTop - log.clientHeight < 48;
   const existing = [...log.querySelectorAll('[data-turn]')];
-  const matches = existing.every((el, i) => el.dataset.turn === JSON.stringify(state.tutor[i]));
-  if (!matches || !existing.length) log.replaceChildren();
-  for (const message of state.tutor.slice(matches ? existing.length : 0)) {
+  state.tutor.forEach((message, i) => {
+    const item = wordForTurn(state, message);
+    const stamp = JSON.stringify([message, item?.status]);
+    if (existing[i]?.dataset.turn === stamp) return;
     const el = messageNode(message);
-    el.dataset.turn = JSON.stringify(message);
-    log.append(el);
-  }
+    const reply = replyTarget(state, message);
+    if (reply || item?.status === 'failed') {
+      const actions = node('div', undefined, 'options word-choices');
+      if (reply) {
+        for (const choice of item?.suggestions || []) {
+          actions.append(button(choice, () => submit({ type: 'tutor', message: choice, surface: 'home', source: item.text, wordReplyTo: reply.wordReplyTo }), '', true));
+        }
+        actions.append(button('Reply', () => chooseReply(reply), 'text-button'));
+      } else {
+        actions.append(button('Retry', () => submit({ type: 'retryWord', intakeId: item.id }), '', true));
+      }
+      el.append(actions);
+    }
+    el.dataset.turn = stamp;
+    if (existing[i]) existing[i].replaceWith(el);
+    else {
+      if (!i) log.replaceChildren();
+      log.append(el);
+    }
+  });
+  for (const extra of existing.slice(state.tutor.length)) extra.remove();
+  const needsReply = state.tutor.some(turn => replyTarget(state, turn));
+  get('dock-tutor').classList.toggle('needs-reply', needsReply);
+  get('dock-tutor').setAttribute('aria-label', needsReply ? 'Tutor has a question' : 'Tutor');
+  get('tutor-attention').hidden = !needsReply;
   if (!state.tutor.length) log.replaceChildren(node('p', 'What’s on your mind?', 'sub'));
   if (atEnd || !existing.length) log.scrollTop = log.scrollHeight;
   renderTutorContext();
@@ -453,7 +486,7 @@ function renderState() {
   renderChat();
   renderPractice();
   renderSaved();
-  wordInbox.render(state);
+  capture.watch(state.wordIntakes);
   reader.render(state);
   renderToday();
   scrapbook.render();
@@ -488,13 +521,14 @@ async function navigate(initial = false) {
   get('tutor-point').hidden = page !== 'home';
   if (page === 'practice' && ui.tutorOpen === undefined) setTutor(matchMedia('(min-width: 861px)').matches, false, false);
   else setTutor(Boolean(ui.tutorOpen), false, false);
+  renderTutorContext();
   if (page !== 'home' && page !== 'saved') ui.recent = page;
   if (Object.hasOwn(labels, ui.recent)) {
     get('recent').hidden = false;
     get('recent-link').textContent = labels[ui.recent] + ' ↗';
     get('recent-link').href = '#' + ui.recent;
   }
-  wordInbox.updateAttention();
+
   get('saved-link').setAttribute('aria-current', page === 'saved' ? 'page' : 'false');
   persist();
   if (!initial && previous !== page && !target.kind) {
@@ -515,8 +549,9 @@ async function navigate(initial = false) {
     }
   }
   if (page === 'home' && target.kind === 'words') {
-    const first = get('word-items').querySelector('[data-status="clarify"] strong');
-    focusTarget(first || get('word-heading'));
+    const waiting = state.tutor.findLast(turn => replyTarget(state, turn));
+    if (waiting) chooseReply(replyTarget(state, waiting));
+    else setTutor(true, true);
   }
   const note = target.kind === 'annotation' && state.annotationThreads.find(t => t.id === target.id && t.anchor.surface === page);
   if (target.kind === 'annotation' && !note) {
@@ -628,6 +663,9 @@ async function runAction(action) {
     state = await responseJson(await fetch('/api/action', {
       method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(action),
     }));
+    if (action.type === 'capture' && state.captureResult?.id !== action.id) {
+      throw new Error('The journal did not return a result for this input.');
+    }
     if (action.type === 'chat' && chatDraft.value.trim() === action.message) {
       chatDraft.value = '';
       if (ui.chatDrafts) delete ui.chatDrafts[action.threadId || state.activeThreadId];
@@ -636,11 +674,37 @@ async function runAction(action) {
       tutorDraft.value = '';
       delete ui.tutorDraft;
     }
+    if (action.type === 'tutor' && (action.wordReplyTo || action.captureQuestionId)) {
+      if (action.wordReplyTo && ui.wordReplies) delete ui.wordReplies[action.wordReplyTo.intakeId];
+      if (!tutorDraft.value.trim()) delete ui.tutorReply;
+    }
     if (action.type === 'answer') delete ui.practiceDraft;
     delete ui.pending;
     persist();
     renderState();
     if (currentImport()) reader.imported();
+    if (action.type === 'capture') {
+      const result = state.captureResult;
+      if (result.kind === 'reading') {
+        if (location.hash === startingHash) {
+          importUrl = result.url;
+          location.hash = 'home/import';
+          capture.accepted(action);
+        }
+      } else {
+        capture.accepted(action);
+        if (location.hash === startingHash) {
+          if (!tutorDraft.value.trim()) {
+            delete ui.tutorContext;
+            delete ui.tutorReply;
+          }
+          if (!get('word-text').value.trim()) {
+            renderTutorContext();
+            setTutor(true, !tutorDraft.value.trim(), true, get('word-text'));
+          }
+        }
+      }
+    }
     return true;
   } catch (err) {
     if (isImport && err.status) {
@@ -739,6 +803,12 @@ get('tutor-form').onsubmit = (e) => {
       const attempt = state.attempts.find((a) => a.id === route().id);
       if (attempt) { source = attempt.card.prompt; referenceId = attempt.id; }
     } else source = state.practice.card?.prompt || 'Practice';
+  }
+  const reply = activeReply();
+  if (reply && !ui.tutorContext) {
+    const { label, ...target } = reply;
+    submit({ type: 'tutor', message, surface: 'home', source: label, ...target });
+    return;
   }
   const context = ui.tutorContext || { surface: page, source, referenceId };
   submit({ type: 'tutor', message, source: context.source, surface: context.surface, referenceId: context.referenceId });

@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
 import { mkdtempSync, rmSync } from 'node:fs';
+import { DatabaseSync } from 'node:sqlite';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
@@ -106,22 +107,39 @@ test('a clarification survives reopen and its reply resolves the original durabl
     const ask = await settled(j, id);
     assert.deepEqual(ask.suggestions, ['蜘蛛']);
     assert.equal(j.get().saved.length, 0);
+    assert.equal(j.get().tutor.at(-1)?.text, ask.question);
     j.close();
+    // Existing journal files kept unanswered questions solely in the intake.
+    const db = new DatabaseSync(path);
+    db.exec("UPDATE journal SET body=json_set(body, '$.tutor', json('[]'))");
+    db.close();
     j = openJournal(path, demo);
-    assert.equal(j.get().wordIntakes[0].question, ask.question);
+    const question = j.get().tutor.at(-1);
+    assert.equal(question?.text, ask.question);
+    assert.equal(question?.wordRequestId, id);
+    const second = randomUUID();
+    await j.act({ type: 'addWord', id: second, text: '行' });
+    await settled(j, second);
     const answer = {
-      type: 'clarifyWord' as const,
+      type: 'tutor' as const,
       id: randomUUID(),
-      intakeId: id,
-      reply: 'Yes, the spider.',
+      wordReplyTo: { intakeId: id, requestId: id },
+      message: 'Yes, the spider.',
+      surface: 'home',
+      source: '',
     };
     await j.act(answer);
     const ready = await settled(j, id);
     assert.deepEqual(ready.history, [
-      { question: ask.question, suggestions: ask.suggestions, reply: answer.reply },
+      { question: ask.question, suggestions: ask.suggestions, reply: answer.message },
     ]);
-    assert.equal(j.get().saved[0].title, '蜘蛛');
-    assert.equal((await j.act(answer)).saved.length, 1);
+    const state = j.get();
+    assert.equal(state.saved[0].title, '蜘蛛');
+    assert.equal(state.wordIntakes[1].status, 'clarify');
+    assert.match(state.tutor.at(-1)?.text ?? '', /蜘蛛/);
+    assert.equal(state.tutor.at(-2)?.text, answer.message);
+    assert.deepEqual((await j.act(answer)).tutor, state.tutor);
+    await assert.rejects(j.act({ ...answer, id: randomUUID() }), /question has changed/);
   } finally {
     j.close();
     rmSync(dir, { recursive: true, force: true });

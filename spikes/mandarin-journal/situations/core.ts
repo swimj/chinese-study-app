@@ -53,8 +53,9 @@ export type Situation<Schema extends z.ZodObject, Output> = {
   validate(result: TutorResult, input: TurnContext): Output;
 };
 
-type StructuredField = 'action' | 'wordDecision' | 'reflection' | 'observation' | 'media';
+type StructuredField = 'action' | 'wordDecision' | 'capture' | 'reflection' | 'observation' | 'media';
 const unexpected: Record<StructuredField, string> = {
+  capture: 'Only Home capture can choose a route',
   action: 'This tutor turn cannot change the journal',
   wordDecision: 'Unexpected word intake decision',
   reflection: 'Only reflection turns can return takeaways',
