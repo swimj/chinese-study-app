@@ -62,6 +62,7 @@ export const actionSchema = z.discriminatedUnion('type', [
     message: text,
     surface: text,
     source,
+    sourceLabel: text.optional(),
     referenceId: text.optional(),
     wordReplyTo: z.object({ intakeId: id, requestId: id }).optional(),
     captureQuestionId: id.optional(),
@@ -132,6 +133,7 @@ type Reference = {
 type Message = TurnContext['tutorHistory'][number] & {
   id?: string;
   reference?: Reference;
+  sourceLabel?: string;
   kind?: 'observation';
   wordIntakeId?: string;
   wordRequestId?: string;
@@ -1002,7 +1004,7 @@ async function mutate(
         if (!intake || intake.requestId !== requestId)
           throw new JournalConflict('This word question has changed.');
         resumeWord(s.wordIntakes, { type: 'clarifyWord', id: a.id, intakeId, reply: a.message });
-        s.tutor.push({ id: a.id, role: 'user', text: a.message, source: intake.text, wordIntakeId: intakeId, wordRequestId: requestId });
+        s.tutor.push({ id: a.id, role: 'user', text: a.message, source: intake.text, sourceLabel: intake.text, wordIntakeId: intakeId, wordRequestId: requestId });
         return;
       }
       if (a.captureQuestionId) {
@@ -1023,7 +1025,7 @@ async function mutate(
         context: { respondingTo: ctx.source.slice(0, 600) || undefined, tutorSaid: response.reply },
       });
       s.tutor.push(
-        { id: a.id, role: 'user', text: a.message, source: ctx.source, reference: anchor?.reference },
+        { id: a.id, role: 'user', text: a.message, source: ctx.source, sourceLabel: a.sourceLabel, reference: anchor?.reference },
         { role: 'assistant', text: response.reply, source: ctx.source, reference: anchor?.reference },
       );
       applyAction(s, response.action, ctx, anchor?.reference);

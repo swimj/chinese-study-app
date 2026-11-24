@@ -88,7 +88,7 @@ function clamp(value, lo, hi) {
   return Math.max(lo, Math.min(value, hi));
 }
 
-export function createAnnotations({ submit, getState, canSubmit, getPending, retryPending, lookupPassage, flagLookup }) {
+export function createAnnotations({ submit, getState, canSubmit, getPending, retryPending, onViewChange, lookupPassage, flagLookup }) {
   const toolbar = element('div', 'an-quote-action');
   toolbar.hidden = true;
   toolbar.setAttribute('role', 'group');
@@ -251,6 +251,7 @@ export function createAnnotations({ submit, getState, canSubmit, getPending, ret
     const active = current;
     current = undefined;
     panel.hidden = true;
+    onViewChange();
     for (const { marker } of controls.values()) marker.setAttribute('aria-expanded', 'false');
     if (active) {
       paint();
@@ -374,6 +375,7 @@ export function createAnnotations({ submit, getState, canSubmit, getPending, ret
     const status = waiting ? (busy ? 'Tutor is replying…' : error || 'Reply interrupted.') : '';
     if (progressText.textContent !== status) progressText.textContent = status;
     retry.hidden = !waiting || busy;
+    onViewChange();
     const capturing = current.mode === 'capture';
     const compact = current.mode === 'inspect' && !waiting && savedPassage(thread);
     form.hidden = Boolean(compact);

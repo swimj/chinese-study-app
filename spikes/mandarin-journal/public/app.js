@@ -1,3 +1,5 @@
+import { readChatStream } from './chat-stream.js';
+import { createTurnProgress } from './turn-progress.js';
 import { createCapture, replyTarget, wordForTurn } from './capture.js';
 import { createAnnotations } from './annotations.js';
 import { createReading, readingLabel, referenceForSource } from './reading.js';
@@ -68,6 +70,10 @@ function threadReflections() {
 let state;
 let page;
 let busy = false;
+let pendingError = '';
+const getPending = () => ({ action: ui.pending, busy, error: pendingError });
+const retryPending = () => ui.pending && runAction(ui.pending);
+const turnProgress = createTurnProgress({ get, retryPending });
 let requestRevision = 0;
 let loadFailed = false;
 let focusBeforeTutor;
@@ -94,6 +100,7 @@ async function readerRequest(path, body) {
   }));
 }
 const annotations = createAnnotations({
+  getPending, retryPending, onViewChange: displayPendingError,
   lookupPassage: body => readerRequest('/api/reader-lookup', body),
   flagLookup: id => readerRequest('/api/reader-lookup/feedback', { id }),
   submit,
@@ -102,6 +109,7 @@ const annotations = createAnnotations({
 });
 const capture = createCapture({
   get, submit, ui, persist,
+  openReading(url) { importUrl = url; location.hash = 'home/import'; },
   canSubmit: () => Boolean(state && !busy && !ui.pending),
   refresh: async () => {
     const revision = requestRevision;
@@ -122,6 +130,7 @@ const capture = createCapture({
   },
 });
 const reader = createReading({
+  getPending, retryPending,
   openAnnotation: id => annotations.open(id),
   refreshAnnotations: () => annotations.render(),
   host: document.querySelector('[data-page="read"]'),
@@ -187,6 +196,7 @@ function setTutor(open, focus = false, remember = true, opener = document.active
   toggle.setAttribute('aria-label', open ? 'Tuck tutor away' : 'Expand tutor');
   body.inert = !open;
   body.setAttribute('aria-hidden', String(!open));
+  displayPendingError();
   if (open) {
     if (changed) get('tutor-messages').scrollTop = get('tutor-messages').scrollHeight;
     if (focus) {
@@ -202,7 +212,7 @@ get('tutor').addEventListener('keydown', (e) => {
   if (e.key === 'Escape') { e.preventDefault(); setTutor(false, true); }
 });
 function defaultReply() {
-  if (page !== 'home' || ui.tutorContext || !state || importDialog.open) return;
+  if (page !== 'home' || ui.pending?.type === 'tutor' || ui.tutorContext || !state || importDialog.open) return;
   const reply = replyTarget(state, state.tutor.at(-1));
   if (reply && (reply.captureQuestionId || reply.wordReplyTo.requestId) !== ui.dismissedQuestion) return reply;
 }
@@ -248,16 +258,19 @@ function showError(message) {
   get('retry').hidden = !(loadFailed || ui.pending);
   if (message) get('notice').scrollIntoView({ block: 'nearest' });
 }
+function renderPending() {
+  if (!state) return;
+  renderConversationTurn();
+  turnProgress.render({ ...getPending(), state });
+}
 function markBusy(value) {
   busy = value;
-  const waiting = value || !state;
-  const action = ui.pending?.type;
-  const label = (action === 'importReading' || action === 'importPdf') ? 'Importing reading…' : action === 'capture' ? 'Sending…' : action === 'chat' ? 'Waiting for a reply…' : action === 'reflect' ? 'Reflecting…' : 'Working…';
-  get('pending').textContent = value ? label : '';
-  document.body.dataset.waiting = String(value);
-  get('runtime').textContent = [
-    state ? (state.mode === 'live' ? 'Live tutor' : 'Demo tutor') : 'Connecting…', value ? label : '',
-  ].filter(Boolean).join(' · ');
+  const waiting = value || !state || Boolean(ui.pending);
+  const mode = state ? (state.mode === 'live' ? 'Live tutor' : 'Demo tutor') : 'Connecting…';
+  get('runtime').textContent = mode;
+  const chatting = value && (ui.pending?.type === 'chat' || ui.pending?.type === 'tutor');
+  get('pending').textContent = chatting ? 'Waiting for a reply…' : '';
+  renderPending();
   for (const el of document.querySelectorAll(
     '#chat-form button, #tutor-form button, #thread-form button[type="submit"], #thread-form button:not([type]), #practice-mode, #practice-body form button, [data-mutation]',
   )) el.disabled = waiting;
@@ -281,7 +294,7 @@ function messageNode(message, casual = false) {
     const a = link(ref.label + ' ↗', sourceHref(ref), 'source-link');
     if (ref.quote) a.append(node('span', ref.quote, 'source-quote'));
     el.append(a);
-  }
+  } else if (message.sourceLabel) el.append(node('span', message.sourceLabel, 'message-source'));
   if (message.text) {
     const words = node('span', message.text, 'message-text');
     if (casual) {
@@ -293,9 +306,71 @@ function messageNode(message, casual = false) {
   }
   return el;
 }
-function renderTutor() {
+// The visible draft turn sits beside the live history. Only committed messages
+// enter that history, so assistive technology gets one reply announcement.
+function renderConversationTurn() {
+  const action = ui.pending;
+  for (const kind of ['chat', 'tutor']) {
+    const box = get(kind + '-turn');
+    const history = kind === 'tutor' ? state.tutor : state.chat;
+    const relevant = action?.type === kind && !history.some(m => m.id === action.id)
+      && (kind === 'tutor' || !action.threadId || action.threadId === state.activeThreadId);
+    if (!relevant) {
+      if (!box.hidden) { box.hidden = true; box.replaceChildren(); delete box.dataset.action; }
+      continue;
+    }
+    const follow = followsConversation(kind);
+    if (box.dataset.action !== action.id) {
+      box.dataset.action = action.id;
+      const sourceLabel = action.wordReplyTo || action.captureQuestionId ? action.source : action.sourceLabel;
+      const outgoing = messageNode({ role: 'user', text: action.message, sourceLabel });
+      const incoming = node('div', 'Replying…', 'message turn-status');
+      incoming.dataset.preview = '';
+      const failure = node('p', undefined, 'turn-error');
+      failure.append(node('span'), button('Retry', retryPending, 'text-button'));
+      failure.firstChild.setAttribute('role', 'status');
+      failure.lastChild.dataset.turnRetry = '';
+      box.replaceChildren(outgoing, incoming, failure);
+      if (kind === 'tutor' && !state.tutor.length) get('tutor-history').replaceChildren();
+    }
+    box.hidden = false;
+    const incoming = box.querySelector('[data-preview]');
+    incoming.hidden = Boolean(pendingError) && incoming.classList.contains('turn-status');
+    const failure = box.lastChild;
+    failure.hidden = !pendingError;
+    failure.firstChild.textContent = pendingError;
+    if (follow) followConversation(kind);
+  }
+}
+function followsConversation(kind) {
+  if (kind === 'chat') {
+    const bottom = get('chat-messages').getBoundingClientRect().bottom;
+    return page === 'chat' && bottom > 0 && bottom <= window.innerHeight + 48;
+  }
   const log = get('tutor-messages');
-  const atEnd = log.scrollHeight - log.scrollTop - log.clientHeight < 48;
+  return !get('tutor-body').inert && log.scrollHeight - log.scrollTop - log.clientHeight < 48;
+}
+function followConversation(kind) {
+  if (kind === 'chat') get('chat-form').scrollIntoView({ block: 'nearest' });
+  else get('tutor-messages').scrollTop = get('tutor-messages').scrollHeight;
+}
+function appendChatText(text) {
+  if (!text) return;
+  const follow = followsConversation('chat');
+  const bubble = get('chat-turn').querySelector('[data-preview]');
+  if (!bubble) return;
+  if (bubble.classList.contains('turn-status')) {
+    bubble.classList.remove('turn-status');
+    bubble.replaceChildren();
+    bubble.lang = 'zh';
+  }
+  bubble.append(document.createTextNode(text));
+  if (follow) followConversation('chat');
+}
+function renderTutor() {
+  const scroll = get('tutor-messages');
+  const log = get('tutor-history');
+  const atEnd = scroll.scrollHeight - scroll.scrollTop - scroll.clientHeight < 48;
   const existing = [...log.querySelectorAll('[data-turn]')];
   state.tutor.forEach((message, i) => {
     const item = wordForTurn(state, message);
@@ -327,8 +402,8 @@ function renderTutor() {
   get('dock-tutor').classList.toggle('needs-reply', needsReply);
   get('dock-tutor').setAttribute('aria-label', needsReply ? 'Tutor has a question' : 'Tutor');
   get('tutor-attention').hidden = !needsReply;
-  if (!state.tutor.length) log.replaceChildren(node('p', 'What’s on your mind?', 'sub'));
-  if (atEnd || !existing.length) log.scrollTop = log.scrollHeight;
+  if (!state.tutor.length && ui.pending?.type !== 'tutor') log.replaceChildren(node('p', 'What’s on your mind?', 'sub'));
+  if (atEnd || !existing.length) scroll.scrollTop = scroll.scrollHeight;
   renderTutorContext();
 }
 function reflectionSummary(reflection) {
@@ -357,7 +432,7 @@ function renderChat() {
   picker.replaceChildren(...state.threads.map((t) => new Option(t.title, t.id)));
   picker.value = state.activeThreadId;
   const byEnd = new Map(threadReflections().map((snapshot) => [snapshot.end, snapshot]));
-  const log = get('chat-messages');
+  const log = get('chat-history');
   if (renderedThread !== state.activeThreadId) {
     renderedThread = state.activeThreadId;
     log.replaceChildren();
@@ -736,6 +811,8 @@ async function navigate(initial = false) {
     const { card, done, session } = state.practice;
     if (!target.kind && !card && !done && !session?.waiting && !ui.pending && !busy) startPractice(state.practice.mode);
   }
+  renderPending();
+  displayPendingError();
 }
 window.addEventListener('hashchange', () => navigate());
 // An already-open bookmark still brings its source back into view.
@@ -781,64 +858,96 @@ async function load() {
   }
   if (state && !loadFailed) {
     await navigate(true);
-    if (ui.pending && !busy) showError('An earlier action still needs a response. Retry to recover it.');
+    if (ui.pending && !busy) {
+      if (hasCommittedTurn(ui.pending)) await runAction(ui.pending);
+      else showPendingError('The previous request was interrupted. Retry to recover it.');
+    }
   }
+}
+function hasCommittedTurn(action) {
+  if (action.type === 'chat') return state.chat.some(m => m.id === action.id);
+  if (action.type === 'tutor' || action.type === 'capture') return state.tutor.some(m => m.id === action.id);
+  if (action.type === 'annotationPost') return state.annotationThreads.some(t => t.messages.some(m => m.id === action.id));
+  if (action.type === 'answer') return state.attempts.some(a => a.id === action.id);
+  return false;
+}
+function showPendingError(message) {
+  pendingError = message;
+  markBusy(false);
+  displayPendingError();
+}
+function displayPendingError() {
+  if (!pendingError || !ui.pending) return;
+  const surface = document.querySelector('dialog[open]') || document;
+  const inline = [...surface.querySelectorAll('[data-turn-retry]')].some(el => el.checkVisibility() && !el.closest('[inert]'));
+  const message = inline ? '' : pendingError;
+  if (get('error-message').textContent !== message) showError(message);
+}
+async function sendAction(action) {
+  const chat = action.type === 'chat';
+  const response = await fetch('/api/action', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...(chat ? { Accept: 'application/x-ndjson' } : {}) },
+    body: JSON.stringify(action),
+  });
+  if (chat && response.ok && response.headers.get('content-type')?.startsWith('application/x-ndjson'))
+    return readChatStream(response, appendChatText);
+  return responseJson(response);
 }
 async function runAction(action) {
   if (busy || !state) return false;
   ++requestRevision;
   const startingHash = location.hash;
   const isImport = action.type === 'importReading' || action.type === 'importPdf';
-  const tracksImport = isImport && reader.trackImport(action.url);
+  const tracksImport = isImport && reader.trackImport(action);
   const currentImport = () => tracksImport && tracksImport() && location.hash === startingHash;
+  const isRetry = ui.pending?.id === action.id;
+  if (!isRetry && action.type === 'chat' && chatDraft.value.trim() === action.message) {
+    chatDraft.value = '';
+    if (ui.chatDrafts) delete ui.chatDrafts[action.threadId || state.activeThreadId];
+  }
+  if (!isRetry && action.type === 'tutor') {
+    if (tutorDraft.value.trim() === action.message) {
+      tutorDraft.value = '';
+      delete ui.tutorDraft;
+    }
+    if (action.wordReplyTo || action.captureQuestionId) delete ui.tutorReply;
+  }
   ui.pending = action;
+  pendingError = '';
+  // A retry may follow a partially streamed answer.
+  if (isRetry && action.type === 'chat') delete get('chat-turn').dataset.action;
   persist();
   markBusy(true);
   showError('');
   try {
-    state = await responseJson(await fetch('/api/action', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(action),
-    }));
+    const updated = await sendAction(action);
+    const follow = (action.type === 'chat' || action.type === 'tutor') && followsConversation(action.type);
+    state = updated;
     if (action.type === 'capture' && state.captureResult?.id !== action.id) {
       throw new Error('The journal did not return a result for this input.');
     }
-    if (action.type === 'chat' && chatDraft.value.trim() === action.message) {
-      chatDraft.value = '';
-      if (ui.chatDrafts) delete ui.chatDrafts[action.threadId || state.activeThreadId];
-    }
-    if (action.type === 'tutor' && tutorDraft.value.trim() === action.message) {
-      tutorDraft.value = '';
-      delete ui.tutorDraft;
-    }
-    if (action.type === 'tutor' && (action.wordReplyTo || action.captureQuestionId)) {
-      if (action.wordReplyTo && ui.wordReplies) delete ui.wordReplies[action.wordReplyTo.intakeId];
-      if (!tutorDraft.value.trim()) delete ui.tutorReply;
-    }
+    if (action.type === 'tutor' && action.wordReplyTo && ui.wordReplies) delete ui.wordReplies[action.wordReplyTo.intakeId];
     if (action.type === 'answer') delete ui.practiceDraft;
     delete ui.pending;
     persist();
     renderState();
+    if (follow) followConversation(action.type);
     if (currentImport()) reader.imported();
     if (action.type === 'capture') {
       const result = state.captureResult;
+      const atCapture = page === 'home' && location.hash === startingHash && !importDialog.open
+        && !get('word-text').value.trim() && !get('word-context').value.trim();
       if (result.kind === 'reading') {
-        if (location.hash === startingHash) {
+        if (atCapture) {
           importUrl = result.url;
           location.hash = 'home/import';
-          capture.accepted(action);
-        }
-      } else {
-        capture.accepted(action);
-        if (location.hash === startingHash) {
-          if (!tutorDraft.value.trim()) {
-            delete ui.tutorContext;
-            delete ui.tutorReply;
-          }
-          if (!get('word-text').value.trim()) {
-            renderTutorContext();
-            setTutor(true, !tutorDraft.value.trim(), true, get('word-text'));
-          }
-        }
+        } else capture.offerReading(action);
+      } else if (atCapture && !tutorDraft.value.trim()) {
+        delete ui.tutorContext;
+        delete ui.tutorReply;
+        renderTutorContext();
+        setTutor(true, true, true, get('word-text'));
       }
     }
     return true;
@@ -853,11 +962,19 @@ async function runAction(action) {
       return false;
     }
     if (err.status === 400 || err.status === 409) {
+      if (action.type === 'annotationPost' && action.askTutor) annotations.restore(action);
+      if (action.type === 'capture') capture.restore(action);
+      if (action.type === 'chat' || action.type === 'tutor') {
+        // A definitive rejection releases the composer. Preserve any newer draft too.
+        const field = action.type === 'chat' ? chatDraft : tutorDraft;
+        field.value = [action.message, field.value].filter(Boolean).join('\n');
+        field.dispatchEvent(new Event('input'));
+      }
       delete ui.pending;
       persist();
       await load();
-    }
-    showError(err.message || 'Could not complete this action.');
+      showError(err.message);
+    } else showPendingError(err.message || 'Could not complete this action.');
     return false;
   } finally {
     markBusy(false);
@@ -919,10 +1036,12 @@ async function discussInChinese({ title, source }) {
   const action = existing ? { type: 'selectThread', threadId: existing.id } : { type: 'newThread', title, source };
   if (await submit(action)) location.hash = 'chat';
 }
-get('chat-form').onsubmit = async (e) => {
+get('chat-form').onsubmit = (e) => {
   e.preventDefault();
   const message = chatDraft.value.trim();
-  if (message && await submit({ type: 'chat', message, threadId: state.activeThreadId, source: thread().source || thread().title })) chatDraft.focus();
+  if (!message || busy || ui.pending) return;
+  chatDraft.focus({ preventScroll: true });
+  submit({ type: 'chat', message, threadId: state.activeThreadId, source: thread().source || thread().title });
 };
 get('reflect').onclick = async () => {
   const latest = threadReflections().at(-1);
@@ -930,15 +1049,21 @@ get('reflect').onclick = async () => {
     showReflection(latest.id);
     return;
   }
+  const start = location.hash;
   if (await submit({ type: 'reflect', threadId: state.activeThreadId, source: thread().title })) {
     const reflection = threadReflections().at(-1);
-    if (reflection && page === 'chat') showReflection(reflection.id);
+    if (reflection && location.hash === start) {
+      const details = get('reflection-' + reflection.id);
+      if (details) details.open = true;
+      if (document.activeElement === document.body || document.activeElement === get('reflect')) showReflection(reflection.id);
+    }
   }
 };
 get('tutor-form').onsubmit = (e) => {
   e.preventDefault();
   const message = tutorDraft.value.trim();
-  if (!message) return;
+  if (!message || busy) return;
+  tutorDraft.focus({ preventScroll: true });
   let source = labels[page];
   let referenceId;
   if (page === 'read') { source = reader.source(); referenceId = reader.currentReference(); }
@@ -956,7 +1081,8 @@ get('tutor-form').onsubmit = (e) => {
     return;
   }
   const context = ui.tutorContext || { surface: page, source, referenceId };
-  submit({ type: 'tutor', message, source: context.source, surface: context.surface, referenceId: context.referenceId });
+  const sourceLabel = context.label || (page === 'chat' ? thread().title : page === 'read' ? reader.title() : undefined);
+  submit({ type: 'tutor', message, source: context.source, surface: context.surface, referenceId: context.referenceId, sourceLabel });
 };
 navigate(true);
 load();
