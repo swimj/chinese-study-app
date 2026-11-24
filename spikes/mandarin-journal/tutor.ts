@@ -122,18 +122,24 @@ export function tutorTurn(input: TurnContext): Promise<TutorResult> {
   return runSituation(situationFor(input.trigger), input);
 }
 
-export async function friendTurn(input: TurnContext): Promise<string> {
-  const result = await runner.run(
-    friend,
-    JSON.stringify({
-      source: input.source,
-      topic: input.topic,
-      readingContext: input.readingContext,
-      recentChatTurns: input.chatHistory.slice(-12),
-      message: input.message,
-    }),
-    { maxTurns: 1, signal: AbortSignal.timeout(60_000) },
-  );
-  if (!result.finalOutput?.trim()) throw new Error('Conversation partner returned no reply');
-  return result.finalOutput;
+export async function friendTurn(input: TurnContext, onText?: (text: string) => void): Promise<string> {
+  const prompt = JSON.stringify({
+    source: input.source,
+    topic: input.topic,
+    readingContext: input.readingContext,
+    recentChatTurns: input.chatHistory.slice(-12),
+    message: input.message,
+  });
+  const options = { maxTurns: 1, signal: AbortSignal.timeout(60_000) };
+  let reply;
+  if (onText) {
+    const result = await runner.run(friend, prompt, { ...options, stream: true });
+    for await (const text of result.toTextStream()) onText(text);
+    await result.completed;
+    reply = result.finalOutput;
+  } else {
+    reply = (await runner.run(friend, prompt, options)).finalOutput;
+  }
+  if (!reply?.trim()) throw new Error('Conversation partner returned no reply');
+  return reply;
 }

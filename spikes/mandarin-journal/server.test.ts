@@ -49,6 +49,47 @@ test('a real journal carries chat into practice and retains the served exercise 
     rmSync(folder, { recursive: true });
   }
 });
+test('chat streams provisional text, commits once, and replays only the receipt', async () => {
+  let calls = 0;
+  let release!: () => void;
+  const waiting = new Promise<void>(resolve => { release = resolve; });
+  const j = openJournal(':memory:', {
+    ...demo,
+    friend: async (_ctx, onText) => {
+      calls++;
+      onText?.('先');
+      if (calls === 1) throw new Error('stream interrupted');
+      await waiting;
+      onText?.('看看。');
+      return '先看看。';
+    },
+  });
+  try {
+    const action = { id: randomUUID(), type: 'chat' as const, message: '你好', source: 'fixture' };
+    const parts: string[] = [];
+    await assert.rejects(j.act(action, text => parts.push(text)), /stream interrupted/);
+    assert.deepEqual(parts, ['先']);
+    assert.equal(j.get().chat.length, 0);
+
+    parts.length = 0;
+    let started!: () => void;
+    const firstText = new Promise<void>(resolve => { started = resolve; });
+    const retry = j.act(action, text => { parts.push(text); started(); });
+    await firstText;
+    assert.deepEqual(parts, ['先']);
+    assert.equal(j.get().chat.length, 0);
+    const replay = j.act(action, () => assert.fail('receipt replay must not emit draft text'));
+    release();
+    const [completed, recovered] = await Promise.all([retry, replay]);
+    assert.deepEqual(parts, ['先', '看看。']);
+    assert.equal(calls, 2);
+    assert.deepEqual(completed.chat.map(m => m.text), ['你好', '先看看。']);
+    assert.deepEqual(recovered.chat, completed.chat);
+  } finally {
+    j.close();
+  }
+});
+
 test('stash and past mistakes use this learner’s own actions', async () => {
   const j = openJournal(':memory:', demo);
   try {

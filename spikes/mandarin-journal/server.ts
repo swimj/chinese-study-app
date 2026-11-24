@@ -38,6 +38,8 @@ const port = Number(process.env.JOURNAL_PORT || defaultPorts[resolved.profile]);
 const files = new Map([
   ['/', ['index.html', 'text/html']],
   ['/app.js', ['app.js', 'text/javascript']],
+  ['/turn-progress.js', ['turn-progress.js', 'text/javascript']],
+  ['/chat-stream.js', ['chat-stream.js', 'text/javascript']],
   ['/capture.js', ['capture.js', 'text/javascript']],
   ['/teaching.js', ['teaching.js', 'text/javascript']],
   ['/annotations.js', ['annotations.js', 'text/javascript']],
@@ -105,6 +107,17 @@ const server = createServer(async (req, res) => {
     res.writeHead(status, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store' });
     res.end(JSON.stringify(value));
   };
+  // Keep a disconnected turn running to its receipt. A same-ID retry waits in the
+  // journal queue, then recovers the committed exchange without a second model call.
+  const line = (event: object) => {
+    if (!res.destroyed) res.write(JSON.stringify(event) + '\n');
+  };
+  const fail = (status: number, payload: { error: string; canPaste?: boolean; preview?: unknown }) => {
+    if (res.headersSent) {
+      line({ type: 'error', status, error: payload.error });
+      res.end();
+    } else json(status, payload);
+  };
   try {
     const host = req.headers.host;
     if (host !== 'localhost:' + port && host !== '127.0.0.1:' + port)
@@ -137,7 +150,13 @@ const server = createServer(async (req, res) => {
         return;
       }
       const action = actionSchema.parse(payload);
-      json(200, await journal.act(action));
+      if (action.type === 'chat' && req.headers.accept?.split(',').some(type => type.trim() === 'application/x-ndjson')) {
+        res.writeHead(200, { 'Content-Type': 'application/x-ndjson; charset=utf-8', 'Cache-Control': 'no-store' });
+        res.flushHeaders();
+        const state = await journal.act(action, text => line({ type: 'delta', text }));
+        line({ type: 'done', state });
+        res.end();
+      } else json(200, await journal.act(action));
       return;
     }
     const route = req.url || '';
@@ -155,16 +174,16 @@ const server = createServer(async (req, res) => {
     }
     throw new RequestError(404, 'Page not found.');
   } catch (err) {
-    if (err instanceof ImportError) json(err.status, {
+    if (err instanceof ImportError) fail(err.status, {
       error: err.message,
       canPaste: err.canPaste,
       preview: err instanceof ImportPreview ? err.preview : undefined,
     });
-    else if (err instanceof RequestError || err instanceof ReaderRequestError) json(err.status, { error: err.message });
+    else if (err instanceof RequestError || err instanceof ReaderRequestError) fail(err.status, { error: err.message });
     else if (err instanceof JournalConflict || err instanceof ReadingConflict)
-      json(409, { error: err.message });
-    else if (err instanceof ZodError) json(400, { error: 'Invalid journal action.' });
-    else json(502, { error: 'The journal could not finish this turn. Please retry.' });
+      fail(409, { error: err.message });
+    else if (err instanceof ZodError) fail(400, { error: 'Invalid journal action.' });
+    else fail(502, { error: 'The journal could not finish this turn. Please retry.' });
   }
 });
 server.listen(port, '127.0.0.1', () =>

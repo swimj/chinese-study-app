@@ -14,7 +14,7 @@ export const anchorSchema = z.object({
   quote: z.string().min(1),
 });
 export type Anchor = z.infer<typeof anchorSchema>;
-export type AnnotationMessage = { role: 'user' | 'assistant'; text: string; at?: string };
+export type AnnotationMessage = { id?: string; role: 'user' | 'assistant'; text: string; at?: string };
 export type AnnotationThread = { id: string; anchor: Anchor; messages: AnnotationMessage[]; capturedAt?: string };
 type Block = { id: string; text: string; role?: AnnotationMessage['role'] };
 type Conversation = { id: string; title: string; turns: Block[] };
