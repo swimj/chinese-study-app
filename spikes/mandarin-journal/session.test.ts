@@ -1,0 +1,326 @@
+import assert from 'node:assert/strict';
+import { randomUUID } from 'node:crypto';
+import { mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { DatabaseSync } from 'node:sqlite';
+import test from 'node:test';
+import { importHosted, type HostedExport } from './hosted-import.ts';
+import { openJournal } from './journal.ts';
+import { demoFriend, demoTutor } from './practice.ts';
+import { events } from './record.ts';
+import {
+  AHEAD, cardSeconds, cardTime, CHUNK_SECONDS, extend, finishCard, freshAllowed, needsCard, newSession, SESSION_SECONDS, stale,
+  type Purpose, type Session,
+} from './session.ts';
+import type { TurnContext, TutorResult } from './tutor.ts';
+
+const demo = {
+  mode: 'demo' as const,
+  tutor: async (ctx: TurnContext) => demoTutor(ctx),
+  friend: async (ctx: TurnContext) => demoFriend(ctx),
+};
+type Journal = ReturnType<typeof openJournal>;
+async function settle(j: Journal) {
+  for (let i = 0; i < 150 && j.busy(); i++) await new Promise((r) => setTimeout(r, 20));
+  assert.equal(j.busy(), false, 'background work should finish');
+}
+function sandbox() {
+  const folder = mkdtempSync(join(tmpdir(), 'journal-session-'));
+  return { path: join(folder, 'journal.db'), done: () => rmSync(folder, { recursive: true, force: true }) };
+}
+/** Reads or rewrites the stored journal body between actions. */
+type Stored = { practice: { mode: string; cards: { targets?: string[]; purpose: Purpose; introduction?: string; teaching?: unknown[] }[]; session: Session } };
+function body(path: string, change?: (b: Stored) => void): Stored {
+  const db = new DatabaseSync(path);
+  try {
+    const parsed = JSON.parse(String(db.prepare('SELECT body FROM journal WHERE id=1').get()!.body));
+    if (change) {
+      change(parsed);
+      db.prepare('UPDATE journal SET body=?,revision=revision+1 WHERE id=1').run(JSON.stringify(parsed));
+    }
+    return parsed;
+  } finally {
+    db.close();
+  }
+}
+let made = 0;
+/** A practice card the tutor would return; each prompt is new. */
+function choiceCard(label = 'Pick'): TutorResult {
+  return {
+    reply: 'Intro.',
+    action: {
+      kind: 'practice',
+      title: label,
+      detail: 'Fits.',
+      exercise: { kind: 'choice', prompt: label + ' ' + ++made + '：他＿＿去。', accepted: [], choices: ['也', '又'], answer: '也', explanation: 'e' },
+    },
+  };
+}
+const card = (kind: 'choice' | 'open', purpose?: Purpose) => ({ kind, purpose, introduction: purpose === 'teach' ? 'x' : undefined });
+
+test('cards are estimated by form, and real time counts up to a cap', () => {
+  assert.equal(cardSeconds(card('choice')), 20);
+  assert.equal(cardSeconds(card('open')), 90);
+  assert.equal(cardSeconds(card('choice', 'teach')), 80);
+  const now = new Date('2026-11-24T12:00:00Z');
+  assert.equal(cardTime(card('choice'), '2026-11-24T11:59:30Z', now), 30);
+  assert.equal(cardTime(card('choice'), '2026-11-24T10:00:00Z', now), 60, 'a walk away counts at most three estimates');
+  assert.equal(cardTime(card('open'), null, now), 90);
+});
+
+test('a session ends when its time is spent, prepares ahead within the budget, and Keep going extends it', () => {
+  const now = new Date('2026-11-24T12:00:00Z');
+  const p = { mode: 'Daily mix', cards: [card('open')], index: 0, result: null, session: newSession(now) };
+  assert.equal(needsCard(p), true);
+  p.cards.push(card('choice'), card('choice'));
+  assert.equal(p.cards.length - 1, AHEAD);
+  assert.equal(needsCard(p), false, 'two ready ahead is enough');
+  p.session.spent = SESSION_SECONDS - 100;
+  p.session.shownAt = new Date(now.getTime() - 200_000).toISOString();
+  finishCard(p, now);
+  assert.equal(p.session.ended, true, 'the open card took the last of the time');
+  assert.equal(p.index, 1);
+  assert.equal(needsCard(p), false, 'an ended session prepares nothing');
+  extend(p.session, now);
+  assert.equal(p.session.ended, false);
+  assert.equal(p.session.budget, p.session.spent + CHUNK_SECONDS);
+  assert.equal(needsCard(p), true);
+  // Prepared cards that already fill the budget stop the worker.
+  p.session.spent = p.session.budget - 30;
+  assert.equal(needsCard(p), false);
+  // Past mistakes replays what exists and prepares nothing.
+  assert.equal(needsCard({ ...p, mode: 'Past mistakes', session: newSession(now) }), false);
+});
+
+test('one new word per four session cards', () => {
+  assert.equal(freshAllowed([card('open', 'material')]), 1);
+  assert.equal(freshAllowed([card('choice', 'teach'), card('open', 'weakness')]), 0);
+  assert.equal(freshAllowed([card('choice', 'teach'), card('open'), card('open'), card('open')]), 1);
+});
+
+test('an ended session is put away after an hour', () => {
+  const now = new Date('2026-11-24T12:00:00Z');
+  const s = newSession(new Date('2026-11-24T10:00:00Z'));
+  assert.equal(stale(s, now), false, 'an open session is never put away');
+  s.ended = true;
+  assert.equal(stale(s, now), true);
+});
+
+test('the first card arrives in the action, the rest are prepared ahead, and the session ends with Keep going', async () => {
+  const box = sandbox();
+  let calls = 0;
+  const j = openJournal(box.path, {
+    ...demo,
+    tutor: async (ctx) => (ctx.trigger === 'practice' ? (calls++, choiceCard()) : demoTutor(ctx)),
+  });
+  try {
+    await j.act({ id: randomUUID(), type: 'chat', message: '我想去外面透透气。', source: '' });
+    let s = await j.act({ id: randomUUID(), type: 'practice', mode: 'Daily mix' });
+    assert.ok(s.practice.card, 'the first card is in the response');
+    assert.equal(calls, 1, 'one model call before the first card');
+    await settle(j);
+    s = j.get();
+    assert.equal(s.practice.session?.ready, 2);
+    assert.equal(calls, 3);
+    const first = s.practice.card!;
+    await j.act({ id: randomUUID(), type: 'answer', cardId: first.id, answer: first.choices[0] });
+    // Nearly all the session's time is spent, and this card has been up for half a minute.
+    body(box.path, (b) => {
+      b.practice.session.spent = SESSION_SECONDS - 20;
+      b.practice.session.shownAt = new Date(Date.now() - 30_000).toISOString();
+    });
+    assert.equal(j.get().practice.session?.last, true, 'the learner can see this card finishes the session');
+    s = await j.act({ id: randomUUID(), type: 'next', cardId: first.id });
+    assert.equal(s.practice.done, true);
+    assert.equal(s.practice.card, null);
+    assert.equal(s.practice.session?.ended, true);
+    assert.equal(s.practice.session?.finished, 1);
+    await settle(j);
+    assert.equal(calls, 3, 'an ended session prepares nothing more');
+    assert.equal(s.practice.session?.ready, 2, 'the cards already prepared wait for Keep going');
+    // Practice without continue starts a fresh session, taking the cards already prepared.
+    s = await j.act({ id: randomUUID(), type: 'practice', mode: 'Daily mix' });
+    assert.equal(s.practice.session?.ended, false, 'without continue, a finished session starts afresh');
+    assert.equal(s.practice.session?.finished, 0);
+    body(box.path, (b) => (b.practice.session.spent = SESSION_SECONDS + 20));
+    const current = j.get().practice.card!;
+    await j.act({ id: randomUUID(), type: 'answer', cardId: current.id, answer: current.choices[0] });
+    s = await j.act({ id: randomUUID(), type: 'next', cardId: current.id });
+    assert.equal(s.practice.session?.ended, true);
+    s = await j.act({ id: randomUUID(), type: 'practice', mode: 'Daily mix', continue: true });
+    assert.equal(s.practice.session?.ended, false);
+    assert.equal(s.practice.session?.budgetMinutes, 15, 'Keep going adds five minutes past what was spent');
+    assert.ok(s.practice.card, 'a card prepared earlier is in front of the learner at once');
+    await settle(j);
+    assert.equal(j.get().practice.session?.ready, 2);
+  } finally {
+    j.close();
+    box.done();
+  }
+});
+
+test('a card prepared in the background never overwrites an answer given meanwhile, and reaches a waiting learner', async () => {
+  const box = sandbox();
+  let release!: () => void;
+  let gate = Promise.resolve();
+  const j = openJournal(box.path, {
+    ...demo,
+    tutor: async (ctx) => {
+      if (ctx.trigger !== 'practice') return demoTutor(ctx);
+      await gate;
+      return choiceCard('Gate');
+    },
+  });
+  try {
+    await j.act({ id: randomUUID(), type: 'chat', message: '我想去外面透透气。', source: '' });
+    gate = new Promise<void>((r) => (release = r));
+    const opening = j.act({ id: randomUUID(), type: 'practice', mode: 'Daily mix' });
+    release();
+    let s = await opening;
+    const first = s.practice.card!;
+    // The worker is now preparing the next card behind a closed gate.
+    gate = new Promise<void>((r) => (release = r));
+    await new Promise((r) => setTimeout(r, 30));
+    assert.equal(j.busy(), true);
+    await j.act({ id: randomUUID(), type: 'answer', cardId: first.id, answer: first.choices[1] });
+    s = await j.act({ id: randomUUID(), type: 'next', cardId: first.id });
+    assert.equal(s.practice.card, null);
+    assert.equal(s.practice.session?.waiting, true, 'the learner waits calmly for the next card');
+    assert.equal(s.practice.done, false);
+    release();
+    await settle(j);
+    s = j.get();
+    assert.equal(s.attempts.length, 1, 'the answer given during generation survives');
+    assert.equal(s.attempts[0].answer, first.choices[1]);
+    assert.ok(s.practice.card, 'the prepared card reaches the waiting learner');
+    assert.equal(s.practice.session?.waiting, false);
+    assert.ok(body(box.path).practice.session.shownAt, 'its time counts from when it appeared');
+    const answers = events(new DatabaseSync(box.path, { readOnly: true })).filter((e) => e.kind === 'answer');
+    assert.equal(answers.length, 1, 'the answer event is in the record');
+
+    // A card prepared for a session the learner has left is dropped.
+    gate = new Promise<void>((r) => (release = r));
+    const current = s.practice.card!;
+    await j.act({ id: randomUUID(), type: 'answer', cardId: current.id, answer: current.choices[0] });
+    await j.act({ id: randomUUID(), type: 'next', cardId: current.id });
+    await new Promise((r) => setTimeout(r, 30));
+    await j.act({ id: randomUUID(), type: 'practice', mode: 'Past mistakes' });
+    const pastCards = body(box.path).practice.cards.length;
+    release();
+    await settle(j);
+    assert.equal(body(box.path).practice.mode, 'Past mistakes');
+    assert.equal(body(box.path).practice.cards.length, pastCards);
+  } finally {
+    j.close();
+    box.done();
+  }
+});
+
+test('failing generation stops the session instead of trapping it, and Keep going tries again', async () => {
+  const box = sandbox();
+  let failing = false;
+  const j = openJournal(box.path, {
+    ...demo,
+    tutor: async (ctx) => {
+      if (ctx.trigger !== 'practice') return demoTutor(ctx);
+      if (failing) throw new Error('offline');
+      return choiceCard();
+    },
+  });
+  try {
+    await j.act({ id: randomUUID(), type: 'chat', message: '我想去外面透透气。', source: '' });
+    failing = true;
+    let s = await j.act({ id: randomUUID(), type: 'practice', mode: 'Daily mix' });
+    assert.equal(s.practice.card, null);
+    await settle(j);
+    s = j.get();
+    assert.equal(s.practice.session?.stopped, 'failed');
+    assert.equal(s.practice.done, true, 'the learner sees an end state, not an endless wait');
+    assert.match(s.notice, /could not prepare/);
+    failing = false;
+    s = await j.act({ id: randomUUID(), type: 'practice', mode: 'Daily mix', continue: true });
+    assert.ok(s.practice.card);
+    assert.equal(s.practice.session?.stopped, null);
+  } finally {
+    j.close();
+    box.done();
+  }
+});
+
+const hosted = (over: Partial<HostedExport['words'][number]> & { hanzi: string }): HostedExport['words'][number] => ({
+  pinyin: null, meaning: null, mode: 'practice', inStash: true, dismissedAt: null, addedAt: null, lastPractisedAt: null,
+  dueAt: null, intervalHours: null, attempts: 0, incorrect: 0, lastIncorrectAt: null, recentMistakes: [], ...over,
+});
+
+test('each card carries its purpose, and the request asks for the form that fits it', async () => {
+  const box = sandbox();
+  const db = new DatabaseSync(box.path);
+  importHosted(db, {
+    exportedAt: '2026-11-20T00:00:00.000Z',
+    learner: 'test',
+    words: [
+      hosted({ hanzi: '分心', meaning: 'be distracted', dueAt: '2026-11-01T00:00:00.000Z', intervalHours: 240, attempts: 6, incorrect: 2 }),
+      hosted({ hanzi: '修复', meaning: 'restore', dueAt: '2026-11-01T00:00:00.000Z', intervalHours: 240, attempts: 4, incorrect: 1 }),
+    ],
+  });
+  db.close();
+  const asked: { form: string; message: string }[] = [];
+  const j = openJournal(box.path, {
+    ...demo,
+    tutor: async (ctx) => {
+      if (ctx.trigger !== 'practice') return demoTutor(ctx);
+      asked.push({ form: ctx.source.match(/^Target: (\S+)/)?.[1] ?? 'material', message: ctx.message });
+      return choiceCard();
+    },
+  });
+  try {
+    // 分心 becomes a weakness from the learner's own Chinese; 透透气 is saved and never taught.
+    await j.act({ id: randomUUID(), type: 'chat', message: '我在图书馆老是 get distracted。', source: '' });
+    await j.act({ id: randomUUID(), type: 'reflect', source: '' });
+    await j.act({ id: randomUUID(), type: 'addWord', text: '透透气', context: '图书馆太闷了' });
+    await settle(j);
+    const ranked = Object.fromEntries(j.priority().map((r) => [r.target.form, r.purpose]));
+    assert.deepEqual(ranked, { 分心: 'weakness', 透透气: 'teach', 修复: 'review' });
+    await j.act({ id: randomUUID(), type: 'practice', mode: 'Daily mix' });
+    await settle(j);
+    const cards = body(box.path).practice.cards;
+    assert.deepEqual(
+      cards.map((c) => [c.targets?.[0], c.purpose]),
+      [['分心', 'weakness'], ['透透气', 'teach'], ['修复', 'review']],
+    );
+    assert.ok(cards[1].teaching?.length || cards[1].introduction, 'a taught card is taught');
+    const message = Object.fromEntries(asked.map((a) => [a.form, a.message]));
+    assert.match(message['分心'], /open exercise/);
+    assert.match(message['透透气'], /^Teach .*light check/);
+    assert.match(message["修复"], /recall exercise/);
+  } finally {
+    j.close();
+    box.done();
+  }
+});
+
+test('a session that keeps getting nothing new stops after a few tries and says nothing is left', async () => {
+  const box = sandbox();
+  let practiceCalls = 0;
+  const j = openJournal(box.path, {
+    ...demo,
+    tutor: async (ctx: TurnContext) => {
+      if (ctx.trigger !== 'practice') return demoTutor(ctx);
+      practiceCalls++;
+      return { reply: '', action: null };
+    },
+  });
+  try {
+    for (const message of ['我在图书馆看书。', '下午我去公园散步。', '晚上我做了饺子。', '周末我想去爬山。', '我最近在学吉他。'])
+      await j.act({ id: randomUUID(), type: 'chat', message, source: '' });
+    await j.act({ id: randomUUID(), type: 'practice', mode: 'Daily mix' });
+    await settle(j);
+    const session = j.get().practice.session!;
+    assert.equal(session.stopped, 'exhausted');
+    assert.ok(practiceCalls <= 3, `stopped after ${practiceCalls} empty generations`);
+  } finally {
+    j.close();
+    box.done();
+  }
+});

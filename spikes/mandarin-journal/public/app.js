@@ -3,6 +3,7 @@ import { createAnnotations } from './annotations.js';
 import { createReading, readingLabel, referenceForSource } from './reading.js';
 import { createScrapbook, todayStep } from './scrapbook.js';
 import { compose } from './media-policy.js';
+import { createTeaching } from './teaching.js';
 
 const get = (id) => document.getElementById(id);
 const labels = { home: 'Journal', read: 'Reading', chat: 'Conversation', practice: 'Practice', saved: 'Scrapbook' };
@@ -390,6 +391,73 @@ function attemptContent(attempt, card, result) {
   }), 'text-button'));
   return box;
 }
+function renderSessionProgress(session) {
+  const bar = get('session-progress');
+  // The end state gives its own summary.
+  bar.hidden = !session || state.practice.done;
+  if (bar.hidden) return;
+  const spent = Math.min(session.spentMinutes, session.budgetMinutes);
+  get('session-time').textContent = spent + ' of ' + session.budgetMinutes + ' min';
+  const meter = get('session-meter');
+  meter.max = session.budgetMinutes;
+  meter.value = spent;
+}
+// The state of practice with no card in front of the learner. Returns the element to focus.
+function renderSessionEnd(body, mode, done, session) {
+  if (session?.waiting) {
+    const waiting = node('p', 'Preparing the next exercise…', 'session-waiting');
+    waiting.setAttribute('role', 'status');
+    body.append(waiting);
+    return waiting;
+  }
+  const latestResults = new Map(state.attempts.map((a) => [a.card.id, a.result.correct]));
+  const emptyReview = done && mode === 'Past mistakes' && ![...latestResults.values()].includes(false);
+  if (emptyReview || !done || !session) {
+    const text = node('p', emptyReview ? 'No missed exercises left to revisit.' : 'Ready when you are.');
+    body.append(text);
+    if (emptyReview) return text;
+    const start = button('Start practice', () => startPractice(mode, done), 'primary', true);
+    body.append(start);
+    return start;
+  }
+  const failed = session.stopped === 'failed' && !session.ended;
+  // Nothing left to ask about: say so instead of offering more time that would stay empty.
+  const exhausted = session.stopped === 'exhausted';
+  const end = node('section', undefined, 'session-end');
+  const heading = node('h2', failed ? 'Practice paused' : exhausted && !session.ended ? 'Nothing more to practice for now' : 'Session complete');
+  end.append(heading);
+  if (session.finished) {
+    const count = session.finished === 1 ? '1 exercise' : session.finished + ' exercises';
+    end.append(node('p', count + ' · ' + session.spentMinutes + ' min', 'sub'));
+  }
+  if (!exhausted) end.append(button(failed ? 'Try again' : 'Keep going · 5 min', () => startPractice(mode, true), 'primary', true));
+  body.append(end);
+  return heading;
+}
+let practiceFocused = false;
+document.addEventListener('focusin', (e) => {
+  practiceFocused = get('practice-body').contains(e.target);
+});
+// While the learner waits for a card being prepared, check back until it arrives.
+let practicePoll;
+function schedulePracticePoll() {
+  clearTimeout(practicePoll);
+  if (page !== 'practice' || !state.practice.session?.waiting) return;
+  practicePoll = setTimeout(async () => {
+    const revision = requestRevision;
+    try {
+      const updated = await responseJson(await fetch('/api/state', { cache: 'no-store' }));
+      if (revision !== requestRevision || busy || ui.pending) return schedulePracticePoll();
+      state.practice = updated.practice;
+      state.notice = updated.notice;
+      get('session-notice').textContent = state.notice || '';
+      get('session-notice').hidden = !state.notice;
+      renderPractice();
+    } catch {
+      schedulePracticePoll();
+    }
+  }, 900);
+}
 function renderPractice() {
   const { mode, card, result, done } = state.practice;
   const target = route();
@@ -400,9 +468,12 @@ function renderPractice() {
   get('practice-mode').value = mode;
   const attempt = historical ? state.attempts.find((a) => a.id === target.id)
     : result && state.attempts.findLast((a) => a.card.id === card?.id);
-  const stamp = JSON.stringify([historical, target.id, mode, card, result, done, attempt]);
+  const session = state.practice.session;
+  const stamp = JSON.stringify([historical, target.id, mode, card, result, done, attempt, session]);
+  schedulePracticePoll();
   if (renderedPractice === stamp) return;
   renderedPractice = stamp;
+  renderSessionProgress(session);
   if (historical) {
     record.replaceChildren();
     if (attempt) {
@@ -413,20 +484,66 @@ function renderPractice() {
     return;
   }
   const body = get('practice-body');
+  // A learner moving through the session by keyboard keeps their place when the body
+  // is replaced. A control disabled during the request drops focus to the page, so
+  // the last focus inside the session is what counts.
+  const hadFocus = practiceFocused || body.contains(document.activeElement);
   body.replaceChildren();
+  const settleFocus = (el) => {
+    if (!hadFocus || !el) return;
+    if (!el.matches('button, a[href], textarea, input, select')) el.tabIndex = -1;
+    el.focus({ preventScroll: true });
+  };
   if (!card) {
-    const latestResults = new Map(state.attempts.map((a) => [a.card.id, a.result.correct]));
-    const emptyReview = done && mode === 'Past mistakes' && ![...latestResults.values()].includes(false);
-    body.append(node('p', emptyReview ? 'No missed exercises left to revisit.' : done ? 'Batch complete.' : 'Ready when you are.'));
-    if (!emptyReview) body.append(button(done ? 'Next batch →' : 'Start practice', () => startPractice(mode, done), 'primary', true));
+    settleFocus(renderSessionEnd(body, mode, done, session));
     return;
   }
-  if (card.introduction) body.append(node('p', card.introduction, 'word-introduction'));
+  // A Continue that ends the session says so.
+  const exercise = renderExercise(card, result, attempt, session?.last ? 'Finish session →' : 'Continue →');
+  const focusExercise = () => settleFocus(exercise.querySelector(result ? 'button.primary' : '.recall input') ?? exercise.querySelector('.prompt'));
+  const beats = card.teaching?.length ? card.teaching : null;
+  if (!beats) {
+    if (card.introduction) body.append(node('p', card.introduction, 'word-introduction'));
+    body.append(exercise);
+    focusExercise();
+    return;
+  }
+  const step = ui.teaching?.id === card.id ? ui.teaching : null;
+  const taught = !!result || !!step?.done;
+  const teaching = createTeaching(beats, {
+    shown: step?.shown,
+    done: taught,
+    onAdvance(shown) {
+      ui.teaching = { id: card.id, shown };
+      persist();
+    },
+    onDone() {
+      ui.teaching = { id: card.id, shown: beats.length, done: true };
+      persist();
+      body.append(exercise);
+      const first = exercise.querySelector('.options button, textarea, .recall input');
+      first?.focus({ preventScroll: true });
+      exercise.scrollIntoView({ block: 'nearest' });
+    },
+  });
+  body.append(teaching.element);
+  if (taught) {
+    body.append(exercise);
+    focusExercise();
+    return;
+  }
+  // Opening a taught card puts Continue under the learner's hand, unless they are typing elsewhere.
+  const active = document.activeElement;
+  if (teaching.control && page === 'practice' && (hadFocus || !active || active === document.body || body.contains(active)))
+    teaching.control.focus({ preventScroll: true });
+}
+function renderExercise(card, result, attempt, continueLabel = 'Continue →') {
+  const body = node('div', undefined, 'exercise');
   body.append(node('p', card.prompt, 'prompt'));
   if (result) {
     body.append(attemptContent(attempt, card, result),
-      button('Continue →', () => submit({ type: 'next', cardId: card.id }), 'primary', true));
-    return;
+      button(continueLabel, () => submit({ type: 'next', cardId: card.id }), 'primary', true));
+    return body;
   }
   function answer(value) {
     if (value.trim()) return submit({ type: 'answer', cardId: card.id, answer: value.trim() });
@@ -435,6 +552,23 @@ function renderPractice() {
     const choices = node('div', undefined, 'options');
     for (const choice of card.choices) choices.append(button(choice, () => answer(choice), '', true));
     body.append(choices);
+  } else if (card.kind === 'recall') {
+    // Typed from memory, like the old flashcards; Enter answers.
+    const form = node('form', undefined, 'recall');
+    const label = node('label', 'Your answer');
+    const field = node('input');
+    field.type = 'text';
+    field.lang = 'zh';
+    field.required = true;
+    field.maxLength = 80;
+    field.autocomplete = 'off';
+    field.spellcheck = false;
+    field.value = ui.practiceDraft?.id === card.id ? ui.practiceDraft.text : '';
+    field.oninput = () => { ui.practiceDraft = { id: card.id, text: field.value }; persist(); };
+    label.append(field);
+    form.append(label, node('button', 'Answer', 'primary'));
+    form.onsubmit = (e) => { e.preventDefault(); answer(field.value); };
+    body.append(form);
   } else {
     const form = node('form');
     const label = node('label', 'Your answer');
@@ -448,6 +582,7 @@ function renderPractice() {
     form.onsubmit = (e) => { e.preventDefault(); answer(field.value); };
     body.append(form);
   }
+  return body;
 }
 function renderSaved() {
   const list = get('saved-items');
@@ -598,7 +733,8 @@ async function navigate(initial = false) {
   annotations.render();
   if (page === 'practice') {
     renderPractice();
-    if (!target.kind && !state.practice.card && !state.practice.done && !ui.pending && !busy) startPractice(state.practice.mode);
+    const { card, done, session } = state.practice;
+    if (!target.kind && !card && !done && !session?.waiting && !ui.pending && !busy) startPractice(state.practice.mode);
   }
 }
 window.addEventListener('hashchange', () => navigate());
@@ -745,6 +881,15 @@ function startPractice(mode, more = false) {
   return submit({ type: 'practice', mode, ...(more ? { continue: true } : {}) });
 }
 get('practice-mode').onchange = (e) => startPractice(e.target.value);
+// Space advances teaching from anywhere on the page that is not itself a control or text field.
+document.addEventListener('keydown', (e) => {
+  if (e.key !== ' ' || e.repeat || e.defaultPrevented || page !== 'practice' || e.altKey || e.ctrlKey || e.metaKey) return;
+  const next = get('practice-body').querySelector('.teaching-next');
+  if (!next || e.target.closest?.('input, textarea, select, button, a[href], summary, [contenteditable], dialog')) return;
+  e.preventDefault();
+  next.click();
+  next.focus({ preventScroll: true });
+});
 function openThreadForm(open) {
   get('thread-form').hidden = !open;
   get('new-thread').setAttribute('aria-expanded', String(open));

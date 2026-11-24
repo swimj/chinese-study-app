@@ -136,6 +136,70 @@ test('daily mix asks for the top target, and a choice answer on it is judged by 
   }
 });
 
+test('daily mix teaches an unstudied saved word in beats before its exercise, and the answer records it taught', async () => {
+  const box = sandbox();
+  const asked: TurnContext[] = [];
+  let teachingFails = false;
+  const j = openJournal(box.path, {
+    ...demo,
+    tutor: async (ctx: TurnContext) => {
+      if (ctx.trigger === 'teach') {
+        asked.push(ctx);
+        if (teachingFails) throw new Error('offline');
+      }
+      return demoTutor(ctx);
+    },
+  });
+  try {
+    await j.act({ id: randomUUID(), type: 'addWord', text: '报备', context: '朋友说出去玩要跟男朋友报备' });
+    await settle(j);
+    const s = await j.act({ id: randomUUID(), type: 'practice', mode: 'Daily mix' });
+    const card = s.practice.card!;
+    assert.ok(card.teaching?.length, 'the card carries teaching beats');
+    assert.equal(card.teaching[1].parts[0].kind, 'chinese');
+    assert.equal(asked.length, 1);
+    assert.deepEqual(asked[0].teach, {
+      form: '报备',
+      pinyin: 'bàobèi',
+      gloss: 'Notify someone for the record or to keep them informed.',
+      example: '周末有访客，需要提前向物业报备。',
+      translation: 'If you have visitors this weekend, you need to notify the property manager in advance.',
+      why: 'saved, not practiced yet; met in: 朋友说出去玩要跟男朋友报备',
+    });
+    await j.act({ id: randomUUID(), type: 'answer', cardId: card.id, answer: card.kind === 'choice' ? card.choices[0] : '我得跟物业报备。' });
+    await settle(j);
+    const answer = read(box.path, events).find((e) => e.kind === 'answer')!;
+    assert.equal(answer.context.taught, true);
+    assert.deepEqual(answer.targets, ['报备']);
+
+  } finally {
+    j.close();
+    box.done();
+  }
+});
+
+test('when teaching fails, a new word keeps the generator introduction', async () => {
+  const box = sandbox();
+  const j = openJournal(box.path, {
+    ...demo,
+    tutor: async (ctx: TurnContext) => {
+      if (ctx.trigger === 'teach') throw new Error('offline');
+      return demoTutor(ctx);
+    },
+  });
+  try {
+    await j.act({ id: randomUUID(), type: 'addWord', text: '分心' });
+    await settle(j);
+    const taught = (await j.act({ id: randomUUID(), type: 'practice', mode: 'Daily mix' })).practice.card!;
+    assert.deepEqual(taught.purpose, 'teach');
+    assert.equal(taught.teaching, undefined);
+    assert.ok(taught.introduction, 'the introduction remains as a fallback');
+  } finally {
+    j.close();
+    box.done();
+  }
+});
+
 const target = (form: string, over: Partial<Target> = {}): Target => ({
   id: 1, form, kind: 'word', gloss: null, pinyin: null, origin: 'noticed', createdAt: '2026-11-01T00:00:00.000Z', hosted: null, ...over,
 });
@@ -237,4 +301,43 @@ test('new words wait behind a daily limit and behind open work, and a taught wor
   assert.equal(blocked.filter((r) => r.fresh).length, 0, 'eight open weaknesses hold back new words');
   const settled = rank([target('甲')], [taught('甲', 18), { form: '甲', role: 'correct', at: at(19), eventId: 'c1' }, { form: '甲', role: 'used', at: at(21), eventId: 'c2' }], now);
   assert.equal(settled.length, 0, 'two clean days after teaching retire it');
+});
+
+test('an old-app review is typed from memory and graded by its forms, ignoring spacing and punctuation', async () => {
+  const box = sandbox();
+  const db = new DatabaseSync(box.path);
+  importHosted(db, {
+    exportedAt: '2026-11-01T00:00:00.000Z',
+    learner: 'test',
+    words: [
+      hosted({ hanzi: '战胜', pinyin: 'zhànshèng', meaning: 'to prevail over; to defeat', dueAt: '2026-11-05T00:00:00.000Z', intervalHours: 240, attempts: 13, incorrect: 4 }),
+      hosted({ hanzi: '难得', pinyin: 'nándé', meaning: 'seldom; hard to come by', dueAt: '2026-11-05T00:00:00.000Z', intervalHours: 240, attempts: 9, incorrect: 3 }),
+    ],
+  });
+  db.close();
+  const j = openJournal(box.path, demo);
+  try {
+    let s = await j.act({ id: randomUUID(), type: 'practice', mode: 'Daily mix' });
+    const formFor = (prompt: string) => (prompt.startsWith('to prevail') ? '战胜' : '难得');
+    let card = s.practice.card!;
+    assert.equal(card.kind, 'recall');
+    assert.equal(card.purpose, 'review');
+    assert.ok(!card.prompt.includes(formFor(card.prompt)), 'the cue does not give the answer away');
+    s = await j.act({ id: randomUUID(), type: 'answer', cardId: card.id, answer: ' ' + formFor(card.prompt) + '。' });
+    assert.equal(s.practice.result?.correct, true);
+    await j.act({ id: randomUUID(), type: 'next', cardId: card.id });
+    await settle(j);
+    s = j.get();
+    card = s.practice.card!;
+    assert.equal(card.kind, 'recall');
+    s = await j.act({ id: randomUUID(), type: 'answer', cardId: card.id, answer: '不知道' });
+    assert.equal(s.practice.result?.correct, false);
+    assert.ok(s.practice.result?.feedback.startsWith(formFor(card.prompt)), 'a miss shows the expected form first');
+    await settle(j);
+    const sources = read(box.path, judgments).map((x) => x.source);
+    assert.deepEqual(sources, ['rule:recall-v1', 'rule:recall-v1'], 'graded by rule, with no model reading');
+  } finally {
+    j.close();
+    box.done();
+  }
 });

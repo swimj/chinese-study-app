@@ -139,7 +139,7 @@ export function nextUnjudged(db: DatabaseSync, source: string, since: string): R
     .prepare(
       `SELECT * FROM events e WHERE kind IN (${marks}) AND at >= ?
          AND NOT EXISTS (SELECT 1 FROM judgments j WHERE j.event_id = e.id AND j.source = ?)
-         AND NOT (kind = 'answer' AND json_extract(context_json, '$.kind') = 'choice')
+         AND NOT (kind = 'answer' AND json_extract(context_json, '$.kind') IN ('choice', 'recall'))
        ORDER BY seq DESC LIMIT 1`,
     )
     .get(...productionKinds, since, source);
