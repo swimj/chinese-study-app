@@ -38,6 +38,27 @@ function button(title, action, cls, mutation = false) {
   el.onclick = action;
   return el;
 }
+// Small line icons that inherit the text color; decorative, so screen readers read only the label.
+const ICONS = {
+  ask: 'M4 5h16v11H9l-5 4z',
+  flag: 'M5 21V4m0 0c2.5-1.5 4.5-1.5 7 0s4.5 1.5 7 0v8c-2.5 1.5-4.5 1.5-7 0s-4.5-1.5-7 0',
+};
+function labelled(el, name) {
+  el.setAttribute('aria-label', name);
+  el.title = name;
+  return el;
+}
+function withIcon(el, name) {
+  const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+  svg.setAttribute('viewBox', '0 0 24 24');
+  svg.setAttribute('aria-hidden', 'true');
+  svg.classList.add('icon');
+  const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+  path.setAttribute('d', ICONS[name]);
+  svg.append(path);
+  el.prepend(svg);
+  return el;
+}
 function link(title, href, cls) {
   const a = node('a', title, cls);
   a.href = href;
@@ -460,13 +481,16 @@ function attemptContent(attempt, card, result) {
   }
   box.append(node('strong', result.correct === true ? 'Correct' : result.correct === false ? 'Review' : 'Tutor feedback'),
     node('p', result.feedback, 'result'));
-  if (attempt) box.append(button('Ask the tutor about this answer', () => primeTutor({
+  if (!attempt) return box;
+  const actions = node('div', undefined, 'feedback-actions');
+  actions.append(withIcon(labelled(button('Ask', () => primeTutor({
     surface: 'practice', referenceId: attempt.id, label: 'your practice answer',
     source: [card.prompt, attempt.answer, result.feedback].join('\n'),
-  }), 'text-button'));
+  }), 'text-button'), 'Ask the tutor about this answer'), 'ask'));
   // A bad exercise counts neither for nor against the learner.
-  if (attempt?.flagged) box.append(node('p', 'Flagged as a bad exercise. It won’t count.', 'small flagged'));
-  else if (attempt) box.append(button('Flag as a bad exercise', () => submit({ type: 'flagExercise', attemptId: attempt.id }), 'text-button'));
+  if (attempt.flagged) actions.append(withIcon(node('p', 'Flagged · won’t count', 'small flagged'), 'flag'));
+  else actions.append(withIcon(labelled(button('Flag', () => submit({ type: 'flagExercise', attemptId: attempt.id }), 'text-button quiet'), 'Flag as a bad exercise'), 'flag'));
+  box.append(actions);
   return box;
 }
 function renderSessionProgress(session) {
