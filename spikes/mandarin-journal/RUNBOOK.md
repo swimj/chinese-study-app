@@ -88,6 +88,33 @@ npm run --silent journal:lookups > .local/lookup-decisions.jsonl
 
 The plain JSON files live in a directory alongside the journal, e.g. `.local/fixture.sqlite.lookups/`. Preserve that directory when backing up or moving the evidence. SQLite snapshots and copy-live cover the journal database alone.
 
+## Bring in hosted history
+
+The hosted app's vocabulary can seed the journal's targets: each word's form,
+gloss, schedule, production-recall counts and latest wrong answers. Hosted
+answers are mostly single-word recall, so they count as a weak input to
+priority. Raw attempts stay in the hosted database.
+
+1. Export one learner from the hosted machine. The script opens the database
+   read-only and prints JSON; `EXPORT_LEARNER` defaults to the dogfood learner.
+
+   ```sh
+   B=$(base64 < hosted-export.cjs | tr -d '\n')
+   fly ssh console --app <app-name> --command \
+     "sh -c 'echo $B | base64 -d > /tmp/hx.cjs && node /tmp/hx.cjs 2>/dev/null; rm /tmp/hx.cjs'" \
+     | grep '^{' > .local/hosted-export.json
+   ```
+
+2. Import into a copy first: `npm run journal:import-hosted -- .local/hosted-export.json --copy`,
+   then `npm run journal:priority -- --copy` to see the ranking. Importing again
+   refreshes the summaries and keeps everything else.
+3. From the primary checkout, `--live` imports into the live journal. Take
+   `npm run journal:backup` first.
+
+The export and copies are personal data: keep them in `.local/` and delete them
+when done. `npm run journal:priority` reads the fixture, `--copy` or `--live`
+without opening the journal for work.
+
 ## Restore the live journal
 
 1. Stop the live server.
