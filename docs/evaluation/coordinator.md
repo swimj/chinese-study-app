@@ -68,6 +68,13 @@ First-pass findings must be complete before implementation explanations are
 supplied. Restore failed infrastructure as coordinator; do not redirect the
 evaluator into source debugging.
 
+After 10 minutes without an evaluator update, measured from dispatch or the
+last update, ask what task the evaluator is on and whether the preview is
+responding. Give it two minutes to reply. If it reports progress, restart the
+ten-minute clock. If it reports a blocker, address it. If it stays silent,
+interrupt the evaluator and record the last confirmed observation and which
+tasks remain unverified. Resume with a fresh evaluator if coverage is still needed.
+
 Triage the compact report. Fix straightforward defects within scope and rerun
 the affected scenario when the change warrants it. Bring consequential product
 questions to Justin. Taste suggestions are inputs to judgment, not mandatory

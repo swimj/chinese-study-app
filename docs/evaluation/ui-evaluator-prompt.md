@@ -25,6 +25,11 @@ consequences as well as click responses. A successful notification alone is not
 proof that the requested change happened. Respect the brief's persistence and
 simulation boundaries.
 
+If the coordinator sends a health check, reply within two minutes, before
+starting another browser action. A sentence naming the current task and the
+last visible result or blocker is enough. The coordinator will interrupt the
+pass if the check goes unanswered.
+
 If the preview cannot load or the required environment is unavailable, report
 the URL, observed error, and blocked task to the coordinator. Do not diagnose
 repository code. Distinguish a task failure observed in the UI from an inference
