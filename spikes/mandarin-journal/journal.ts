@@ -253,7 +253,8 @@ function publicState(s: State, mode: Backend['mode'], now = new Date()) {
     putAway = !!p.session && !session,
     ended = !!session?.ended,
     // While wrapping up past the box, only the recall of a word taught this session shows.
-    current = session ? currentCard(p) : p.cards[p.index],
+    // A put-away session shows nothing, so the page starts a fresh one; its prepared cards return to the queue then.
+    current = session ? currentCard(p) : putAway ? undefined : p.cards[p.index],
     // A generating session with nothing in front of the learner is waiting for its next card.
     waiting = !!session && !ended && !session.stopped && !current && p.mode !== 'Past mistakes';
   return {
