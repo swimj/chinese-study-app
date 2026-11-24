@@ -4,7 +4,7 @@ import { parseCedictFile, type CedictEntry } from '../../scripts/lib/cc-cedict.t
 export type LookupInput = { kind: 'tap' | 'selection'; text: string; start: number; end: number };
 export type LookupAnswer = { span: string; pinyin: string; gloss: string; chunks?: string[] };
 export type LocalResult = { answer: LookupAnswer | null; reason: string; occurrence?: { text: string; start: number; end: number } };
-type Dictionary = { byForm: Map<string, CedictEntry[]>; maxLength: number };
+type Dictionary = { byForm: Map<string, CedictEntry[]>; maxLength: number; hasForm(form: string): boolean };
 
 export function loadDictionary(path: string): Dictionary {
   const byForm = new Map<string, CedictEntry[]>();
@@ -18,7 +18,16 @@ export function loadDictionary(path: string): Dictionary {
     }
   }
   if (!byForm.size) throw new Error(`No CC-CEDICT entries found in ${path}`);
-  return { byForm, maxLength };
+  return { byForm, maxLength, hasForm: form => byForm.has(form) };
+}
+
+// Share the loaded CC-CEDICT entries across catalog revisions. Additional forms
+// participate in segmentation without acquiring invented dictionary glosses.
+export function withCatalogForms(dictionary: Dictionary, forms: Iterable<string>): Dictionary {
+  const catalog = new Set(forms);
+  let maxLength = dictionary.maxLength;
+  for (const form of catalog) maxLength = Math.max(maxLength, [...form].length);
+  return { byForm: dictionary.byForm, maxLength, hasForm: form => catalog.has(form) || dictionary.byForm.has(form) };
 }
 
 const han = /^\p{Script=Han}$/u;
@@ -40,7 +49,7 @@ function tokenAt(dictionary: Dictionary, chars: string[], target: number, direct
     while (true) {
       start = direction === 1 ? cursor : cursor - length + 1;
       end = start + length;
-      if (length === 1 || dictionary.byForm.has(chars.slice(start, end).join(''))) break;
+      if (length === 1 || dictionary.hasForm(chars.slice(start, end).join(''))) break;
       length--;
     }
     if (start <= target && target < end) return { start, end };
@@ -70,7 +79,7 @@ export function lookupLocal(dictionary: Dictionary, input: LookupInput): LocalRe
   const selected = text.slice(start, end);
   if (kind === 'tap' && Array.from(selected).length !== 1) throw new RangeError('Tap must target one code point');
   if (kind === 'tap' && !han.test(selected)) return { answer: null, reason: 'non-han-tap' };
-  if (kind === 'selection' && !dictionary.byForm.has(selected)) return { answer: null, reason: 'no-exact-entry' };
+  if (kind === 'selection' && !dictionary.hasForm(selected)) return { answer: null, reason: 'no-exact-entry' };
 
   let span = selected;
   let spanStart = start;
@@ -89,6 +98,8 @@ export function lookupLocal(dictionary: Dictionary, input: LookupInput): LocalRe
     }
   }
   const entries = dictionary.byForm.get(span);
-  if (!entries) return { answer: null, reason: 'no-dictionary-entry' };
-  return { ...resolveEntry(entries, span), occurrence: { text, start: spanStart, end: spanStart + span.length } };
+  if (!dictionary.hasForm(span)) return { answer: null, reason: 'no-dictionary-entry' };
+  const occurrence = { text, start: spanStart, end: spanStart + span.length };
+  if (!entries) return { answer: null, reason: 'catalog-form', occurrence };
+  return { ...resolveEntry(entries, span), occurrence };
 }

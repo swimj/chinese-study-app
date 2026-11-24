@@ -5,7 +5,7 @@ import { z } from 'zod';
 import { runModel } from './lookup-experiment/models.ts';
 import { characterLookup, passageLookups } from './public/reader-lookup.js';
 import { createReaderCatalog, type ReaderSense } from './reader-catalog.ts';
-import { loadDictionary, lookupLocal, type LookupInput, type LookupAnswer } from './reader-dictionary.ts';
+import { loadDictionary, lookupLocal, withCatalogForms, type LookupInput, type LookupAnswer } from './reader-dictionary.ts';
 import { LookupModelError, type Trace } from './reader-model.ts';
 import { selectReaderSense } from './reader-sense.ts';
 
@@ -45,18 +45,36 @@ function authoredFallback(input: LookupInput, source?: LookupSource) {
   }
 }
 
+type CatalogSnapshot = {
+  hash: string;
+  forms: Iterable<string>;
+  sensesFor(form: string): readonly ReaderSense[];
+};
+
+type LookupOptions = {
+  checkInContext?: boolean;
+  suggestedSpan?: { start: number; end: number };
+};
+
 type ServiceOptions = {
+  catalogSnapshot?: () => CatalogSnapshot;
   dictionaryPath?: string; selectorEnabled?: boolean; contextEnabled?: boolean;
   select?: typeof selectReaderSense; context?: typeof runModel;
 };
 
+function seedCatalogSnapshot() {
+  const catalog = createReaderCatalog(JSON.parse(readFileSync(catalogFile, 'utf8')));
+  return () => catalog;
+}
+
 export function createLookupService(options: ServiceOptions = {}) {
   const dictionaryPath = options.dictionaryPath ?? process.env.LOOKUP_DICTIONARY ?? dictionarySample;
   const dictionary = loadDictionary(dictionaryPath);
-  const catalogBytes = readFileSync(catalogFile);
-  const catalog = createReaderCatalog(JSON.parse(catalogBytes.toString('utf8')));
+  const catalogSnapshot = options.catalogSnapshot ?? seedCatalogSnapshot();
   const sources = { dictionarySource: dictionaryPath === dictionarySample ? 'sample' : 'configured',
-    dictionarySha256: sha256(readFileSync(dictionaryPath)), catalogSha256: sha256(catalogBytes) };
+    dictionarySha256: sha256(readFileSync(dictionaryPath)) };
+  let indexedCatalogHash: string | undefined;
+  let lexicon = dictionary;
   const demo = process.env.JOURNAL_DEMO === '1';
   const selectorKey = process.env.LOOKUP_FAST_PROVIDER === 'openai' ? process.env.OPENAI_API_KEY : process.env.OPENROUTER_API_KEY;
   const selectorEnabled = !demo && (options.selectorEnabled ?? Boolean(selectorKey));
@@ -64,21 +82,36 @@ export function createLookupService(options: ServiceOptions = {}) {
   const select = options.select ?? selectReaderSense;
   const context = options.context ?? runModel;
 
-  async function lookup(input: LookupInput, source?: LookupSource) {
+  async function lookup(input: LookupInput, source?: LookupSource, request: LookupOptions = {}) {
     const started = performance.now();
-    const local = lookupLocal(dictionary, input);
+    const catalog = catalogSnapshot();
+    if (indexedCatalogHash !== catalog.hash) {
+      lexicon = withCatalogForms(dictionary, catalog.forms);
+      indexedCatalogHash = catalog.hash;
+    }
+    const local = lookupLocal(lexicon, input);
     const occurrence = local.occurrence;
     const form = occurrence ? input.text.slice(occurrence.start, occurrence.end) : null;
     const candidates = form ? catalog.sensesFor(form) : [];
     const steps: string[] = [];
     const calls: ReturnType<typeof modelEvidence>[] = [];
-    const evidence = { policyVersion: 1, ...sources, localReason: local.reason,
+    const suggestion = input.kind === 'tap' ? request.suggestedSpan ?? occurrence : undefined;
+    if (suggestion && (!Number.isInteger(suggestion.start) || !Number.isInteger(suggestion.end) ||
+        suggestion.start < 0 || suggestion.start > input.start || suggestion.end < input.end || suggestion.end > input.text.length)) {
+      throw new RangeError('Suggested span must contain the original tap');
+    }
+    const contextSuggestion = suggestion ? { start: suggestion.start, end: suggestion.end,
+      form: input.text.slice(suggestion.start, suggestion.end) } : null;
+    const evidence = { policyVersion: 2, ...sources, catalogSha256: catalog.hash, localReason: local.reason,
+      contextSuggestion,
       localSpan: occurrence ? { start: occurrence.start, end: occurrence.end, form } : null,
       candidates, selectedSenseId: null as string | null, steps, calls };
     const finish = (route: Route, start: number, end: number, answer: LookupAnswer | null) => ({
       route, start, end, answer, evidence: { ...evidence, elapsedMs: Math.round(performance.now() - started) },
     });
-    if (occurrence && form) {
+    if (request.checkInContext) {
+      steps.push('check-in-context');
+    } else if (occurrence && form) {
       const fromSense = (route: 'catalog' | 'selector', sense: ReaderSense) => {
         evidence.selectedSenseId = sense.senseId;
         return finish(route, occurrence.start, occurrence.end, { span: form, pinyin: sense.pinyin, gloss: sense.label });
@@ -113,11 +146,10 @@ export function createLookupService(options: ServiceOptions = {}) {
 
     if (contextEnabled) {
       try {
-        const focus: LookupInput = occurrence && candidates.length ? { ...occurrence, kind: 'selection' } : input;
-        const trace = await context('strong', focus);
-        const start = input.text.lastIndexOf(trace.answer.span, focus.start);
+        const trace = await context('strong', input, contextSuggestion?.form);
+        const start = input.text.lastIndexOf(trace.answer.span, input.start);
         const end = start + trace.answer.span.length;
-        if (start < 0 || end < focus.end || (focus.kind === 'selection' && (start !== focus.start || end !== focus.end))) {
+        if (start < 0 || end < input.end || (input.kind === 'selection' && (start !== input.start || end !== input.end))) {
           throw new Error('Context response does not cover the original lookup');
         }
         calls.push(modelEvidence('context', trace, 'answered'));
@@ -132,6 +164,7 @@ export function createLookupService(options: ServiceOptions = {}) {
       steps.push('context-offline');
     }
 
+    if (request.checkInContext) return finish('unavailable', input.start, input.end, null);
     const authored = authoredFallback(input, source);
     if (authored) {
       steps.push('authored-occurrence');
@@ -141,7 +174,7 @@ export function createLookupService(options: ServiceOptions = {}) {
     }
     return finish('unavailable', occurrence?.start ?? input.start, occurrence?.end ?? input.end, null);
   }
-  return { lookup };
+  return { lookup, contextEnabled };
 }
 
 export type ReaderLookupDecision = Awaited<ReturnType<ReturnType<typeof createLookupService>['lookup']>>;

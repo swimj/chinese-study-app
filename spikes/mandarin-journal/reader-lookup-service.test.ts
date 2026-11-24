@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { fileURLToPath } from 'node:url';
+import { createReaderCatalog } from './reader-catalog.ts';
 import { createLookupService } from './reader-lookup-service.ts';
 import { LookupModelError, type Trace } from './reader-model.ts';
 import type { LookupInput } from './reader-dictionary.ts';
@@ -62,9 +63,10 @@ test('abstention and provider failure each keep original context and lead to one
         handlers?.onTrace?.(selectorTrace);
         return null;
       },
-      async context(arm, received) {
+      async context(arm, received, suggestion) {
         assert.equal(arm, 'strong');
-        assert.deepEqual(received, { ...input, kind: 'selection' });
+        assert.deepEqual(received, input);
+        assert.equal(suggestion, '还');
         return { ...contextTrace, answer: { span: '还', pinyin: 'hái', gloss: 'still (remaining)', chunks: [] } };
       },
     });
@@ -107,4 +109,87 @@ test('offline and failed lookups distinguish curated occurrence fallback from un
   } }).lookup(target('selection', '晚风吹过【树梢】。'));
   assert.equal(failed.route, 'unavailable');
   assert.equal(failed.evidence.calls[0].error, 'openai lookup returned HTTP 429');
+});
+
+test('a second look bypasses quick answers and reanchors a different span to the same tap', async () => {
+  const input = target('tap', '报刊亭里有一份【报】刊。');
+  let receivedSuggestion: string | undefined;
+  const reader = createLookupService({ ...offline, selectorEnabled: true, contextEnabled: true,
+    async select() { assert.fail('A second look cannot use the fast selector'); },
+    async context(_arm, received, suggestion) {
+      assert.deepEqual(received, input);
+      receivedSuggestion = suggestion;
+      return { ...contextTrace, answer: { span: '报刊', pinyin: 'bàokān', gloss: 'publication', chunks: [] } };
+    },
+  });
+  // The quick decision's span can differ from the current lexer's proposal.
+  const result = await reader.lookup(input, undefined, { checkInContext: true, suggestedSpan: { start: input.start, end: input.end } });
+  assert.equal(receivedSuggestion, '报');
+  assert.equal(result.evidence.localSpan?.form, '报刊');
+  assert.equal(result.evidence.contextSuggestion?.form, '报');
+  assert.equal(result.route, 'context');
+  assert.equal(result.start, input.start);
+  assert.equal(result.end, input.end + 1);
+  assert.deepEqual(result.evidence.calls.map(c => c.stage), ['context']);
+});
+
+test('a strong model can revise an agreed tap boundary after the selector abstains', async () => {
+  const input = target('tap', '这是一种泡【沫】材料。');
+  const reader = createLookupService({ ...offline, selectorEnabled: true, contextEnabled: true,
+    async select(_occ, _choices, handlers) {
+      handlers?.onTrace?.(selectorTrace);
+      return null;
+    },
+    async context(_arm, received, suggestion) {
+      assert.deepEqual(received, input);
+      assert.equal(suggestion, '泡沫');
+      return { ...contextTrace, answer: { span: '泡沫材料', pinyin: 'pàomò cáiliào', gloss: 'foam material', chunks: [] } };
+    },
+  });
+  const result = await reader.lookup(input);
+  assert.equal(result.answer?.span, '泡沫材料');
+  assert.equal(result.start, input.start - 1);
+  assert.equal(result.end, input.end + 2);
+});
+
+test('rechecks preserve deliberate selections and never substitute an authored example on failure', async () => {
+  const input = target('selection', '听着【听】着，也跟着唱了起来。');
+  const source = { documentId: 'after-the-show', blockId: 'street' };
+  const reader = createLookupService({ ...offline, contextEnabled: true,
+    async context(_arm, received, suggestion) {
+      assert.deepEqual(received, input);
+      assert.equal(suggestion, undefined);
+      throw new LookupModelError('openai lookup returned HTTP 503', contextTrace);
+    },
+  });
+  const result = await reader.lookup(input, source, { checkInContext: true });
+  assert.equal(result.route, 'unavailable');
+  assert.equal(result.answer, null);
+  assert.deepEqual(result.evidence.steps, ['check-in-context', 'context-error']);
+  const offlineResult = await createLookupService(offline).lookup(input, source, { checkInContext: true });
+  assert.equal(offlineResult.route, 'unavailable');
+  assert.deepEqual(offlineResult.evidence.steps, ['check-in-context', 'context-offline']);
+});
+
+test('fresh catalog-only forms join tap segmentation and exact selection without inventing a dictionary gloss', async () => {
+  let catalog = createReaderCatalog([]);
+  const reader = createLookupService({ ...offline, catalogSnapshot: () => catalog, selectorEnabled: true,
+    async select(_occ, choices, handlers) {
+      handlers?.onTrace?.(selectorTrace);
+      return choices[0];
+    },
+  });
+  const tap = target('tap', '深蓝，【乍】一看像黑的。');
+  const before = await reader.lookup(tap);
+  assert.equal(before.route, 'unavailable');
+  catalog = createReaderCatalog([{ wordId: 'expression', forms: ['乍一看'], pinyin: 'zhà yī kàn',
+    senses: [{ senseId: 'glance', label: 'at first glance' }] }]);
+  for (const gesture of [tap, target('selection', '深蓝，【乍一看】像黑的。')]) {
+    const result = await reader.lookup(gesture);
+    assert.equal(result.route, 'selector');
+    assert.equal(result.answer?.span, '乍一看');
+    assert.equal(result.evidence.selectedSenseId, 'glance');
+    assert.equal(result.evidence.localReason, 'catalog-form');
+    assert.notEqual(result.evidence.catalogSha256, before.evidence.catalogSha256);
+  }
 });
