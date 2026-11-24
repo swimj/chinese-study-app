@@ -50,8 +50,7 @@ export const catalogue: Card[] = [
     id: 'drift-away',
     kind: 'open',
     source: 'Free production · Losing your train of thought',
-    prompt:
-      'You sat down to sort your photos and half an hour later you were watching videos. Tell a friend how that happened, in your own words.',
+    prompt: '朋友：“你不是说今晚要整理照片吗？整理完了吗？”',
     choices: [],
     answer: '我本来想整理照片，结果看起视频来了。',
     explanation:
@@ -99,6 +98,9 @@ function open(prompt: string, answer: string, explanation: string): Exercise {
 function choice(prompt: string, choices: string[], answer: string, explanation: string): Exercise {
   return { kind: 'choice', prompt, choices, answer, explanation, accepted: [] };
 }
+function recall(prompt: string, answer: string, explanation: string): Exercise {
+  return { kind: 'recall', prompt, choices: [], answer, explanation, accepted: [] };
+}
 
 type Series = { match: RegExp; title: string; introduction: string; exercises: Exercise[] };
 const series: Series[] = [
@@ -114,14 +116,14 @@ const series: Series[] = [
         '只是在这儿等人 presents waiting as the whole activity. 才刚 puts the emphasis on how recently you started.',
       ),
       open(
-        'You watch birds on Sundays and never on other days. Tell a friend which days you go, making the restriction clear.',
-        '我只在星期天去看鸟。',
-        '只 in front of 在星期天 limits the days. Other ways to express that restriction work too.',
+        '朋友：“你每天都去公园看鸟吗？”',
+        '没有，我只在星期天去。',
+        'Say when you actually go. 只 in front of 在星期天 is one way to limit the days.',
       ),
       open(
-        'Someone thinks you took a photo of the bird. Say you just looked at it for a moment.',
-        '我只是看了一眼，没拍照。',
-        'A brief look is all you did. 只是 makes that contrast explicit.',
+        '朋友：“你刚才拍到那只鸟了吗？给我看看！”',
+        '没拍，我只是看了一眼。',
+        'A brief look is all you did. 只是 is one way to make that contrast explicit.',
       ),
       choice(
         'Someone asks how many feeders you hung. One was enough: “阳台太小，我＿＿挂了一个。”',
@@ -130,15 +132,16 @@ const series: Series[] = [
         '只 limits the number to one. 又 would suggest adding another.',
       ),
       open(
-        'The neighbor thinks you are moving the feeder permanently. Reassure them that you are just cleaning it.',
-        '我只是把它洗一洗，等会儿还放回去。',
-        'Explain what you are doing and rule out the more drastic interpretation.',
+        '邻居：“你把鸟食盒拿下来了？以后不喂鸟了吗？”',
+        '不是，我只是把它洗一洗，等会儿还挂回去。',
+        'An apt reply sets the neighbor straight about what you are doing.',
       ),
       open(
-        'You can recognize sparrows, but no other birds. Tell someone the limit of your bird knowledge.',
-        '我只认得麻雀。',
-        '只认得麻雀 limits which birds you can identify. An equivalent phrasing also works.',
+        '朋友：“你认识这么多鸟啊？那只是什么鸟？”',
+        '我只认得麻雀，别的都叫不出名字。',
+        'Be honest about how much you know. 只认得麻雀 is one way to put the limit.',
       ),
+      recall('我____在等人，没在喂鸟。 “I’m just waiting for someone.”', '只是', '只是 presents waiting as the whole of what you are doing.'),
     ],
   },
   {
@@ -147,9 +150,9 @@ const series: Series[] = [
     introduction: 'Try describing who is waiting, who brings the food, and who eats it.',
     exercises: [
       open(
-        'You put seeds on the balcony and step back. Tell your friend what you are waiting for the sparrows to come and do.',
+        '朋友（视频通话）：“你一直盯着阳台干什么呢？”',
         '我在等麻雀过来吃鸟食。',
-        'In 等麻雀过来吃, the sparrows come and eat. A different wording that keeps the same roles works too.',
+        'Say what you are waiting for. In 等麻雀过来吃, the sparrows come and eat.',
       ),
       choice(
         '爷爷已经把小米撒在阳台上了。他退到屋里，等着麻雀＿＿。',
@@ -158,7 +161,7 @@ const series: Series[] = [
         'The millet is ready. The sparrows come to eat it. 喂 would make the sparrows do the feeding.',
       ),
       open(
-        'Someone asks why you have a bag of seeds in your hand. Tell them you want to feed the birds yourself.',
+        '朋友：“你手里拿着一袋小米干嘛？”',
         '我想拿这些小米喂鸟。',
         'The person does the feeding in 我喂鸟. In 鸟吃小米 the birds do the eating.',
       ),
@@ -169,15 +172,16 @@ const series: Series[] = [
         'The adult brings insects and feeds the chicks. The verb describes what the adult does.',
       ),
       open(
-        'A child says the sunflower seeds are for people. Explain that you put them outside for the birds to eat.',
-        '这些瓜子是我放在外面给鸟吃的。',
+        '小侄子：“阳台上这些瓜子是给我们吃的吗？”',
+        '不是，这些是我放在外面给鸟吃的。',
         '给鸟吃 makes the birds the intended eaters. 拿来喂鸟 also expresses the purpose.',
       ),
       open(
-        'You never saw a bird feed its chicks this morning. You only saw the chicks waiting for their mother to bring food. Describe that scene.',
-        '我只看到雏鸟在等妈妈回来喂它们。',
+        '朋友：“今天早上看到鸟妈妈喂小鸟了吗？”',
+        '没看到喂，我只看到雏鸟在等妈妈回来喂它们。',
         'In 等妈妈回来喂它们, the mother is the one who brings the food and feeds the chicks.',
       ),
+      recall('Birdseed: the food you put out for birds.', '鸟食', '鸟食 (niǎoshí) is food for birds.'),
     ],
   },
   {
@@ -187,9 +191,9 @@ const series: Series[] = [
     exercises: [
       { ...catalogue[3]!, accepted: [] },
       open(
-        'A friend wonders why lunch took an hour to cook. Describe the recipe search that turned into scrolling restaurant reviews.',
+        '朋友：“你不是说做个简单的午饭吗？怎么一个小时了还没好？”',
         '我本来想查个菜谱，结果看起餐馆点评来了。',
-        'Make the first intention and what drew you away clear. 本来想…结果… is one way.',
+        'An apt reply owns up to what drew you away. 本来想…结果… is one way to tell it.',
       ),
       choice(
         '图书馆很安静，可手机每响一次，我就忍不住看一眼。通知太容易让我＿＿了。',
@@ -197,6 +201,7 @@ const series: Series[] = [
         '分心',
         '分心 describes attention pulled away; 放心 is feeling reassured.',
       ),
+      recall('Get distracted; have your attention pulled away from what you are doing.', '分心', '分心 (fēnxīn): attention pulled away, as in 我在家容易分心。'),
     ],
   },
   {
@@ -206,9 +211,9 @@ const series: Series[] = [
     exercises: [
       { ...catalogue[1]!, accepted: [] },
       open(
-        'Dinner is still going on. Tell your friend you want to step out for some air and will be right back.',
+        '朋友：“菜还没上完呢，你去哪儿？”',
         '我出去透透气，马上回来。',
-        'Make the reason for your short break clear. 透透气 is one everyday way to say it.',
+        'Say where you are going and that you will be back. 透透气 is one everyday way to give the reason.',
       ),
       choice(
         '会议室门窗紧闭。休息时大家走到院子里，想＿＿。',
@@ -216,6 +221,7 @@ const series: Series[] = [
         '透透气',
         'The stuffy room gives them a reason to get some air.',
       ),
+      recall('Step out for a breather; get some fresh air.', '透透气', '透透气 (tòutòuqì): a short break for air, as in 我出去透透气。'),
     ],
   },
   {
@@ -230,10 +236,11 @@ const series: Series[] = [
         '散场 marks the end, when people start to leave.',
       ),
       open(
-        'A friend asks when to pick you up at the theater. Tell them to come after the show lets out.',
+        '朋友：“演唱会结束我几点去接你？”',
         '你等散场以后再来接我吧。',
-        'The pickup is after the audience starts to leave.',
+        'Any reply that settles the pickup works; 散场以后 is when the audience starts to leave.',
       ),
+      recall('Of a show or film: let out, as the audience disperses.', '散场', '散场 (sànchǎng): the show ends and people head out.'),
     ],
   },
   {
@@ -243,10 +250,11 @@ const series: Series[] = [
     exercises: [
       { ...catalogue[0]!, accepted: [] },
       open(
-        'The old footage was damaged, but a film archive has restored it. Tell a friend what the archive did.',
-        '电影资料馆修复了那段受损的影像。',
-        '修复 can describe restoring footage or a recording.',
+        '朋友：“这部老电影的画面怎么这么清楚？不是说胶片坏了吗？”',
+        '电影资料馆修复过那段受损的影像。',
+        'An apt reply explains why it looks so good. 修复 can describe restoring footage or a recording.',
       ),
+      recall('Restore something damaged, such as data or old footage.', '修复', '修复 (xiūfù) restores what was damaged: 修复数据, 修复老电影.'),
     ],
   },
 ];
@@ -331,19 +339,22 @@ function recentEvidence(input: TurnContext): string[] {
 }
 
 function practice(input: TurnContext): TutorResult {
-  // A review asks for typed recall from a short English cue.
-  if (input.practiceWord && /recall exercise/.test(input.message) && input.practiceWord.meaning) {
+  const allowed = (kind: Exercise['kind']) => !input.exerciseForms || input.exerciseForms.includes(kind);
+  // A target is tested by typed recall from a short English cue.
+  if (input.practiceWord && input.exerciseForms?.includes('recall') && input.practiceWord.meaning) {
     const w = input.practiceWord;
     const prompt = w.meaning.replace(/\.$/, '') + '.';
     if (input.previousPrompts?.includes(prompt) || prompt.includes(w.title)) return response('');
-    return response('', {
+    // A word being taught gets a short introduction, the fallback when teaching beats fail.
+    const introduction = /^Teach /.test(input.message) ? w.title + (w.pinyin ? ' (' + w.pinyin + ')' : '') + ' · ' + w.meaning : '';
+    return response(introduction, {
       kind: 'practice',
       title: 'Recall',
       detail: w.meaning,
       exercise: { kind: 'recall', prompt, choices: [], accepted: [], answer: w.title, explanation: w.title + (w.pinyin ? ' (' + w.pinyin + ')' : '') + ': ' + w.meaning },
     });
   }
-  if (input.practiceWord) {
+  if (input.practiceWord && allowed('open')) {
     const w = input.practiceWord;
     const prompt = 'How would you say this in Mandarin? “' + w.translation + '”';
     if (input.previousPrompts?.includes(prompt)) return response('');
@@ -367,7 +378,7 @@ function practice(input: TurnContext): TutorResult {
     for (const item of candidates) {
       const vocabulary = input.surface === 'Build vocabulary' && item.match === distraction;
       const exercises = vocabulary ? [catalogue[5]!, ...item.exercises] : item.exercises;
-      const exercise = exercises.find((candidate) => !input.previousPrompts?.includes(candidate.prompt));
+      const exercise = exercises.find((candidate) => allowed(candidate.kind) && !input.previousPrompts?.includes(candidate.prompt));
       if (!exercise) continue;
       const { kind, prompt, choices, answer, explanation } = exercise;
       return response(item.introduction, {
@@ -455,6 +466,12 @@ export function demoTeaching(target: TeachTarget): Beat[] {
 }
 
 export function demoTutor(input: TurnContext): TutorResult {
+  const result = demoTurn(input);
+  // Offline, an open answer lands when it is written in Chinese.
+  return input.trigger === 'answer' ? { ...result, landed: /\p{Script=Han}/u.test(input.message) } : result;
+}
+
+function demoTurn(input: TurnContext): TutorResult {
   const text = input.message.trim();
   const described = text + '\n' + input.source;
   switch (input.trigger) {

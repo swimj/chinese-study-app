@@ -31,6 +31,8 @@ export interface TurnContext {
     active: { title: string; prompt: string }[];
   };
   previousPrompts?: string[];
+  /** Practice generation: the exercise forms this card may take, chosen by its purpose. */
+  exerciseForms?: ('choice' | 'open' | 'recall')[];
   readingContext?: string;
 }
 
@@ -43,6 +45,8 @@ export type TutorResult = {
   wordDecision?: WordDecision | null;
   reflection?: Reflection | null;
   observation?: string | null;
+  /** Feedback on an open answer: whether the reply landed as an apt response. */
+  landed?: boolean | null;
   media?: MediaConsideration | null;
   notice?: Notice | null;
   beats?: RawBeat[] | null;

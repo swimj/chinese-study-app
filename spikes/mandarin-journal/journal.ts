@@ -44,7 +44,7 @@ import {
 import { rank, signalsFrom, type ChoiceJudgment, type Ranked } from './priority.ts';
 import {
   extend, finishCard, freshAllowed, MAX_ATTEMPTS, MAX_FAILURES, needsCard, newSession, noteFailure, resume, stale,
-  cardSeconds, cardTime, type Purpose, type Session,
+  cardSeconds, cardTime, formsFor, type CardKind, type Purpose, type Session,
 } from './session.ts';
 
 const text = z.string().trim().min(1).max(8000);
@@ -161,7 +161,8 @@ type QueuedCard = Card & { title?: string; introduction?: string; teaching?: Bea
 /** What an action records beside the journal: events, and rule judgments made on the spot. */
 type Outbox = { events: NewEvent[]; judgments: JudgmentRecord[]; priority: () => Ranked[] };
 type Item = { word?: WordContent; id: string; kind: string; title: string; detail: string; source: string; reference?: Reference };
-type Result = { correct: boolean | null; feedback: string };
+/** landed: whether an open answer landed as an apt reply, judged by the feedback; not shown as a grade. */
+type Result = { correct: boolean | null; feedback: string; landed?: boolean };
 // cards holds the whole session in order; index is the card in front of the learner.
 type Practice = { started?: boolean; mode: string; cards: QueuedCard[]; index: number; result: Result | null; session?: Session };
 type State = {
@@ -413,7 +414,7 @@ function practiceSources(s: State, mode: string): string[] {
     ),
   ];
 }
-type PracticeSource = { source: string; purpose: Purpose; target?: Ranked['target'] };
+type PracticeSource = { source: string; purpose: Purpose; target?: Ranked['target']; contrast?: boolean };
 /**
  * Daily mix asks for exercises on the highest-priority targets first, then
  * falls back to recent journal material. Targets already queued or carded in
@@ -428,6 +429,7 @@ function prioritySources(s: State, ranked: Ranked[], allowed = 1): PracticeSourc
     .map((r) => ({
       target: r.target,
       purpose: r.purpose,
+      contrast: r.contrast,
       source:
         'Target: ' + r.target.form + (r.target.pinyin ? ' (' + r.target.pinyin + ')' : '') +
         (r.target.gloss ? ' · ' + r.target.gloss : '') + '\nWhy now: ' + r.reasons.join('; '),
@@ -457,17 +459,25 @@ function sessionSources(s: State, ranked: () => Ranked[]): PracticeSource[] {
   const rest = all.filter((x) => x.purpose === 'material').sort((a, b) => (uses[a.source] ?? 0) - (uses[b.source] ?? 0));
   return [...all.filter((x) => x.purpose !== 'material'), ...rest];
 }
-// The form follows the purpose: a quick choice to review, open production for a
-// weakness in the learner's own Chinese, a light check after teaching.
-const purposeMessage: Record<Purpose, string> = {
+// The form follows the purpose (formsFor): an expression being taught, reviewed or
+// repaired is tested by typed recall; a choice only for a contrast the learner has
+// demonstrably confused; open production is conversation drawn from material.
+const purposeMessages: Record<Purpose, string> = {
   teach:
-    'Teach the expression named in the supplied source, then offer a light check on it, usually a choice the learner can answer from what you just showed. The learner sees only your reply and the exercise, so never call it “the target”.',
+    'Teach the expression named in the supplied source, then check it with typed recall in a different situation: a concise English cue or a short phrase cloze for which this expression is the natural answer. The learner sees only your reply and the exercise, so never call it “the target”.',
   review:
     'A review of the expression named in the supplied source, which the learner has met before. Offer a recall exercise: a concise English cue or a short phrase cloze for which this expression is the natural answer, typed from memory. The learner sees only the exercise, so never call it “the target”.',
   weakness:
-    'The learner reached for or misused the expression named in the supplied source in their own Chinese. Offer an open exercise: a fresh situation in which they produce it themselves. The learner sees only the exercise, so never call it “the target”.',
-  material: 'Offer a fresh, relevant exercise if this material supports one.',
+    'The learner reached for or misused the expression named in the supplied source in their own Chinese. Test it with typed recall: a concise English cue or a short phrase cloze that evokes what they were trying to say, so that this expression is the natural answer. The learner sees only the exercise, so never call it “the target”.',
+  material:
+    'Offer a fresh, relevant exercise if the supplied source supports one. When the source itself is a word the learner saved, or shows them reaching for or misusing one expression, test that expression with typed recall. Otherwise offer an open lead-in drawn from what the source is about, one the learner can reply to as themselves. Other turns and history are context, not the material for this card.',
 };
+const contrastMessage =
+  ' The learner has missed this expression more than once, or slipped on it in their own Chinese and has since had a recall. When the evidence shows exactly which forms they confused, as when they wrote one look-alike for another, a choice among those forms now fits: it shows whether they can tell them apart. When it shows no such confusion, use recall again.';
+/** What the generator is asked for, given the card's purpose and the forms it may take. */
+export function purposeMessage(purpose: Purpose, forms: CardKind[]): string {
+  return purposeMessages[purpose] + (forms.includes('choice') ? contrastMessage : '');
+}
 /**
  * Teaching for a card that introduces its expression. Beats come from the
  * teaching situation; the generator's own reply is the fallback introduction.
@@ -482,13 +492,18 @@ const taughtSentences = (beats: Beat[]) =>
 /** One model call for one card. Null when the tutor offered nothing new. Reads s, never writes it. */
 async function generateCard(s: State, pick: PracticeSource, backend: Backend): Promise<QueuedCard | null> {
   const mode = s.practice.mode;
+  // Build vocabulary teaches from material, so its check is a taught word's.
+  const forms = mode === 'Build vocabulary' ? formsFor('teach') : formsFor(pick.purpose, pick.contrast);
   const ctx = context(
     s,
     'practice',
-    mode === 'Build vocabulary' ? 'Teach one useful word or sense from the supplied material.' : purposeMessage[pick.purpose],
+    mode === 'Build vocabulary'
+      ? 'Teach one useful word or sense from the supplied material, then check it with typed recall in a different situation.'
+      : purposeMessage(pick.purpose, forms),
     mode,
     pick.source,
   );
+  ctx.exerciseForms = forms;
   const target = pick.target;
   const savedWord = s.saved.find(
     (item) => item.kind === 'Word' && (item.title + ' · ' + item.detail === ctx.source || item.title === target?.form),
@@ -855,6 +870,7 @@ function answerEvent(attempt: Attempt, at: string | null): NewEvent {
     context: {
       kind: c.kind, prompt: c.prompt, reference: c.answer, explanation: c.explanation,
       correct: attempt.result.correct, tutorSaid: attempt.result.feedback,
+      ...(attempt.result.landed !== undefined ? { landed: attempt.result.landed } : {}),
       // A card that introduced its target taught it.
       taught: (!!c.introduction || !!c.teaching?.length) && !!c.targets?.length,
       purpose: c.purpose ?? null,
@@ -1077,7 +1093,7 @@ async function mutate(
         throw new JournalConflict('Choose one of the offered expressions.');
       const correct = c.kind === 'choice' ? a.answer === c.answer : c.kind === 'recall' ? recalled(c, a.answer) : null;
       // A typed recall shows the expected form with its explanation, right or wrong.
-      const result = {
+      const result: Result = {
         correct,
         feedback: c.kind === 'recall' && !c.explanation.startsWith(c.answer) ? c.answer + ' · ' + c.explanation : c.explanation,
       };
@@ -1096,6 +1112,7 @@ async function mutate(
         );
         try {
           const response = await consult(backend, 'feedback', ctx);
+          if (response.landed !== null) result.landed = response.landed;
           if (response.reply.trim()) {
             result.feedback = c.kind === 'open' ? response.reply : result.feedback + '\n' + response.reply;
             // Keep the full reaction on the attempt; link the answer in the shared stream.

@@ -5,6 +5,19 @@ import { randomUUID } from 'node:crypto';
 /** Why a card was asked for, which steers its form. */
 export type Purpose = 'teach' | 'review' | 'weakness' | 'material';
 
+export type CardKind = 'choice' | 'open' | 'recall';
+/**
+ * The exercise forms a card may take, by why it was asked for. An expression being
+ * taught, reviewed or repaired is tested by typed recall. A choice only shows
+ * recognition, so it is offered only for a contrast the learner has demonstrably
+ * confused (contrast), and never right after teaching. Open production is
+ * conversation drawn from material, not the test of one expression.
+ */
+export function formsFor(purpose: Purpose, contrast = false): CardKind[] {
+  if (purpose === 'material') return ['recall', 'open'];
+  return contrast && purpose !== 'teach' ? ['recall', 'choice'] : ['recall'];
+}
+
 /** A session's default length, and how much Keep going adds. */
 export const SESSION_SECONDS = 10 * 60;
 export const CHUNK_SECONDS = 5 * 60;

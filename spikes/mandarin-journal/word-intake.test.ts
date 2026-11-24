@@ -89,7 +89,8 @@ test('word submission acknowledges durably, keeps user actions during generation
     assert.equal(intakes, 1);
     const practice = await j.act({ type: 'practice', mode: 'Build vocabulary', id: randomUUID() });
     assert.match(practice.practice.card?.introduction ?? '', /报备/);
-    assert.match(practice.practice.card?.prompt ?? '', /property manager/);
+    assert.equal(practice.practice.card?.kind, 'recall', 'a word taught from material is checked by recall');
+    assert.match(practice.practice.card?.prompt ?? '', /Notify someone/);
   } finally {
     finish.resolve();
     friendFinish.resolve();

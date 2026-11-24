@@ -29,7 +29,7 @@ export function priorityReport(path: string, now = new Date(), limit = 25) {
       `Top ${Math.min(limit, ranked.length)} of ${ranked.length} with any priority`,
     ];
     for (const r of ranked.slice(0, limit))
-      lines.push(`  ${r.score.toFixed(2).padStart(5)}  ${r.target.form}${r.target.gloss ? ' · ' + r.target.gloss.slice(0, 40) : ''}  [${r.target.origin}]\n         ${r.reasons.join(' · ')}`);
+      lines.push(`  ${r.score.toFixed(2).padStart(5)}  ${r.target.form}${r.target.gloss ? ' · ' + r.target.gloss.slice(0, 40) : ''}  [${r.target.origin}] ${r.purpose}${r.contrast ? ' · contrast' : ''}\n         ${r.reasons.join(' · ')}`);
     const needs = allJudgments
       .filter((j) => !j.source.startsWith('rule:') && (j.body as Notice).needs?.length)
       .slice(-10)
