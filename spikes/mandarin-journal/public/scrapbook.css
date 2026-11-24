@@ -519,3 +519,48 @@ a.scrap:focus-visible {
 .scrap-list .scrap { transform: none; }
 .scrap-list .example { margin: .55rem 0 0; font: 1.05rem/1.6 var(--han); }
 .scrap-list .translation { margin: .1rem 0 0; font-size: .88rem; color: var(--quiet); }
+
+.turn-progress {
+  align-self: stretch;
+  min-width: 0;
+  margin: .75rem 0;
+  padding: .25rem .8rem;
+  border-left: 2px solid var(--line);
+  overflow-wrap: anywhere;
+}
+.turn-submitted { margin: 0; white-space: pre-wrap; }
+.turn-source, .turn-progress-line {
+  color: var(--quiet);
+  font-size: .9rem;
+}
+.turn-source { margin: .15rem 0 0; white-space: pre-wrap; }
+.turn-progress-line { display: flex; flex-wrap: wrap; align-items: baseline; gap: .2rem .7rem; }
+.turn-submitted:not([hidden]) ~ .turn-progress-line { margin-top: .25rem; }
+.turn-progress-line button { padding: .25rem 0; text-decoration: underline; }
+.turn-working [role='status']::before {
+  content: '';
+  display: inline-block;
+  width: .45em;
+  height: .45em;
+  margin-right: .45em;
+  border-radius: 50%;
+  background: var(--clay);
+}
+@media (prefers-reduced-motion: no-preference) {
+  .turn-working [role='status']::before { animation: session-breathe 1.8s ease-in-out infinite; }
+}
+.exercise.answer-submitted > :is(form, .options) { display: none; }
+.capture .turn-submitted, .capture .turn-source, .capture-handoffs {
+  max-height: min(7rem, 18dvh);
+  overflow: auto;
+  overscroll-behavior: contain;
+}
+.capture-handoff {
+  display: flex;
+  gap: .5rem;
+  align-items: baseline;
+  padding: .4rem 0;
+  font-size: .9rem;
+}
+.capture-handoff span { min-width: 0; overflow-wrap: anywhere; }
+.capture-handoff button { flex: 0 0 auto; text-decoration: underline; }
