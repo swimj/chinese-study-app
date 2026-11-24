@@ -62,6 +62,7 @@ export const actionSchema = z.discriminatedUnion('type', [
     message: text,
     surface: text,
     source,
+    sourceLabel: text.optional(),
     referenceId: text.optional(),
     wordReplyTo: z.object({ intakeId: id, requestId: id }).optional(),
     captureQuestionId: id.optional(),
@@ -132,6 +133,7 @@ type Reference = {
 type Message = TurnContext['tutorHistory'][number] & {
   id?: string;
   reference?: Reference;
+  sourceLabel?: string;
   kind?: 'observation';
   wordIntakeId?: string;
   wordRequestId?: string;
@@ -205,7 +207,7 @@ export const live = !!process.env.OPENAI_API_KEY && process.env.JOURNAL_DEMO !==
 type Backend = {
   importReading?: (url: URL) => ReturnType<typeof importArticle>;
   tutor: (ctx: TurnContext) => Promise<TutorResult>;
-  friend: (ctx: TurnContext) => Promise<string>;
+  friend: typeof friendTurn;
   mode: 'live' | 'demo';
 };
 // JOURNAL_DEMO_DELAY_MS makes each offline tutor turn take about as long as a
@@ -214,7 +216,15 @@ const demoDelay = Number(process.env.JOURNAL_DEMO_DELAY_MS) || 0;
 const slow = <T>(value: T) => (demoDelay ? new Promise<T>((r) => setTimeout(() => r(value), demoDelay)) : Promise.resolve(value));
 export const engine: Backend = live
   ? { tutor: tutorTurn, friend: friendTurn, mode: 'live' }
-  : { tutor: async (ctx) => slow(demoTutor(ctx)), friend: async (ctx) => demoFriend(ctx), mode: 'demo' };
+  : {
+      tutor: async (ctx) => slow(demoTutor(ctx)),
+      friend: async (ctx, onText) => {
+        const reply = await slow(demoFriend(ctx));
+        onText?.(reply);
+        return reply;
+      },
+      mode: 'demo',
+    };
 
 function publicState(s: State, mode: Backend['mode'], now = new Date()) {
   const p = s.practice,
@@ -719,13 +729,13 @@ async function postAnnotation(
     if (thread.anchor.surface === 'read') ctx.readingContext = source;
     const response = await consult(backend, 'ask', ctx);
     thread.messages.push(
-      { role: 'user', text: message, at },
+      { id: action.id, role: 'user', text: message, at },
       { role: 'assistant', text: response.reply, at: new Date().toISOString() },
     );
     // Persist the compact source link with any study action. The full discussion belongs to the annotation.
     applyAction(s, response.action, { ...ctx, source: reference.label + ' · ' + reference.quote }, reference);
   } else {
-    thread.messages.push({ role: 'user', text: message, at });
+    thread.messages.push({ id: action.id, role: 'user', text: message, at });
   }
   if (anchor) s.annotationThreads.push(thread);
   outbox.events.push({
@@ -863,6 +873,7 @@ async function mutate(
   backend: Backend,
   reviewImport: ReturnType<typeof createImportReviewer>,
   outbox: Outbox,
+  onChatText?: (text: string) => void,
 ) {
   s.notice = '';
   const now = new Date().toISOString();
@@ -943,7 +954,7 @@ async function mutate(
       const thread: AnnotationThread = existing ?? { id: a.id, anchor, messages: [] };
       const at = new Date().toISOString();
       thread.capturedAt ??= at;
-      if (a.note) thread.messages.push({ role: 'user', text: a.note, at });
+      if (a.note) thread.messages.push({ id: a.id, role: 'user', text: a.note, at });
       if (!existing) s.annotationThreads.push(thread);
       if (!existing?.capturedAt)
         outbox.events.push({ id: a.id, at, kind: 'capture', surface: 'read', ref: thread.id, text: anchor.quote });
@@ -973,7 +984,7 @@ async function mutate(
       const imported = s.reading.imports.find(entry => entry.id === source);
       const discussion = imported ? readingSource(s.reading, imported.id) : undefined;
       if (a.type === 'reflect') return reflect(s, backend, discussion ?? a.source, outbox);
-      const reply = await backend.friend(context(s, 'ask', a.message, 'chat', discussion ?? source));
+      const reply = await backend.friend(context(s, 'ask', a.message, 'chat', discussion ?? source), onChatText);
       outbox.events.push({
         id: a.id, at: now, kind: 'chat', surface: 'chat', ref: thread.id, text: a.message,
         context: { topic: thread.title, respondingTo: thread.turns.findLast((m) => m.role === 'assistant')?.text },
@@ -993,7 +1004,7 @@ async function mutate(
         if (!intake || intake.requestId !== requestId)
           throw new JournalConflict('This word question has changed.');
         resumeWord(s.wordIntakes, { type: 'clarifyWord', id: a.id, intakeId, reply: a.message });
-        s.tutor.push({ role: 'user', text: a.message, source: intake.text, wordIntakeId: intakeId, wordRequestId: requestId });
+        s.tutor.push({ id: a.id, role: 'user', text: a.message, source: intake.text, sourceLabel: intake.text, wordIntakeId: intakeId, wordRequestId: requestId });
         return;
       }
       if (a.captureQuestionId) {
@@ -1014,7 +1025,7 @@ async function mutate(
         context: { respondingTo: ctx.source.slice(0, 600) || undefined, tutorSaid: response.reply },
       });
       s.tutor.push(
-        { role: 'user', text: a.message, source: ctx.source, reference: anchor?.reference },
+        { id: a.id, role: 'user', text: a.message, source: ctx.source, sourceLabel: a.sourceLabel, reference: anchor?.reference },
         { role: 'assistant', text: response.reply, source: ctx.source, reference: anchor?.reference },
       );
       applyAction(s, response.action, ctx, anchor?.reference);
@@ -1519,7 +1530,7 @@ export function openJournal(path: string, backend: Backend = engine) {
   const wakeWords = words.wake;
   const wakeMedia = media.wake;
 
-  async function perform(a: Action) {
+  async function perform(a: Action, onChatText?: (text: string) => void) {
     const hash = createHash('sha256').update(JSON.stringify(a)).digest('hex');
     const old = db.prepare('SELECT fingerprint FROM receipts WHERE id=?').get(a.id);
     const { s, revision } = read();
@@ -1540,7 +1551,7 @@ export function openJournal(path: string, backend: Backend = engine) {
     }
     const before = anchorIds(s);
     const outbox: Outbox = { events: [], judgments: [], priority: () => priorityOf(db) };
-    await mutate(s, a, backend, reviewImport, outbox);
+    await mutate(s, a, backend, reviewImport, outbox, onChatText);
     queueMediaJobs(s, before);
     db.exec('BEGIN IMMEDIATE');
     try {
@@ -1583,8 +1594,8 @@ export function openJournal(path: string, backend: Backend = engine) {
     readingParagraphs(documentId: string) {
       return documentsFor(read().s.reading).find(doc => doc.id === documentId)?.paragraphs;
     },
-    act(a: Action) {
-      return enqueue(() => perform(a));
+    act(a: Action, onChatText?: (text: string) => void) {
+      return enqueue(() => perform(a, onChatText));
     },
     /** What is worth practicing next, with reasons. */
     priority: (now?: Date) => priorityOf(db, now),

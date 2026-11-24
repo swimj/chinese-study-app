@@ -48,7 +48,7 @@ function sourceFor(document, paragraph) {
 }
 
 export function createReading({
-  host, importPanel, submit, canSubmit, discussInChinese, navigate, openAnnotation, refreshAnnotations,
+  host, importPanel, submit, canSubmit, getPending, retryPending, discussInChinese, navigate, openAnnotation, refreshAnnotations,
 }) {
   let state;
   let documentView;
@@ -83,9 +83,13 @@ export function createReading({
   const pdfStatus = node('p', '', 'notice');
   pdfStatus.setAttribute('role', 'status');
   pdfStatus.hidden = true;
+  const pdfPages = node('progress');
+  pdfPages.setAttribute('aria-label', 'PDF pages read');
+  pdfPages.hidden = true;
   function pdfMessage(message) {
     pdfStatus.textContent = message;
     pdfStatus.hidden = !message;
+    pdfPages.hidden = true;
   }
   pdfFile.onchange = async () => {
     const file = pdfFile.files[0];
@@ -94,24 +98,30 @@ export function createReading({
     resetImportFeedback();
     const revision = importRevision;
     extractingPdf = true;
-    uploadPdf.disabled = true;
+    update();
     pdfMessage('Reading PDF…');
     try {
       const { readPdf } = await import('./pdf-import.js');
-      const document = await readPdf(file);
+      const document = await readPdf(file, (count, total) => {
+        if (revision !== importRevision) return;
+        pdfPages.max = total;
+        pdfPages.value = count;
+        pdfPages.hidden = false;
+      });
       if (revision !== importRevision) return;
       if (!canSubmit()) {
         pdfMessage('Finish the current action, then choose the PDF again.');
         return;
       }
       pdfMessage('');
+      extractingPdf = false;
       await submit({ type: 'importPdf', ...document });
     } catch (err) {
       if (revision === importRevision) pdfMessage(err.message || 'Could not read this PDF.');
     } finally {
       if (revision === importRevision) {
         extractingPdf = false;
-        uploadPdf.disabled = busy;
+        update();
       }
     }
   };
@@ -174,7 +184,6 @@ export function createReading({
   function resetImportFeedback() {
     importRevision++;
     extractingPdf = false;
-    uploadPdf.disabled = busy;
     pdfMessage('');
     preview = undefined;
     pasteUrl = undefined;
@@ -186,6 +195,7 @@ export function createReading({
     importButton.hidden = false;
     previewBox.hidden = true;
     importError.hidden = true;
+    update();
   }
   importLine.append(url, importButton);
   importForm.append(urlLabel, importLine, importError, pasteToggle, previewBox, pasteBox);
@@ -205,11 +215,21 @@ export function createReading({
     resetImportFeedback();
     submit({ type: 'importReading', url: url.value.trim() });
   };
-  pastedText.oninput = () => pastedText.setCustomValidity('');
+  pastedText.oninput = () => {
+    pastedText.setCustomValidity('');
+    importRevision++;
+  };
   url.oninput = resetImportFeedback;
   const pdfTools = node('div', undefined, 'home-import-pdf');
-  pdfTools.append(uploadPdf, pdfFile, pdfStatus);
-  importPanel.append(importForm, pdfTools);
+  pdfTools.append(uploadPdf, pdfFile, pdfStatus, pdfPages);
+  const importProgress = node('div', undefined, 'reader-import-progress');
+  const importStatus = node('span');
+  importStatus.setAttribute('role', 'status');
+  const retryImport = button('Retry', () => retryPending(), 'text-button');
+  retryImport.dataset.turnRetry = '';
+  importProgress.append(importStatus, retryImport);
+  importProgress.hidden = true;
+  importPanel.append(importForm, pdfTools, importProgress);
 
   const save = button('Save reading', () => {
     if (!documentView) return;
@@ -301,12 +321,25 @@ export function createReading({
     save.textContent = saved ? 'Reading saved' : 'Save reading';
     save.disabled = busy || saved;
     discuss.disabled = busy;
-    importButton.disabled = busy;
-    uploadPdf.disabled = busy || extractingPdf;
-    accept.disabled = busy;
-    pasteToggle.disabled = busy;
-    pastedText.readOnly = busy;
-    pasteSave.disabled = busy;
+    const { action, busy: sending, error } = getPending();
+    const importing = action?.type === 'importPdf' || action?.type === 'importReading';
+    importProgress.hidden = !importing;
+    retryImport.hidden = !importing || sending;
+    let status = '';
+    if (importing) {
+      if (!sending) status = error || 'Import interrupted.';
+      else if (action.type === 'importPdf') status = 'Saving “' + action.title + '”…';
+      else if (action.pastedText !== undefined || action.acceptPreview) status = 'Saving reading…';
+      else status = 'Opening reading…';
+      if (action.type === 'importReading' && action.url !== url.value.trim()) status += ' ' + action.url;
+    }
+    if (importStatus.textContent !== status) importStatus.textContent = status;
+    const blocked = busy || Boolean(action) || extractingPdf;
+    importButton.disabled = blocked;
+    uploadPdf.disabled = blocked;
+    accept.disabled = blocked;
+    pasteToggle.disabled = blocked;
+    pasteSave.disabled = blocked;
   }
 
   function focusPassage(paragraphId) {
@@ -403,19 +436,35 @@ export function createReading({
       const repair = repairId && lookup(state, repairId)?.document;
       if (repair?.canPaste) openPaste(repair.sourceUrl);
       else {
-        if (prefill) url.value = prefill;
-        url.focus();
+        const { action } = getPending();
+        if (prefill && prefill !== url.value) {
+          resetImportFeedback();
+          url.value = prefill;
+        } else if (action?.type === 'importReading' && !url.value) {
+          url.value = action.url;
+          if (action.pastedText !== undefined) {
+            openPaste(action.url);
+            pastedText.value = action.pastedText;
+          }
+        }
+        (pasteBox.hidden ? url : pastedText).focus();
       }
     },
     closeImport() {
       if (importPanel.open) importPanel.close();
-      resetImportFeedback();
+      if (extractingPdf) {
+        importRevision++;
+        extractingPdf = false;
+        pdfMessage('');
+        update();
+      }
     },
     pdfMessage,
-    trackImport(submittedUrl) {
+    trackImport(action) {
       const revision = importRevision;
       return () => importPanel.open && revision === importRevision &&
-        (submittedUrl === undefined || !url.value || url.value.trim() === submittedUrl);
+        (action.type === 'importPdf' || (url.value.trim() === action.url &&
+          (action.pastedText === undefined || pastedText.value.trim() === action.pastedText)));
     },
     importError(submittedUrl, message, candidate, canPaste, submittedText) {
       if (submittedText !== undefined) {
@@ -439,6 +488,7 @@ export function createReading({
       }
     },
     imported() {
+      resetImportFeedback();
       url.value = '';
       navigate('read', state.reading.documentId);
     },

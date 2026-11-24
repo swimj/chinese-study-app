@@ -21,16 +21,23 @@ test('real SDK runs each situation with its own schema and instructions, uses re
     assert.equal(req.store, false);
     const out = replies.shift();
     assert(out, 'unexpected model turn');
-    return new Response(
-      JSON.stringify({
-        id: 'resp_' + requests.length,
-        object: 'response',
-        status: 'completed',
-        output: [out],
-        usage: { input_tokens: 10, output_tokens: 4, total_tokens: 14 },
-      }),
-      { headers: { 'content-type': 'application/json' } },
-    );
+    const response = {
+      id: 'resp_' + requests.length,
+      object: 'response',
+      status: 'completed',
+      output: [out],
+      usage: { input_tokens: 10, output_tokens: 4, total_tokens: 14 },
+    };
+    if (req.stream) {
+      const events = [
+        ...['嗯', '。'].map(delta => ({ type: 'response.output_text.delta', delta, item_id: out.id, output_index: 0 })),
+        { type: 'response.completed', response },
+      ];
+      return new Response(events.map(event => 'data: ' + JSON.stringify(event) + '\n\n').join(''), {
+        headers: { 'content-type': 'text/event-stream' },
+      });
+    }
+    return Response.json(response);
   };
   const { tutorTurn, friendTurn } = await import('./tutor.ts');
   const { validateTurn, voice } = await import('./situations/index.ts');
@@ -178,6 +185,12 @@ test('real SDK runs each situation with its own schema and instructions, uses re
   assert.deepEqual(chat.recentChatTurns, input.chatHistory);
   assert.equal(chat.practiceStatus, undefined);
   assert.equal(chat.recentTutorTurns, undefined);
+  replies = [plain('嗯。')];
+  const deltas = [];
+  assert.equal(await friendTurn(input, text => deltas.push(text)), '嗯。');
+  assert.deepEqual(deltas, ['嗯', '。']);
+  assert.deepEqual(userPayload(requests.at(-1)), chat);
+  assert.equal(requests.at(-1).stream, true);
 });
 
 test('offline reflection anchors scoped learner lines and practice respects the requested target', async () => {

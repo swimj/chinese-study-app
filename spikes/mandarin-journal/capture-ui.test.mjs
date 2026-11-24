@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { createCapture, replyTarget } from './public/capture.js';
 
-test('the composer submits one capture action and clears only the accepted draft', () => {
+test('sending frees the composer immediately and preserves both pending input and the next draft', () => {
   const ui = { wordDraft: '值得', wordContext: 'a podcast' };
   const nodes = new Map();
   const get = id => {
@@ -10,7 +10,11 @@ test('the composer submits one capture action and clears only the accepted draft
     return nodes.get(id);
   };
   const actions = [];
-  const capture = createCapture({ get, ui, persist() {}, canSubmit: () => true, submit: action => actions.push(action) });
+  let pending = false;
+  const capture = createCapture({
+    get, ui, persist() {}, canSubmit: () => !pending,
+    submit(action) { actions.push(action); pending = true; },
+  });
   const form = get('word-form');
   const input = get('word-text');
   const context = get('word-context');
@@ -19,20 +23,23 @@ test('the composer submits one capture action and clears only the accepted draft
   send();
   const first = actions[0];
   assert.deepEqual(first, { type: 'capture', text: '值得', context: 'a podcast' });
-  assert.equal(input.value, '值得');
-  assert.equal(ui.wordContext, 'a podcast');
-  send();
-  assert.deepEqual(actions[1], first);
-  input.value = 'https://example.org/article';
-  context.value = '';
-  form.oninput();
-  capture.accepted(first);
-  assert.equal(ui.wordDraft, input.value);
-  send();
-  assert.deepEqual(actions[2], { type: 'capture', text: 'https://example.org/article' });
-  capture.accepted(actions[2]);
   assert.equal(input.value, '');
-  assert.equal(ui.wordDraft, undefined);
+  assert.equal(context.value, '');
+  assert.equal(get('word-context-toggle').open, false);
+  input.value = 'https://example.org/article';
+  form.oninput();
+  send();
+  assert.equal(actions.length, 1);
+  assert.equal(ui.wordDraft, input.value);
+  pending = false;
+  send();
+  assert.deepEqual(actions[1], { type: 'capture', text: 'https://example.org/article' });
+  assert.equal(ui.wordDraft, '');
+  capture.restore(first);
+  assert.equal(input.value, '值得');
+  assert.equal(context.value, 'a podcast');
+  assert.equal(ui.wordContext, 'a podcast');
+  assert.equal(get('word-context-toggle').open, true);
 });
 
 test('each open tutor question carries its own reply target and resolved questions have none', () => {

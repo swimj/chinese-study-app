@@ -344,12 +344,30 @@ textarea {
   place-items: center;
   font: 17px var(--han);
 }
+.turn-list,
 .thread,
 .chat-messages {
   display: flex;
   flex-direction: column;
   gap: 10px;
 }
+.turn-list:empty { display: none; }
+.message-source { display: block; font-size: .85rem; font-weight: 600; }
+.turn-status { color: var(--quiet); }
+.turn-status::before {
+  content: '';
+  display: inline-block;
+  width: .45em;
+  height: .45em;
+  margin-inline-end: .5em;
+  border-radius: 50%;
+  background: var(--clay);
+}
+@media (prefers-reduced-motion: no-preference) {
+  .turn-status::before { animation: session-breathe 1.8s ease-in-out infinite; }
+}
+.turn-error { margin: 0; color: var(--clay); overflow-wrap: anywhere; }
+.turn-error button { margin-inline-start: .65rem; }
 .thread {
   height: clamp(9rem, calc(100dvh - 15.5rem), 46rem);
   border-top: 1px solid var(--line);

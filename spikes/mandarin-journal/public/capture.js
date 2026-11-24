@@ -15,7 +15,7 @@ export function wordForTurn(state, message) {
   return state.wordIntakes.find(item => item.id === message.wordIntakeId && item.requestId === message.wordRequestId);
 }
 
-export function createCapture({ get, submit, canSubmit, ui, persist, refresh }) {
+export function createCapture({ get, submit, canSubmit, ui, persist, refresh, openReading }) {
   const form = get('word-form');
   const input = get('word-text');
   const context = get('word-context');
@@ -37,18 +37,79 @@ export function createCapture({ get, submit, canSubmit, ui, persist, refresh }) 
     event.preventDefault();
     const text = input.value.trim();
     const source = context.value.trim();
-    if (text && canSubmit()) submit({ type: 'capture', text, ...(source ? { context: source } : {}) });
+    if (!text || !canSubmit()) return;
+    // The pending action keeps this exact submission through a reload or retry.
+    // Free the composer immediately so a new (even identical) draft stays independent.
+    setDraft('', '');
+    submit({ type: 'capture', text, ...(source ? { context: source } : {}) });
   };
 
-  function accepted(action) {
-    if (input.value.trim() !== action.text || context.value.trim() !== (action.context || '')) return;
-    input.value = '';
-    context.value = '';
-    contextToggle.open = false;
-    delete ui.wordDraft;
-    delete ui.wordContext;
+  function setDraft(text, source) {
+    input.value = text;
+    context.value = source;
+    contextToggle.open = Boolean(source);
+    ui.wordDraft = text;
+    ui.wordContext = source;
     persist();
   }
+
+  // A late URL handoff or rejected submission can arrive after the learner
+  // has moved on. Keep it reachable at home without replacing their new draft.
+  let handoffs;
+  function renderHandoffs() {
+    if (!ui.captureHandoffs?.length) {
+      handoffs?.remove();
+      return;
+    }
+    handoffs ??= document.createElement('div');
+    handoffs.className = 'capture-handoffs';
+    if (!handoffs.isConnected) form.before(handoffs);
+    handoffs.replaceChildren();
+    for (const item of ui.captureHandoffs) {
+      const row = document.createElement('div');
+      row.className = 'capture-handoff';
+      const label = document.createElement('span');
+      label.textContent = item.text;
+      const open = document.createElement('button');
+      open.type = 'button';
+      const reading = item.type === 'reading';
+      open.textContent = reading ? 'Import reading' : 'Use draft';
+      open.setAttribute('aria-label', open.textContent + ' · ' + item.text);
+      open.onclick = () => {
+        ui.captureHandoffs = ui.captureHandoffs.filter(other => other !== item);
+        if (reading) openReading(item.text);
+        else {
+          if (input.value || context.value) remember({ type: 'draft', text: input.value, context: context.value });
+          setDraft(item.text, item.context);
+          input.focus();
+        }
+        persist();
+        renderHandoffs();
+      };
+      row.append(label, open);
+      handoffs.append(row);
+    }
+  }
+  function remember(item) {
+    ui.captureHandoffs ??= [];
+    if (!ui.captureHandoffs.some(other => other.type === item.type && other.text === item.text && other.context === item.context))
+      ui.captureHandoffs.push(item);
+  }
+  function offerReading(action) {
+    remember({ type: 'reading', text: action.text });
+    persist();
+    renderHandoffs();
+  }
+  function restore(action) {
+    const source = action.context || '';
+    if (!input.value && !context.value) setDraft(action.text, source);
+    else if (action.text !== input.value || source !== context.value) {
+      remember({ type: 'draft', text: action.text, context: source });
+      persist();
+      renderHandoffs();
+    }
+  }
+  renderHandoffs();
   function schedule() {
     clearTimeout(pollTimer);
     if (hasPendingWords && !polling) pollTimer = setTimeout(poll, error.hidden ? 1250 : 5000);
@@ -73,5 +134,5 @@ export function createCapture({ get, submit, canSubmit, ui, persist, refresh }) 
     if (!hasPendingWords) error.hidden = true;
     schedule();
   }
-  return { accepted, watch };
+  return { offerReading, restore, watch };
 }

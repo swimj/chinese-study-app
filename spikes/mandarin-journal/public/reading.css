@@ -181,3 +181,14 @@ body[data-view='home'] .home-import-panel #notice {
   font: 600 1.2em/1.55 var(--han);
 }
 .reader-text { white-space: pre-line; }
+
+.reader-import-progress {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: .25rem .6rem;
+  margin-top: .75rem;
+  color: var(--quiet);
+  overflow-wrap: anywhere;
+}
+.home-import-pdf progress { max-width: 100%; accent-color: var(--solid); }

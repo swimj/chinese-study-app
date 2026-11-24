@@ -170,6 +170,18 @@
   white-space: pre-wrap;
   overflow-wrap: anywhere;
 }
+.an-progress {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: .15rem .6rem;
+  color: var(--quiet);
+  overflow-wrap: anywhere;
+}
+.an-retry {
+  color: var(--solid);
+  text-decoration: underline;
+}
 .an-input {
   margin-top: 8px;
   min-height: 3.4em;

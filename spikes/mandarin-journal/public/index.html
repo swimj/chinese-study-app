@@ -94,7 +94,10 @@
               <input id="thread-title" maxlength="100" required placeholder="周末的打算" />
               <button class="primary">Start</button><button type="button" id="cancel-thread">Cancel</button>
             </form>
-            <div id="chat-messages" class="chat-messages" role="log" aria-label="Casual conversation"></div>
+            <div id="chat-messages" class="chat-messages">
+              <div id="chat-history" class="turn-list" role="log" aria-label="Casual conversation"></div>
+              <div id="chat-turn" class="turn-list" hidden></div>
+            </div>
             <form id="chat-form">
               <label class="sr" for="chat-draft">Your message to your conversation partner</label>
               <textarea name="message" id="chat-draft" rows="2" required maxlength="1600" placeholder="写点什么……"></textarea>
@@ -140,7 +143,10 @@
             <span>Tutor</span><span class="tuck-chevron" aria-hidden="true"></span>
           </button>
           <div class="tutor-fold"><div id="tutor-body" inert aria-hidden="true">
-          <div id="tutor-messages" role="log" aria-label="Tutor conversation" class="thread"></div>
+          <div id="tutor-messages" class="thread">
+            <div id="tutor-history" class="turn-list" role="log" aria-label="Tutor conversation"></div>
+            <div id="tutor-turn" class="turn-list" hidden></div>
+          </div>
           <button type="button" id="tutor-point" class="tutor-point" aria-pressed="false" hidden>Point to something</button>
           <div id="tutor-context" class="tutor-context" hidden>
             <span id="tutor-context-label"></span>

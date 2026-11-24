@@ -26,9 +26,11 @@ test('Chinese lines wrap across streamed runs and preserve indentation, paragrap
     row('另一段', 568, 64), row('从这里开始。', 552),
     row('这段前面有空白。', 510),
   ], [row('第二页。', 600)]);
-  assert.deepEqual(await extractParagraphs(pdf), [
+  const pages = [];
+  assert.deepEqual(await extractParagraphs(pdf, (count, total) => pages.push([count, total])), [
     '我在公园里，看见鸟。', '另一段从这里开始。', '这段前面有空白。', '第二页。',
   ]);
+  assert.deepEqual(pages, [[1, 2], [2, 2]]);
 });
 
 test('mixed Latin words keep their spaces across lines without splitting a word across text runs', async () => {
