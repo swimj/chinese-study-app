@@ -1,7 +1,10 @@
 export function replyTarget(state, message) {
   if (message?.role !== 'assistant') return;
   if (message.captureQuestionId && !message.captureResolved) {
-    const original = state.tutor.find(turn => turn.role === 'user' && turn.id === message.captureQuestionId);
+    const submission = state.tutor.find(turn => turn.role === 'user' && turn.id === message.captureQuestionId);
+    const original = submission?.captureOriginId
+      ? state.tutor.find(turn => turn.id === submission.captureOriginId)
+      : submission;
     return { captureQuestionId: message.captureQuestionId, label: original?.text || 'this question' };
   }
   const item = wordForTurn(state, message);

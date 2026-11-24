@@ -49,6 +49,7 @@ export function demoCapture(input: TurnContext): CaptureDecision {
       || (input.captureFollowUp && /^\p{Script=Han}{1,8}$/u.test(text) && input.captureFollowUp.text.includes(text))) {
     return { kind: 'word', target: text };
   }
+  if (/^(?:i (?:want|would like) to (?:know|understand|ask|discuss)|i['’]d like to (?:know|understand|ask|discuss)|i(?:['’]m| am) wondering)\b/i.test(text)) return { kind: 'tutor' };
   if (/是什么意思|怎么说|怎么用|请解释|^(?:请问|为什么)|(?:吗|呢)[？?]?$|^(?:what|how|why|can|could|explain|translate|practice|queue|save|keep|note|discuss|tell me)\b/i.test(text)) return { kind: 'tutor' };
   return { kind: 'clarify', question: 'Would you like to study a particular expression, discuss the wording, or keep a note?' };
 }

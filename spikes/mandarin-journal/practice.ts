@@ -526,6 +526,8 @@ export function demoTutor(input: TurnContext): TutorResult {
     return stash(input);
   if (/值得/.test(described) && /意思|什么意思|mean|explain|worth/i.test(text))
     return response('值得 (zhíde) means “to be worth.” In 这本书值得看吗, 值得看 means “worth reading,” so the question is “Is this book worth reading?”');
+  if (input.captureFollowUp?.text.includes('一部电影') && /部/.test(text) && /measure word|classifier|量词/i.test(text))
+    return response('Yes. 部 is a measure word for films and other works. 一部电影 means “a movie,” so 我昨天看了一部电影 sounds natural.');
   const focus =
     [text, input.source].find((part) => series.some((item) => item.match.test(part)) || /内耗/.test(part)) ??
     text;

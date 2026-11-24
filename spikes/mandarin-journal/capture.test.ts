@@ -69,6 +69,18 @@ test('keeping a sentence as a note uses the original text after repeated clarifi
   } finally { j.close(); }
 });
 
+test('a learner can clarify a grammar question conversationally in the demo tutor', async () => {
+  const j = openJournal(':memory:', demo);
+  try {
+    const sentence = capture('我昨天看了一部电影。');
+    await j.act(sentence);
+    const result = await j.act({ type: 'tutor', id: randomUUID(), surface: 'home', source: '',
+      captureQuestionId: sentence.id, message: 'I want to know whether 部 is the right measure word for a movie.' });
+    assert.match(result.tutor.at(-1)?.text ?? '', /部 is a measure word for films/);
+    assert.equal(result.wordIntakes.length, 0);
+  } finally { j.close(); }
+});
+
 test('an inferred target absent from the evidence produces a tutor question', async () => {
   const j = openJournal(':memory:', {
     ...demo, tutor: async () => ({ capture: { kind: 'word', target: '别人' } }),
