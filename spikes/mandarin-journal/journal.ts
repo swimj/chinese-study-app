@@ -374,13 +374,15 @@ function practiceSources(s: State, mode: string): string[] {
  */
 function prioritySources(s: State, ranked: Ranked[]): { source: string; target: Ranked['target']; teach: boolean }[] {
   const inPlay = new Set([...s.pending, ...s.practice.cards.slice(s.practice.index)].flatMap((c) => c.targets ?? []));
+  // At most one new word per round, so review and open weaknesses keep their place.
+  let fresh = 0;
   return ranked
-    .filter((r) => !inPlay.has(r.target.form))
+    .filter((r) => !inPlay.has(r.target.form) && (!r.fresh || fresh++ < 1))
     .slice(0, 6)
     .map((r) => ({
       target: r.target,
       // A chosen word with no record of study yet is taught before it is practiced.
-      teach: !r.signals && (r.target.origin === 'saved' || (!!r.target.hosted?.inStash && r.target.hosted.mode === 'unstudied')),
+      teach: !!r.fresh,
       source:
         'Target: ' + r.target.form + (r.target.pinyin ? ' (' + r.target.pinyin + ')' : '') +
         (r.target.gloss ? ' · ' + r.target.gloss : '') + '\nWhy now: ' + r.reasons.join('; '),
@@ -670,6 +672,8 @@ function answerEvent(attempt: Attempt, at: string | null): NewEvent {
     context: {
       kind: c.kind, prompt: c.prompt, reference: c.answer, explanation: c.explanation,
       correct: attempt.result.correct, tutorSaid: attempt.result.feedback,
+      // A card that introduced its target taught it.
+      taught: !!c.introduction && !!c.targets?.length,
     },
     targets: c.targets ?? [],
   };

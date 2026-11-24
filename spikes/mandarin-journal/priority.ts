@@ -16,9 +16,15 @@ const UNKNOWN_AGE_DAYS = 14;
 const GRADUATE_AFTER = 2;
 /** The hosted SRS contributes at most this much, against about 3 for one fresh need. */
 const HOSTED_WEIGHT = 0.3;
+/** New words taught per UTC day, as the hosted app's default new-word limit. */
+export const NEW_PER_DAY = 5;
+/** With this many weaknesses and newly taught words still open, nothing new is taught. */
+export const PRESSING_LIMIT = 8;
 
-export type Role = 'needed' | 'flawed' | 'missed' | 'avoided' | 'used' | 'correct';
-const weakness: Partial<Record<Role, number>> = { needed: 3, flawed: 2, missed: 2, avoided: 1 };
+export type Role = 'needed' | 'flawed' | 'missed' | 'avoided' | 'used' | 'correct' | 'taught';
+// A newly taught word settles like a weakness: it stays pressing until two clean
+// days after teaching, the journal's version of the hosted app's Solidify.
+const weakness: Partial<Record<Role, number>> = { needed: 3, flawed: 2, missed: 2, taught: 2, avoided: 1 };
 /** practice marks signals from an exercise answer, as opposed to the learner's own use elsewhere. */
 export type Signal = { form: string; role: Role; at: string | null; eventId: string; evidence?: string; practice?: boolean };
 
@@ -52,10 +58,14 @@ export function signalsFrom(judgmentList: JudgmentRecord[], eventsById: Map<stri
     for (const need of n.needs) push(need.form, 'needed', need.evidence);
     for (const x of n.intended) push(x.form, x.outcome === 'natural' ? 'used' : x.outcome === 'flawed' ? 'flawed' : 'avoided', event.text);
   }
+  for (const event of eventsById.values())
+    if (event.kind === 'answer' && event.context.taught)
+      for (const form of event.targets) out.push({ form, role: 'taught', at: event.at, eventId: event.id, practice: true });
   return out;
 }
 
-export type Ranked = { target: Target; score: number; reasons: string[]; signals: number };
+/** pressing: an open weakness or a word still settling. fresh: chosen and never taught. */
+export type Ranked = { target: Target; score: number; reasons: string[]; signals: number; pressing?: boolean; fresh?: boolean };
 
 const day = (at: string) => at.slice(0, 10);
 const ageDays = (at: string | null, now: number) => (at ? Math.max(0, (now - Date.parse(at)) / DAY) : UNKNOWN_AGE_DAYS);
@@ -87,11 +97,14 @@ export function rank(targetList: Target[], signals: Signal[], nowDate = new Date
     byForm.set(s.form, list);
   }
   const ranked: Ranked[] = [];
+  const taughtToday = new Set(signals.filter((s) => s.role === 'taught' && s.at && day(s.at) === today).map((s) => s.form)).size;
   for (const t of targetList) {
     if (t.hosted?.dismissed) continue;
     const own = (byForm.get(t.form) ?? []).slice().sort((a, b) => ageDays(b.at, now) - ageDays(a.at, now));
     const reasons: string[] = [];
     let score = 0;
+    let pressing = false;
+    let fresh = false;
 
     const weak = own.filter((s) => weakness[s.role]);
     if (weak.length) {
@@ -103,6 +116,7 @@ export function rank(targetList: Target[], signals: Signal[], nowDate = new Date
       else {
         const sum = weak.reduce((total, s) => total + weakness[s.role]! * decay(ageDays(s.at, now)), 0);
         score += sum * (1 - 0.35 * cleanDays);
+        pressing = true;
         const latest = weak[weak.length - 1];
         reasons.push(
           `${latest.role}${latest.evidence ? ` in “${latest.evidence.slice(0, 40)}”` : ''}` +
@@ -114,6 +128,7 @@ export function rank(targetList: Target[], signals: Signal[], nowDate = new Date
       // A word the learner chose and has not studied waits to be taught, from
       // the journal or from the old app's stash alike.
       score += decay(ageDays(t.createdAt, now), 21);
+      fresh = true;
       reasons.push(t.origin === 'saved' ? 'saved, not practiced yet' : 'in the old stash, never taught');
     }
 
@@ -128,7 +143,12 @@ export function rank(targetList: Target[], signals: Signal[], nowDate = new Date
       score *= 0.3;
       reasons.push('practiced today');
     }
-    if (score > 0) ranked.push({ target: t, score, reasons, signals: own.length });
+    if (score > 0) ranked.push({ target: t, score, reasons, signals: own.length, pressing, fresh });
   }
-  return ranked.sort((a, b) => b.score - a.score);
+  ranked.sort((a, b) => b.score - a.score);
+  // Backpressure on new words: a daily limit, and none while too much is still open.
+  const open = ranked.filter((r) => r.pressing).length;
+  const allowance = open >= PRESSING_LIMIT ? 0 : Math.max(0, NEW_PER_DAY - taughtToday);
+  let admitted = 0;
+  return ranked.filter((r) => !r.fresh || admitted++ < allowance);
 }

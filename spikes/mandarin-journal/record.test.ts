@@ -218,3 +218,18 @@ test('a notice quotes the learner exactly and answers for every intended form', 
   assert.throws(() => notice.validate({ notice: { ...ok.notice, uses: [{ form: 'only', kind: 'word', quality: 'natural', note: '' }] } } as never, input), /Chinese/);
   assert.ok(notice.validate(demoTutor(input) as never, input));
 });
+
+test('new words wait behind a daily limit and behind open work, and a taught word settles before it graduates', () => {
+  const fresh = Array.from({ length: 7 }, (_, i) => target('新' + i, { origin: 'saved', createdAt: at(22) }));
+  assert.equal(rank(fresh, [], now).length, 5, 'five new words a day, as the hosted default');
+  const taught = (form: string, day: number): Signal => ({ form, role: 'taught', at: at(day), eventId: 'e-' + form, practice: true });
+  const taughtToday = ['甲', '乙', '丙'].map((form) => taught(form, 23));
+  const afterTeaching = rank([...fresh, ...['甲', '乙', '丙'].map((f) => target(f, { origin: 'saved' }))], taughtToday, now);
+  assert.equal(afterTeaching.filter((r) => r.fresh).length, 2, 'three taught today leave room for two');
+  assert.ok(afterTeaching.find((r) => r.target.form === '甲')?.pressing, 'a word taught today is still settling');
+  const busy = Array.from({ length: 8 }, (_, i) => ({ form: '弱' + i, role: 'needed' as const, at: at(20), eventId: 'n' + i }));
+  const blocked = rank([...fresh, ...busy.map((s) => target(s.form))], busy, now);
+  assert.equal(blocked.filter((r) => r.fresh).length, 0, 'eight open weaknesses hold back new words');
+  const settled = rank([target('甲')], [taught('甲', 18), { form: '甲', role: 'correct', at: at(19), eventId: 'c1' }, { form: '甲', role: 'used', at: at(21), eventId: 'c2' }], now);
+  assert.equal(settled.length, 0, 'two clean days after teaching retire it');
+});

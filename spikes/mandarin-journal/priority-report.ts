@@ -25,6 +25,7 @@ export function priorityReport(path: string, now = new Date(), limit = 25) {
       `Targets · ${[...byOrigin].map(([k, v]) => k + ' ' + v).join(' · ') || 'none'}`,
       imported ? 'Hosted import · ' + imported : 'Hosted import · none',
       '',
+      `Open: ${ranked.filter((r) => r.pressing).length} weaknesses or settling words · new words admitted today: ${ranked.filter((r) => r.fresh).length}`,
       `Top ${Math.min(limit, ranked.length)} of ${ranked.length} with any priority`,
     ];
     for (const r of ranked.slice(0, limit))
