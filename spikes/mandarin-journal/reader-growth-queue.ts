@@ -1,9 +1,10 @@
+import { activityOutcome, type ActivityStore } from './activity.ts';
 import type { readerLedger } from './reader-ledger.ts';
 import type { openReaderCatalog } from './reader-catalog.ts';
 import { processReaderDecision } from './reader-growth.ts';
 
 // The immutable lookup ledger is the work list. The catalog receipt is the checkpoint.
-export function startReaderGrowth(ledger: ReturnType<typeof readerLedger>, catalog: ReturnType<typeof openReaderCatalog>) {
+export function startReaderGrowth(ledger: ReturnType<typeof readerLedger>, catalog: ReturnType<typeof openReaderCatalog>, activity?: ActivityStore) {
   const pending = new Set<string>();
   const retryDelays = [60_000, 300_000, 1_800_000];
   const attempts = new Map<string, number>();
@@ -24,7 +25,12 @@ export function startReaderGrowth(ledger: ReturnType<typeof readerLedger>, catal
           const row = ledger.get(id);
           if (!row) throw new Error('Missing reader decision');
           if (catalog.needsDecision(row)) {
-            await processReaderDecision(catalog, row, { isFlagged: () => Boolean(ledger.get(id)?.feedback) });
+            const process = async () => {
+              const receipt = await processReaderDecision(catalog, row, { isFlagged: () => Boolean(ledger.get(id)?.feedback) });
+              activityOutcome(receipt?.outcome ?? 'Deferred');
+            };
+            if (activity) await activity.background(row.feedback ? 'Dictionary feedback' : 'Dictionary growth', id, process);
+            else await process();
           }
           attempts.delete(id);
         } catch (error) {

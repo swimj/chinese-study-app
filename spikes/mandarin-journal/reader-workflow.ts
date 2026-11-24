@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { activityOutcome, type ActivityStore } from './activity.ts';
 import { lookupRequest, resolveLookupRange } from './reader-lookup-input.ts';
 import { compareAnswers, type readerLedger } from './reader-ledger.ts';
 import type { createLookupService } from './reader-lookup-service.ts';
@@ -13,7 +14,7 @@ const requestSchema = z.union([recheckRequest, lookupRequest]);
 
 export function readerWorkflow(ledger: ReturnType<typeof readerLedger>, service: ReturnType<typeof createLookupService>,
   paragraphs: (documentId: string) => readonly { id: string; text: string }[] | undefined,
-  enqueue: (id: string) => void) {
+  enqueue: (id: string) => void, activity?: ActivityStore) {
   return {
     async lookup(payload: unknown) {
       const parsed = requestSchema.parse(payload);
@@ -45,7 +46,8 @@ export function readerWorkflow(ledger: ReturnType<typeof readerLedger>, service:
         trigger: parent ? 'check_in_context' : 'gesture',
         ...(parent && { previousDecisionId: parent.id }),
         ...(parent && result.answer && { revision: compareAnswers(parent.result, result) }),
-      });
+      }, id => activity?.link('Dictionary growth', id));
+      activityOutcome(result.route);
       enqueue(id);
       if (parent && !result.answer) throw new ReaderRequestError(503, 'Contextual lookup unavailable. Please retry.');
       return { id, start: result.start, end: result.end - range.lastBlockStart, answer: result.answer, route: result.route,
@@ -55,7 +57,11 @@ export function readerWorkflow(ledger: ReturnType<typeof readerLedger>, service:
       const row = ledger.get(id);
       if (!row) throw new ReaderRequestError(404, 'Lookup decision not found.');
       if (row.result.route !== 'context' || !row.result.answer) throw new ReaderRequestError(409, 'Only a contextual answer can be marked wrong.');
+      // A flag may arrive while the original growth pass is running. Its
+      // withdrawal has its own cause and must survive a worker restart.
+      if (!row.feedback) activity?.link('Dictionary feedback', id);
       ledger.flag(id);
+      activityOutcome(row.feedback ? 'Already flagged' : 'Flagged');
       enqueue(id);
       return { id, flagged: true };
     },

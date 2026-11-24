@@ -1,3 +1,6 @@
+import { randomUUID } from 'node:crypto';
+import { DatabaseSync } from 'node:sqlite';
+import { createActivity } from './activity.ts';
 import { ImportPreview } from './import-validation.ts';
 import { createServer, type IncomingMessage } from 'node:http';
 import { mkdirSync, readdirSync } from 'node:fs';
@@ -6,7 +9,7 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { ImportError } from './article.ts';
 import { ReadingConflict } from './reading.ts';
-import { ZodError } from 'zod';
+import { ZodError, type z } from 'zod';
 import { actionSchema, engine, JournalConflict, openJournal } from './journal.ts';
 import { buildFixture } from './fixture.ts';
 import { resolveStorage } from './storage.ts';
@@ -28,15 +31,19 @@ try {
 const storage = resolved.path;
 mkdirSync(dirname(storage), { recursive: true });
 if (resolved.profile === 'fixture' && resolved.fresh) await buildFixture(storage);
-const journal = openJournal(storage);
+const activity = createActivity(new DatabaseSync(storage));
+const journal = openJournal(storage, undefined, activity);
 const catalog = openReaderCatalog(storage);
 const lookups = createLookupService({ catalogSnapshot: catalog.snapshot });
 const ledger = readerLedger(storage);
-const reader = readerWorkflow(ledger, lookups, journal.readingParagraphs, startReaderGrowth(ledger, catalog));
+const reader = readerWorkflow(ledger, lookups, journal.readingParagraphs, startReaderGrowth(ledger, catalog, activity), activity);
 const defaultPorts = { live: 4317, copy: 4319, fixture: 4320, custom: 4320 } as const;
 const port = Number(process.env.JOURNAL_PORT || defaultPorts[resolved.profile]);
 const files = new Map([
   ['/', ['index.html', 'text/html']],
+  ['/operator/activity', ['model-activity.html', 'text/html']],
+  ['/model-activity.js', ['model-activity.js', 'text/javascript']],
+  ['/model-activity.css', ['model-activity.css', 'text/css']],
   ['/app.js', ['app.js', 'text/javascript']],
   ['/turn-progress.js', ['turn-progress.js', 'text/javascript']],
   ['/chat-stream.js', ['chat-stream.js', 'text/javascript']],
@@ -69,6 +76,17 @@ for (const [folder, extensions] of [
       pdfAssets.set('/pdfjs/' + folder + '/' + entry.name, [join(root, entry.name), 'application/octet-stream']);
   }
 }
+
+const actionLabels: Record<z.infer<typeof actionSchema>['type'], string> = {
+  capture: 'Home capture', tutor: 'Ask the tutor', chat: 'Send chat message', reflect: 'Reflect on chat',
+  practice: 'Prepare practice', next: 'Next practice card', answer: 'Answer practice card',
+  newThread: 'Start conversation', selectThread: 'Open conversation', importReading: 'Import reading',
+  importPdf: 'Import PDF', readingPosition: 'Save reading position', captureReading: 'Save passage',
+  annotate: 'Annotate reading', annotationPost: 'Post margin note', saveReading: 'Save reading',
+  mediaReaction: 'Respond to picture', settings: 'Change settings', addWord: 'Add word',
+  timeZone: 'Set learning time zone', flagExercise: 'Flag practice exercise',
+  clarifyWord: 'Clarify word', retryWord: 'Retry word preparation',
+};
 
 class RequestError extends Error {
   status: number;
@@ -132,6 +150,18 @@ const server = createServer(async (req, res) => {
       res.end(page);
       return;
     }
+    if (req.method === 'GET' && req.url?.split('?')[0] === '/api/operator/activity') {
+      const hours = Number(new URL(req.url, 'http://localhost').searchParams.get('hours') ?? 24);
+      if (![1, 24, 168].includes(hours)) throw new RequestError(400, 'Choose a 1, 24 or 168 hour window.');
+      json(200, activity.report(hours));
+      return;
+    }
+    if (req.method === 'GET' && req.url?.startsWith('/api/operator/activity/')) {
+      const trace = activity.trace(req.url.slice('/api/operator/activity/'.length));
+      if (!trace) throw new RequestError(404, 'Activity not found.');
+      json(200, trace);
+      return;
+    }
     if (req.method === 'GET' && req.url === '/api/state') {
       json(200, journal.get());
       return;
@@ -142,21 +172,25 @@ const server = createServer(async (req, res) => {
       const payload = await body(req);
       if (req.url === '/api/reader-lookup/feedback') {
         const { id } = feedbackRequest.parse(payload);
-        json(200, reader.flag(id));
+        await activity.action('Flag reader lookup', id, async () => json(200, reader.flag(id)));
         return;
       }
       if (req.url === '/api/reader-lookup') {
-        json(200, await reader.lookup(payload));
+        const recheck = payload && typeof payload === 'object' && 'previousDecisionId' in payload;
+        await activity.action(recheck ? 'Check lookup in context' : 'Reader lookup', randomUUID(),
+          async () => json(200, await reader.lookup(payload)));
         return;
       }
       const action = actionSchema.parse(payload);
-      if (action.type === 'chat' && req.headers.accept?.split(',').some(type => type.trim() === 'application/x-ndjson')) {
-        res.writeHead(200, { 'Content-Type': 'application/x-ndjson; charset=utf-8', 'Cache-Control': 'no-store' });
-        res.flushHeaders();
-        const state = await journal.act(action, text => line({ type: 'delta', text }));
-        line({ type: 'done', state });
-        res.end();
-      } else json(200, await journal.act(action));
+      await activity.action(actionLabels[action.type], action.id, async () => {
+        if (action.type === 'chat' && req.headers.accept?.split(',').some(type => type.trim() === 'application/x-ndjson')) {
+          res.writeHead(200, { 'Content-Type': 'application/x-ndjson; charset=utf-8', 'Cache-Control': 'no-store' });
+          res.flushHeaders();
+          const state = await journal.act(action, text => line({ type: 'delta', text }));
+          line({ type: 'done', state });
+          res.end();
+        } else json(200, await journal.act(action));
+      });
       return;
     }
     const route = req.url || '';

@@ -1,0 +1,62 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="theme-color" content="#f7faf5">
+    <title>Model activity · Mandarin journal</title>
+    <link rel="stylesheet" href="/style.css">
+    <link rel="stylesheet" href="/model-activity.css">
+    <script type="module" src="/model-activity.js"></script>
+  </head>
+  <body>
+    <main class="activity-page">
+      <a class="back" href="/#home">← Journal</a>
+      <header class="activity-header">
+        <div><p class="small">Journal operator</p><h1>Model activity</h1></div>
+        <div class="toolbar">
+          <label>Period
+            <select id="period">
+              <option value="1">Last hour</option>
+              <option value="24" selected>Last 24 hours</option>
+              <option value="168">Last 7 days</option>
+            </select>
+          </label>
+          <button id="refresh" class="outlined" type="button">Refresh</button>
+        </div>
+      </header>
+      <p id="status" role="status">Loading activity…</p>
+      <div id="activity-data" hidden>
+        <div class="window-note" id="since"></div>
+        <dl class="metrics">
+          <div><dt>App actions</dt><dd id="action-count"></dd></div>
+          <div><dt>Model calls</dt><dd id="call-count"></dd><dd class="context" id="rate"></dd></div>
+          <div><dt>Known model spend</dt><dd id="spend"></dd><dd class="context" id="coverage"></dd></div>
+          <div><dt>Background calls</dt><dd id="background"></dd></div>
+        </dl>
+        <details class="behavior-summary" id="behavior-summary" hidden>
+          <summary>Usage by app behavior</summary>
+          <ul id="behavior-list"></ul>
+        </details>
+        <section aria-label="Activity ledger">
+          <div class="ledger-head">
+            <div class="switch" role="group" aria-label="Ledger view">
+              <button type="button" data-view="actions" aria-pressed="true">App actions</button>
+              <button type="button" data-view="calls" aria-pressed="false">Model calls</button>
+            </div>
+            <label>Order <select id="order"></select></label>
+          </div>
+          <table id="ledger"></table>
+          <p id="row-count" class="context" role="status"></p>
+          <button type="button" id="more" class="outlined" hidden>Show more</button>
+        </section>
+        <section id="trace" aria-labelledby="trace-title" hidden>
+          <div class="trace-head"><h2 id="trace-title" tabindex="-1">Action detail</h2><button type="button" id="back-list">Back to list ↑</button></div>
+          <p id="trace-status" role="status"></p>
+          <button type="button" class="outlined" id="retry-detail" hidden>Retry detail</button>
+          <div id="trace-content"></div>
+        </section>
+      </div>
+    </main>
+  </body>
+</html>
