@@ -88,7 +88,7 @@ function clamp(value, lo, hi) {
   return Math.max(lo, Math.min(value, hi));
 }
 
-export function createAnnotations({ submit, getState, canSubmit, lookupPassage, flagLookup }) {
+export function createAnnotations({ submit, getState, canSubmit, getPending, retryPending, lookupPassage, flagLookup }) {
   const toolbar = element('div', 'an-quote-action');
   toolbar.hidden = true;
   toolbar.setAttribute('role', 'group');
@@ -136,6 +136,15 @@ export function createAnnotations({ submit, getState, canSubmit, lookupPassage, 
   const chooser = element('select', 'an-chooser');
   chooser.setAttribute('aria-label', 'Notes on this passage');
   const messages = element('div', 'an-messages');
+  messages.setAttribute('role', 'log');
+  messages.setAttribute('aria-label', 'Margin discussion');
+  const progress = element('div', 'an-progress');
+  const progressText = element('span', 'an-progress-text');
+  progressText.setAttribute('role', 'status');
+  const retry = button('an-retry', 'Retry');
+  retry.dataset.turnRetry = '';
+  retry.onclick = () => retryPending();
+  progress.append(progressText, retry);
   const form = element('form', 'an-form');
   const input = element('textarea', 'an-input');
   input.rows = 2;
@@ -150,10 +159,22 @@ export function createAnnotations({ submit, getState, canSubmit, lookupPassage, 
   const appendNote = button('an-ask', 'Add note');
   const discuss = button('an-ask', 'Ask');
   savedActions.append(appendNote, discuss);
-  panel.append(head, chooser, messages, savedActions, form);
+  panel.append(head, chooser, messages, progress, savedActions, form);
   document.body.append(toolbar, panel, confirmation);
 
-  const sources = () => getState()?.annotationThreads || [];
+  const savedThreads = () => getState()?.annotationThreads || [];
+  function pendingAsk() {
+    const { action } = getPending();
+    return action?.type === 'annotationPost' && action.askTutor ? action : undefined;
+  }
+  // A first question gets a margin marker immediately. The journal uses its
+  // action ID as the permanent thread ID, so reopening works through completion.
+  function sources() {
+    const threads = savedThreads();
+    const action = pendingAsk();
+    if (!action?.anchor || threads.some(thread => thread.id === action.id)) return threads;
+    return [...threads, { id: action.id, anchor: action.anchor, messages: [] }];
+  }
   const draftKey = 'mandarin-journal.annotation-drafts.v1';
   let drafts;
   try { drafts = new Map(JSON.parse(sessionStorage.getItem(draftKey) || '[]')); }
@@ -296,7 +317,14 @@ export function createAnnotations({ submit, getState, canSubmit, lookupPassage, 
   }
 
   function displayThread() {
+    const action = pendingAsk();
+    if (!current.id && action?.anchor && anchorKey(action.anchor) === anchorKey(current.anchor)) {
+      current.id = action.id;
+    }
     const thread = sources().find(t => t.id === current.id);
+    const waiting = action && current.id === (action.annotationId || action.id)
+      && !thread?.messages.some(m => m.id === action.id);
+    const { busy, error } = getPending();
     quote.textContent = current.anchor.quote;
     const group = thread ? groupFor(thread.anchor) : [];
     chooser.hidden = group.length < 2;
@@ -318,19 +346,36 @@ export function createAnnotations({ submit, getState, canSubmit, lookupPassage, 
       }
       chooser.value = current.id;
     }
-    const stamp = JSON.stringify(thread?.messages || []);
-    if (messages.dataset.stamp !== stamp) {
-      messages.dataset.stamp = stamp;
-      messages.replaceChildren(...(thread?.messages || []).map(m => {
-        const row = element('div', 'an-entry');
-        row.append(element('span', 'an-author', m.role === 'assistant' ? 'Tutor' : 'You'), element('p', 'an-text', m.text));
-        return row;
-      }));
-      messages.scrollTop = messages.scrollHeight;
+    const turns = thread?.messages || [];
+    const entries = waiting ? [...turns, { role: 'user', text: action.message }] : turns;
+    const threadKey = current.id || anchorKey(current.anchor);
+    const atEnd = messages.scrollHeight - messages.scrollTop - messages.clientHeight < 24;
+    const changedThread = messages.dataset.thread !== threadKey;
+    if (changedThread) {
+      messages.replaceChildren();
+      messages.dataset.thread = threadKey;
     }
-    messages.hidden = !thread?.messages.length;
+    // Preserve the echoed question when it becomes a saved message. Only the
+    // tutor's new reply should be announced on completion.
+    entries.forEach((m, index) => {
+      const stamp = JSON.stringify([m.role, m.text]);
+      const previous = messages.children[index];
+      if (previous?.dataset.entry === stamp) return;
+      const row = element('div', 'an-entry');
+      row.dataset.entry = stamp;
+      row.append(element('span', 'an-author', m.role === 'assistant' ? 'Tutor' : 'You'), element('p', 'an-text', m.text));
+      if (previous) previous.replaceWith(row);
+      else messages.append(row);
+    });
+    while (messages.children.length > entries.length) messages.lastElementChild.remove();
+    messages.hidden = !entries.length;
+    if (changedThread || atEnd) messages.scrollTop = messages.scrollHeight;
+    progress.hidden = !waiting;
+    const status = waiting ? (busy ? 'Tutor is replying…' : error || 'Reply interrupted.') : '';
+    if (progressText.textContent !== status) progressText.textContent = status;
+    retry.hidden = !waiting || busy;
     const capturing = current.mode === 'capture';
-    const compact = current.mode === 'inspect' && savedPassage(thread);
+    const compact = current.mode === 'inspect' && !waiting && savedPassage(thread);
     form.hidden = Boolean(compact);
     savedActions.hidden = !compact;
     ask.hidden = capturing;
@@ -703,24 +748,43 @@ export function createAnnotations({ submit, getState, canSubmit, lookupPassage, 
     const view = current;
     const key = keyFor(view);
     const askTutor = e.submitter === ask;
+    const source = view.id ? { annotationId: view.id } : { anchor: view.anchor };
+    const message = input.value.trim();
+    const action = view.mode === 'capture' ? { type: 'captureReading', anchor: view.anchor, note: message }
+      : { type: 'annotationPost', ...source, message, askTutor };
+    if (askTutor) {
+      // The pending action owns this question. A follow-up draft belongs to
+      // the new thread ID, which is also used by its margin marker.
+      input.value = '';
+      setDraft(key, '');
+      input.focus({ preventScroll: true });
+      const request = submit(action);
+      const threadId = view.id;
+      if (!await request && !pendingAsk()) {
+        const id = savedThreads().some(t => t.id === threadId) ? threadId : undefined;
+        const restoredKey = keyFor({ ...view, id });
+        const draft = drafts.get(threadId) || drafts.get(restoredKey) || message;
+        if (threadId && restoredKey !== threadId) setDraft(threadId, '');
+        setDraft(restoredKey, draft);
+        if (current && current.id === threadId && anchorKey(current.anchor) === anchorKey(view.anchor)) {
+          current.id = id;
+          input.value = draft;
+          render();
+        }
+      }
+      return;
+    }
     const existing = new Set(sources().map(t => t.id));
     inFlight = key;
     updateButtons();
     try {
-      const source = view.id ? { annotationId: view.id } : { anchor: view.anchor };
-      const message = input.value.trim();
-      const action = view.mode === 'capture' ? { type: 'captureReading', anchor: view.anchor, note: message }
-        : { type: 'annotationPost', ...source, message, askTutor };
       if (!await submit(action)) return;
       setDraft(key, '');
       if (current !== view) return;
       const id = view.id || sources().find(t => !existing.has(t.id) && anchorKey(t.anchor) === anchorKey(view.anchor))?.id;
-      if (id && askTutor) open(id);
-      else {
-        if (id) view.id = id;
-        view.trigger = controls.get(startBlock(view.anchor))?.marker;
-        close(true);
-      }
+      if (id) view.id = id;
+      view.trigger = controls.get(startBlock(view.anchor))?.marker;
+      close(true);
     } finally { inFlight = undefined; updateButtons(); }
   };
 

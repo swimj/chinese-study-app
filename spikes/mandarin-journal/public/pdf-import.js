@@ -13,7 +13,7 @@ function joinLines(before, after) {
   return ' ';
 }
 
-export async function extractParagraphs(pdf) {
+export async function extractParagraphs(pdf, onPage) {
   if (pdf.numPages > maxPages) throw new PdfImportError('Choose a PDF with 300 pages or fewer.');
   const paragraphs = [];
   let chars = 0, rawChars = 0, itemsRead = 0;
@@ -75,13 +75,14 @@ export async function extractParagraphs(pdf) {
     } finally {
       page.cleanup();
     }
+    onPage?.(number, pdf.numPages);
   }
   if (!paragraphs.length)
     throw new PdfImportError('No selectable text was found. Choose a searchable PDF or run OCR on a copy and import it.');
   return paragraphs;
 }
 
-export async function readPdf(file) {
+export async function readPdf(file, onPage) {
   if (file.size > maxBytes) throw new PdfImportError('Choose a PDF of 20 MiB or less.');
   if (!file.size) throw new PdfImportError('This file is empty. Choose a PDF with selectable text.');
   let task;
@@ -102,7 +103,7 @@ export async function readPdf(file) {
       stopAtErrors: true,
     });
     const pdf = await task.promise;
-    const paragraphs = await extractParagraphs(pdf);
+    const paragraphs = await extractParagraphs(pdf, onPage);
     const title = (file.name.replace(/\.pdf$/i, '').replace(/\s+/gu, ' ').trim() || 'PDF reading')
       .slice(0, 120).replace(/[\uD800-\uDBFF]$/, '');
     return { title, paragraphs, fingerprint };
