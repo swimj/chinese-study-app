@@ -1,3 +1,4 @@
+import { activityStep } from './activity.ts';
 import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
@@ -93,6 +94,7 @@ export function createLookupService(options: ServiceOptions = {}) {
     const occurrence = local.occurrence;
     const form = occurrence ? input.text.slice(occurrence.start, occurrence.end) : null;
     const candidates = form ? catalog.sensesFor(form) : [];
+    let selectionStep: string | undefined;
     const steps: string[] = [];
     const calls: ReturnType<typeof modelEvidence>[] = [];
     const suggestion = input.kind === 'tap' ? request.suggestedSpan ?? occurrence : undefined;
@@ -127,7 +129,12 @@ export function createLookupService(options: ServiceOptions = {}) {
       if (candidates.length && selectorEnabled) {
         let invocation: Trace | undefined;
         try {
-          const sense = await select(occurrence, candidates, { onTrace: trace => { invocation = trace; } });
+          const sense = await activityStep('run', 'Check candidate senses', async step => {
+            selectionStep = step.id;
+            const result = await select(occurrence, candidates, { onTrace: trace => { invocation = trace; } });
+            step.outcome(result ? 'Selected' : 'Abstained');
+            return result;
+          });
           if (!invocation) throw new Error('Missing selector invocation');
           calls.push(modelEvidence('selector', invocation, sense ? 'selected' : 'abstained'));
           steps.push(sense ? 'matched-catalog-sense' : 'selector-abstained');
@@ -146,7 +153,8 @@ export function createLookupService(options: ServiceOptions = {}) {
 
     if (contextEnabled) {
       try {
-        const trace = await context('strong', input, contextSuggestion?.form);
+        const trace = await activityStep('run', 'Explain in context', () => context('strong', input, contextSuggestion?.form),
+          { dependsOn: selectionStep ? [selectionStep] : [] });
         const start = input.text.lastIndexOf(trace.answer.span, input.start);
         const end = start + trace.answer.span.length;
         if (start < 0 || end < input.end || (input.kind === 'selection' && (start !== input.start || end !== input.end))) {

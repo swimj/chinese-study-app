@@ -1,4 +1,5 @@
-import { Agent, Runner, tool, type Tool } from '@openai/agents';
+import { Agent, tool, type Tool } from '@openai/agents';
+import { agentRun, agentTool, journalRunner, observeStreamEvent } from './agent-activity.ts';
 import { z } from 'zod';
 import type { CaptureDecision } from './situations/capture.ts';
 import type { WordDecision, WordRequest, WordContent } from './word-intake.ts';
@@ -68,22 +69,24 @@ const recall = tool<typeof recallInput, TurnContext>({
   description:
     'Look up this learner’s journal: tutor exchanges and the tutor’s own observations on attempts and reflections (tutor), casual-chat lines from any conversation (chat), annotations on reading passages or chat lines (annotations), and saved words, notes and readings (saved). Results include their source or speaker. Tutor observations are the tutor’s interpretations, not the learner’s words. Inspect before making claims about prior study.',
   parameters: recallInput,
-  execute({ query, from }, runContext) {
-    if (!runContext) throw new Error('Journal context is required for recall');
-    const state = runContext.context;
-    const needle = query.trim().toLocaleLowerCase();
-    const conversations = needle
-      ? [...(state.otherChatHistory ?? []), ...state.chatHistory]
-      : state.chatHistory;
-    const records =
-      from === 'tutor' ? state.tutorHistory : from === 'chat' ? conversations : (state[from] ?? []);
-    return records
-      .filter((record) =>
-        Object.values(record).some(
-          (value) => typeof value === 'string' && value.toLocaleLowerCase().includes(needle),
-        ),
-      )
-      .slice(-8);
+  execute({ query, from }, runContext, details) {
+    return agentTool('recall', details?.toolCall?.callId, () => {
+      if (!runContext) throw new Error('Journal context is required for recall');
+      const state = runContext.context;
+      const needle = query.trim().toLocaleLowerCase();
+      const conversations = needle
+        ? [...(state.otherChatHistory ?? []), ...state.chatHistory]
+        : state.chatHistory;
+      const records =
+        from === 'tutor' ? state.tutorHistory : from === 'chat' ? conversations : (state[from] ?? []);
+      return records
+        .filter((record) =>
+          Object.values(record).some(
+            (value) => typeof value === 'string' && value.toLocaleLowerCase().includes(needle),
+          ),
+        )
+        .slice(-8);
+    });
   },
 });
 
@@ -96,7 +99,6 @@ const model = process.env.JOURNAL_MODEL || 'gpt-6.2-sol';
 export const TEACH_MODEL = process.env.JOURNAL_TEACH_MODEL || 'gpt-6-luna';
 const modelFor = (name: SituationName) =>
   name === 'teach' ? { model: TEACH_MODEL, modelSettings: { store: false, reasoning: { effort: 'high' as const } } } : { model, modelSettings: { store: false } };
-const runner = new Runner({ tracingDisabled: true });
 const agents = new Map<SituationName, Agent<TurnContext, z.ZodObject>>();
 function agentFor(name: SituationName) {
   let agent = agents.get(name);
@@ -117,14 +119,16 @@ function agentFor(name: SituationName) {
 /** Runs one tutor situation through the SDK. The caller validates the result. */
 export async function runSituation(name: SituationName, input: TurnContext): Promise<TutorResult> {
   const situation = situations[name];
-  const result = await runner.run(agentFor(name), JSON.stringify(situation.buildInput(input)), {
-    context: input,
-    maxTurns: 5,
-    // High-effort teaching can think for a while.
-    signal: AbortSignal.timeout(name === 'teach' ? 120_000 : 60_000),
+  return agentRun(name, modelFor(name).model, async () => {
+    const result = await journalRunner.run(agentFor(name), JSON.stringify(situation.buildInput(input)), {
+      context: input,
+      maxTurns: 5,
+      // High-effort teaching can think for a while.
+      signal: AbortSignal.timeout(name === 'teach' ? 120_000 : 60_000),
+    });
+    if (!result.finalOutput) throw new Error('Tutor returned no completed turn');
+    return situation.schema.parse(result.finalOutput);
   });
-  if (!result.finalOutput) throw new Error('Tutor returned no completed turn');
-  return situation.schema.parse(result.finalOutput);
 }
 
 const friend = new Agent({
@@ -139,23 +143,28 @@ export function tutorTurn(input: TurnContext): Promise<TutorResult> {
 }
 
 export async function friendTurn(input: TurnContext, onText?: (text: string) => void): Promise<string> {
-  const prompt = JSON.stringify({
-    source: input.source,
-    topic: input.topic,
-    readingContext: input.readingContext,
-    recentChatTurns: input.chatHistory.slice(-12),
-    message: input.message,
+  return agentRun('Conversation partner', model, async () => {
+    const prompt = JSON.stringify({
+      source: input.source,
+      topic: input.topic,
+      readingContext: input.readingContext,
+      recentChatTurns: input.chatHistory.slice(-12),
+      message: input.message,
+    });
+    const options = { maxTurns: 1, signal: AbortSignal.timeout(60_000) };
+    let reply;
+    if (onText) {
+      const result = await journalRunner.run(friend, prompt, { ...options, stream: true });
+      for await (const event of result) {
+        observeStreamEvent(event);
+        if (event.type === 'raw_model_stream_event' && event.data.type === 'output_text_delta') onText(event.data.delta);
+      }
+      await result.completed;
+      reply = result.finalOutput;
+    } else {
+      reply = (await journalRunner.run(friend, prompt, options)).finalOutput;
+    }
+    if (!reply?.trim()) throw new Error('Conversation partner returned no reply');
+    return reply;
   });
-  const options = { maxTurns: 1, signal: AbortSignal.timeout(60_000) };
-  let reply;
-  if (onText) {
-    const result = await runner.run(friend, prompt, { ...options, stream: true });
-    for await (const text of result.toTextStream()) onText(text);
-    await result.completed;
-    reply = result.finalOutput;
-  } else {
-    reply = (await runner.run(friend, prompt, options)).finalOutput;
-  }
-  if (!reply?.trim()) throw new Error('Conversation partner returned no reply');
-  return reply;
 }

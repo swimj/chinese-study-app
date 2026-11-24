@@ -1,6 +1,8 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { fileURLToPath } from 'node:url';
+import { DatabaseSync } from 'node:sqlite';
+import { createActivity } from './activity.ts';
 import { createReaderCatalog } from './reader-catalog.ts';
 import { createLookupService } from './reader-lookup-service.ts';
 import { LookupModelError, type Trace } from './reader-model.ts';
@@ -54,7 +56,7 @@ test('polyphony uses the pointed occurrence, stores the actual candidates and tr
   assert.ok(!('request' in call) && !('raw' in call));
 });
 
-test('abstention and provider failure each keep original context and lead to one strong call', async () => {
+test('abstention and provider failure each keep original context and lead to one strong call', async t => {
   const input = target('tap', '先还有两把，后来【还】剩一把。');
   for (const fails of [false, true]) {
     const reader = createLookupService({ ...offline, selectorEnabled: true, contextEnabled: true,
@@ -70,7 +72,12 @@ test('abstention and provider failure each keep original context and lead to one
         return { ...contextTrace, answer: { span: '还', pinyin: 'hái', gloss: 'still (remaining)', chunks: [] } };
       },
     });
-    const answer = await reader.lookup(input);
+    const activity = createActivity(new DatabaseSync(':memory:'));
+    t.after(() => activity.db.close());
+    const answer = await activity.action('Reader lookup', 'tap', () => reader.lookup(input));
+    const [selector, fallback] = activity.trace(activity.report(1).actions[0].id)!.spans;
+    assert.equal(selector.outcome, fails ? 'error' : 'Abstained');
+    assert.deepEqual(fallback.dependsOn, [selector.id]);
     assert.equal(answer.route, 'context');
     assert.equal(answer.start, input.start);
     assert.equal(answer.end, input.end);

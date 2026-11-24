@@ -1,3 +1,4 @@
+import { activityStep, recordProviderUsage } from './activity.ts';
 import { z } from 'zod';
 export type Arm = 'fast' | 'strong';
 type Provider = 'openai' | 'openrouter';
@@ -68,15 +69,29 @@ export async function runReaderModel<T>(arm: Arm, options: {
   try {
     if (!key) throw new Error(`Missing ${keyName}`);
     const url = router ? 'https://openrouter.ai/api/v1/chat/completions' : 'https://api.openai.com/v1/responses';
-    const response = await fetch(url, {
-      method: 'POST', headers: { Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify(request), signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(30_000)]) : AbortSignal.timeout(30_000),
-    });
-    const body = (await response.text()).replaceAll(key, '[redacted]');
-    raw = body;
-    try { raw = JSON.parse(body); } catch { /* Retain a non-JSON provider error as text. */ }
-    if (!response.ok) throw new Error(`${provider} lookup returned HTTP ${response.status}`);
-    const answer = parse(outputText(provider, raw));
+    const purpose: Record<string, string> = {
+      reading_lookup: 'Contextual lookup', reader_sense: 'Sense selection', reader_catalog_growth: 'Catalog growth',
+    };
+    const answer = await activityStep('model', purpose[format.name] ?? 'Reader model', async span => {
+      const response = await fetch(url, {
+        method: 'POST', headers: { Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify(request), signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(30_000)]) : AbortSignal.timeout(30_000),
+      });
+      const body = (await response.text()).replaceAll(key, '[redacted]');
+      raw = body;
+      try { raw = JSON.parse(body); } catch { /* Retain a non-JSON provider error as text. */ }
+      recordProviderUsage(span, raw);
+      if (!response.ok) {
+        span.outcome('HTTP ' + response.status);
+        throw new Error(`${provider} lookup returned HTTP ${response.status}`);
+      }
+      try {
+        return parse(outputText(provider, raw));
+      } catch (error) {
+        span.outcome('Invalid response');
+        throw error;
+      }
+    }, { provider, model });
     return { ...trace(), answer };
   } catch (error) {
     throw new LookupModelError(error instanceof Error ? error.message : 'Lookup failed', trace());

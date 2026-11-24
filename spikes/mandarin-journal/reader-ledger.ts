@@ -55,8 +55,9 @@ export function readerLedger(databasePath: string) {
   }
   return {
     directory, get,
-    record(decision: Decision) {
+    record(decision: Decision, beforePublish?: (id: string) => void) {
       const id = randomUUID();
+      beforePublish?.(id);
       if (!publish(directory, id + '.json', { version:1, id, completedAt:new Date().toISOString(), ...decision })) {
         throw new Error('Duplicate reader decision ID');
       }

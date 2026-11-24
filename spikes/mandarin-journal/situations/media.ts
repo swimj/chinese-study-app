@@ -1,4 +1,5 @@
 import { tool } from '@openai/agents';
+import { agentTool } from '../agent-activity.ts';
 import { z } from 'zod';
 import type { TurnContext } from '../tutor.ts';
 import { findImage, type Candidate } from '../media/find-image.ts';
@@ -39,17 +40,19 @@ export const findImageTool = tool<typeof findInput, TurnContext>({
   description:
     'Look up pictures for one sense of a term on Wikidata and Wikimedia Commons. Returns at most 3 candidates, each from one Wikidata item, already limited to reusable licenses: an image (the item’s photo, with its Commons file title) or, for a named work, a link card to its article. Each candidate has an index for pick.',
   parameters: findInput,
-  async execute({ query, english }, runContext) {
-    const request = runContext?.context.media;
-    if (!request) throw new Error('A media request is required for find_image');
-    request.lookups = (request.lookups ?? 0) + 1;
-    if (request.lookups > LOOKUPS_PER_TURN) return { error: 'Lookup limit reached for this piece.' };
-    const found = await findImage(query, english || undefined);
-    return found.map((candidate) => {
-      const index = request.candidates.push(candidate) - 1;
-      return candidate.kind === 'image'
-        ? { index, kind: 'image', entity: candidate.entityId, label: candidate.label, description: candidate.description, file: candidate.title, license: candidate.license.code }
-        : { index, kind: 'link', entity: candidate.entityId, label: candidate.label, description: candidate.description, article: candidate.title, year: candidate.year };
+  execute({ query, english }, runContext, details) {
+    return agentTool('find_image', details?.toolCall?.callId, async () => {
+      const request = runContext?.context.media;
+      if (!request) throw new Error('A media request is required for find_image');
+      request.lookups = (request.lookups ?? 0) + 1;
+      if (request.lookups > LOOKUPS_PER_TURN) return { error: 'Lookup limit reached for this piece.' };
+      const found = await findImage(query, english || undefined);
+      return found.map((candidate) => {
+        const index = request.candidates.push(candidate) - 1;
+        return candidate.kind === 'image'
+          ? { index, kind: 'image', entity: candidate.entityId, label: candidate.label, description: candidate.description, file: candidate.title, license: candidate.license.code }
+          : { index, kind: 'link', entity: candidate.entityId, label: candidate.label, description: candidate.description, article: candidate.title, year: candidate.year };
+      });
     });
   },
 });

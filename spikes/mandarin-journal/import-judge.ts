@@ -1,9 +1,9 @@
-import { Agent, Runner } from '@openai/agents';
+import { Agent } from '@openai/agents';
+import { agentRun, journalRunner } from './agent-activity.ts';
 import { z } from 'zod';
 
 const verdict = z.enum(['reading', 'verification', 'access', 'unavailable', 'uncertain']);
 const outputType = z.object({ verdict, quote: z.string() });
-const runner = new Runner({ tracingDisabled: true });
 
 const model = process.env.JOURNAL_IMPORT_MODEL || 'gpt-5.4-mini';
 const judge = new Agent({
@@ -38,13 +38,15 @@ export async function judgeImport(sample: {
   const paragraphs = sample.paragraphs.slice(0, 8).map((p) => excerpt(p, 500)).filter(Boolean);
   if (!paragraphs.length) return 'uncertain';
 
-  const result = await runner.run(judge, JSON.stringify({ title, paragraphs }), {
-    maxTurns: 1,
-    signal: AbortSignal.timeout(12_000),
+  return agentRun('Reading import judge', model, async () => {
+    const result = await journalRunner.run(judge, JSON.stringify({ title, paragraphs }), {
+      maxTurns: 1,
+      signal: AbortSignal.timeout(12_000),
+    });
+    const output = result.finalOutput;
+    if (!output) return 'uncertain';
+    if (output.verdict === 'reading' || output.verdict === 'uncertain') return output.verdict;
+    const quote = output.quote;
+    return quote.trim() && paragraphs.some((paragraph) => paragraph.includes(quote)) ? output.verdict : 'uncertain';
   });
-  const output = result.finalOutput;
-  if (!output) return 'uncertain';
-  if (output.verdict === 'reading' || output.verdict === 'uncertain') return output.verdict;
-  const quote = output.quote;
-  return quote.trim() && paragraphs.some((paragraph) => paragraph.includes(quote)) ? output.verdict : 'uncertain';
 }

@@ -1,6 +1,7 @@
 import { createHash, randomUUID } from 'node:crypto';
 import { DatabaseSync } from 'node:sqlite';
 import { z } from 'zod';
+import { activityOutcome, type ActivityStore } from './activity.ts';
 import { checkReadingSize, createImportReviewer, legacyImportWarning } from './import-validation.ts';
 import { extractArticle, ImportError } from './article.ts';
 import { judgeImport } from './import-judge.ts';
@@ -43,11 +44,11 @@ import type { MediaOutcome } from './situations/media.ts';
 import type { NoticeRequest } from './situations/notice.ts';
 import {
   addJudgment, appendEvent, createRecordTables, events as recordEvents, formsIn, judgedToday, judgments as recordJudgments,
-  eventById, meta, nextUnjudged, setMeta, targets as recordTargets, upsertTarget, type NewEvent, type JudgmentRecord,
+  eventById, meta, nextUnjudged, productionKinds, setMeta, targets as recordTargets, upsertTarget, type NewEvent, type JudgmentRecord,
 } from './record.ts';
 import { rank, signalsFrom, type ChoiceJudgment, type Ranked } from './priority.ts';
 import {
-  extend, finishCard, freshAllowed, MAX_ATTEMPTS, MAX_FAILURES, needsCard, newSession, noteFailure, resume, stale,
+  AHEAD, extend, finishCard, freshAllowed, MAX_ATTEMPTS, MAX_FAILURES, needsCard, newSession, noteFailure, resume, stale,
   cardSeconds, currentCard, dueAllowed, finishesSession, formsFor, openRecalls, pendingRecalls, recallOf, wrappingUp,
   type CardKind, type Purpose, type Session, type Stage,
 } from './session.ts';
@@ -1450,9 +1451,9 @@ export function readJournal(path: string) {
   }
 }
 
-export function openJournal(path: string, backend: Backend = engine) {
+export function openJournal(path: string, backend: Backend = engine, activity?: ActivityStore) {
   const reviewImport = createImportReviewer(backend.importReading ?? importArticle, backend.mode === 'live' ? judgeImport : undefined);
-  const db = new DatabaseSync(path);
+  const db = activity?.db ?? new DatabaseSync(path);
   db.exec(`PRAGMA busy_timeout=5000;
     CREATE TABLE IF NOT EXISTS journal(id INTEGER PRIMARY KEY CHECK (id=1),revision INTEGER NOT NULL,body TEXT NOT NULL);
     CREATE TABLE IF NOT EXISTS receipts(id TEXT PRIMARY KEY, fingerprint TEXT NOT NULL);`);
@@ -1504,6 +1505,32 @@ export function openJournal(path: string, backend: Backend = engine) {
     return result;
   }
 
+  function background(kind: string, reference: string, work: () => Promise<void>) {
+    return activity ? activity.background(kind, reference, work) : work();
+  }
+  function queueMedia(s: State, before: Set<string>) {
+    const first = s.mediaJobs.length;
+    queueMediaJobs(s, before);
+    for (const job of s.mediaJobs.slice(first)) activity?.link('Media consideration', job.id);
+  }
+
+  // Each newly opened position in the prepare-ahead window belongs to the
+  // action that made it available. Multiple attempts at that card share its
+  // reference, even across a restart or while the learner advances again.
+  function practiceSlot(session: Session, index: number) {
+    return `${session.id}/${session.budget}/${index}`;
+  }
+  function openSlots(practice: Practice) {
+    const slots: string[] = [];
+    if (practice.session && needsCard(practice)) {
+      const last = wrappingUp(practice) ? practice.cards.length : practice.index + AHEAD;
+      for (let index = practice.cards.length; index <= last; index++) {
+        slots.push(practiceSlot(practice.session, index));
+      }
+    }
+    return slots;
+  }
+
   let closed = false;
   // Model work runs outside the user action queue. Only its short commit joins
   // the queue, so it sees intervening actions and cannot overwrite a user turn.
@@ -1512,100 +1539,106 @@ export function openJournal(path: string, backend: Backend = engine) {
       const { s } = read();
       const job = s.wordIntakes.find((item) => item.status === 'pending');
       if (!job) return;
-      const ctx = context(s, 'wordIntake', job.text, 'Add word', job.context || '');
-      ctx.wordIntake = wordRequest(job, s.saved);
-      let decision: WordDecision | undefined;
-      let failure: string | undefined;
-      const reuse = !job.history.length && reusableWord(s.saved, job.text, job.context);
-      try {
-        if (!reuse) {
-          decision = (await consult(backend, 'wordIntake', ctx)).wordDecision;
-        }
-      } catch (error) {
-        failure =
-          error instanceof OfflineWordUnavailable
-            ? error.message
-            : 'The tutor could not prepare this word. Try again.';
-      }
-      // The explanation comes first; then, for an ask, the admission judgment decides
-      // whether the word is also taught. An explicit save is admitted by rule.
-      let explanation: string | undefined;
-      let admission: { decisions?: AdmissionDecision[]; request?: AdmissionRequest; failed?: string } | undefined;
-      const words = reuse
-        ? [{ title: reuse.title, pinyin: reuse.word!.pinyin, meaning: reuse.word!.meaning, example: reuse.word!.example }]
-        : decision?.kind === 'ready' && !needsChoice(job, decision) ? decision.words : undefined;
-      const explicit = isExplicitSave(job, decision);
-      if (words) {
-        explanation = reuse ? describeSaved(reuse) : decision!.kind === 'ready' ? decision!.explanation : undefined;
-        if (!explicit && explanation) {
-          const sent = eventById(db, job.id)?.context.sent;
-          const request: AdmissionRequest = {
-            forms: words.map((w) => ({ form: w.title, pinyin: w.pinyin, gloss: w.meaning, example: w.example })),
-            sent: typeof sent === 'string' ? sent : job.text,
-            ...(job.context ? { context: job.context } : {}),
-            replies: job.history.map((x) => x.reply),
-            explanation,
-          };
-          const actx = context(s, 'admit', job.text, 'Add word', job.context || '');
-          actx.admission = request;
-          try {
-            admission = { decisions: await consult(backend, 'admit', actx), request };
-          } catch (error) {
-            console.error('Admission judgment failed:', error);
-            admission = { failed: String((error as Error).message ?? error), request };
-          }
-        }
-      }
-      await enqueue(() => {
-        if (closed) return;
-        db.exec('BEGIN IMMEDIATE');
+      await background('Word intake', job.requestId, async () => {
+        const ctx = context(s, 'wordIntake', job.text, 'Add word', job.context || '');
+        ctx.wordIntake = wordRequest(job, s.saved);
+        let decision: WordDecision | undefined;
+        let failure: string | undefined;
+        const reuse = !job.history.length && reusableWord(s.saved, job.text, job.context);
         try {
-          const { s: latest } = read();
-          const intake = latest.wordIntakes.find((item) => item.id === job.id);
-          if (intake?.status === 'pending' && intake.requestId === job.requestId) {
-            if (reuse) {
-              intake.status = 'ready';
-              intake.savedIds = [reuse.id];
-            } else if (decision) {
-              try {
-                const before = anchorIds(latest);
-                finishWord(intake, latest.saved, decision);
-                queueMediaJobs(latest, before);
-                syncTargets(db, latest);
-              } catch {
-                failure = 'The tutor returned an incomplete word. Try again.';
-              }
-            }
-            if (failure) {
-              intake.status = 'failed';
-              intake.error = failure;
-            }
-            let reply: string | undefined;
-            if (intake.status === 'ready') {
-              if (!explanation) throw new Error('A ready word has no explanation');
-              const titles = savedOf(latest, intake).map((item) => item.title);
-              const at = new Date().toISOString();
-              if (explicit) addJudgment(db, explicitAdmission(intake.id, titles, 'explicit save', at));
-              else if (admission) {
-                const body: AdmissionBody = { decisions: admission.decisions ?? [], request: admission.request, ...(admission.failed ? { failed: admission.failed } : {}) };
-                addJudgment(db, { id: randomUUID(), eventId: intake.id, at, source: admitSource, body });
-              }
-              // The practice line names what is admitted now, by this judgment or before.
-              const admittedNow = admittedOf(db);
-              reply = intakeReply(explanation, titles.filter((title) => admittedNow.has(title)));
-            }
-            recordWordOutcome(latest, intake, reply);
-            db.prepare('UPDATE journal SET body=?,revision=revision+1 WHERE id=1').run(
-              JSON.stringify(latest),
-            );
+          if (!reuse) {
+            decision = (await consult(backend, 'wordIntake', ctx)).wordDecision;
           }
-          db.exec('COMMIT');
         } catch (error) {
-          db.exec('ROLLBACK');
-          throw error;
+          failure =
+            error instanceof OfflineWordUnavailable
+              ? error.message
+              : 'The tutor could not prepare this word. Try again.';
         }
+        // The explanation comes first; then, for an ask, the admission judgment decides
+        // whether the word is also taught. An explicit save is admitted by rule.
+        let explanation: string | undefined;
+        let admission: { decisions?: AdmissionDecision[]; request?: AdmissionRequest; failed?: string } | undefined;
+        const words = reuse
+          ? [{ title: reuse.title, pinyin: reuse.word!.pinyin, meaning: reuse.word!.meaning, example: reuse.word!.example }]
+          : decision?.kind === 'ready' && !needsChoice(job, decision) ? decision.words : undefined;
+        const explicit = isExplicitSave(job, decision);
+        if (words) {
+          explanation = reuse ? describeSaved(reuse) : decision!.kind === 'ready' ? decision!.explanation : undefined;
+          if (!explicit && explanation) {
+            const sent = eventById(db, job.id)?.context.sent;
+            const request: AdmissionRequest = {
+              forms: words.map((w) => ({ form: w.title, pinyin: w.pinyin, gloss: w.meaning, example: w.example })),
+              sent: typeof sent === 'string' ? sent : job.text,
+              ...(job.context ? { context: job.context } : {}),
+              replies: job.history.map((x) => x.reply),
+              explanation,
+            };
+            const actx = context(s, 'admit', job.text, 'Add word', job.context || '');
+            actx.admission = request;
+            try {
+              admission = { decisions: await consult(backend, 'admit', actx), request };
+            } catch (error) {
+              console.error('Admission judgment failed:', error);
+              admission = { failed: String((error as Error).message ?? error), request };
+            }
+          }
+        }
+        await enqueue(() => {
+          if (closed) {
+            activityOutcome('Discarded');
+            return;
+          }
+          db.exec('BEGIN IMMEDIATE');
+          try {
+            const { s: latest } = read();
+            const intake = latest.wordIntakes.find((item) => item.id === job.id);
+            if (intake?.status === 'pending' && intake.requestId === job.requestId) {
+              if (reuse) {
+                intake.status = 'ready';
+                intake.savedIds = [reuse.id];
+              } else if (decision) {
+                try {
+                  const before = anchorIds(latest);
+                  finishWord(intake, latest.saved, decision);
+                  queueMedia(latest, before);
+                  syncTargets(db, latest);
+                } catch {
+                  failure = 'The tutor returned an incomplete word. Try again.';
+                }
+              }
+              if (failure) {
+                intake.status = 'failed';
+                intake.error = failure;
+              }
+              let reply: string | undefined;
+              if (intake.status === 'ready') {
+                if (!explanation) throw new Error('A ready word has no explanation');
+                const titles = savedOf(latest, intake).map((item) => item.title);
+                const at = new Date().toISOString();
+                if (explicit) addJudgment(db, explicitAdmission(intake.id, titles, 'explicit save', at));
+                else if (admission) {
+                  const body: AdmissionBody = { decisions: admission.decisions ?? [], request: admission.request, ...(admission.failed ? { failed: admission.failed } : {}) };
+                  addJudgment(db, { id: randomUUID(), eventId: intake.id, at, source: admitSource, body });
+                }
+                // The practice line names what is admitted now, by this judgment or before.
+                const admittedNow = admittedOf(db);
+                reply = intakeReply(explanation, titles.filter((title) => admittedNow.has(title)));
+              }
+              activityOutcome(failure ? 'Failed' : reuse ? 'Reused' : intake.question ? 'Needs clarification' : 'Applied');
+              recordWordOutcome(latest, intake, reply);
+              db.prepare('UPDATE journal SET body=?,revision=revision+1 WHERE id=1').run(
+                JSON.stringify(latest),
+              );
+            } else activityOutcome('Discarded');
+            db.exec('COMMIT');
+          } catch (error) {
+            db.exec('ROLLBACK');
+            throw error;
+          }
+        });
+        wakeMedia();
       });
-      wakeMedia();
     }
   }
   // One background consideration at a time, at most DAILY_LIMIT model turns a
@@ -1616,43 +1649,53 @@ export function openJournal(path: string, backend: Backend = engine) {
       const job = s.mediaJobs.find((item) => item.status === 'pending');
       if (!job) return;
       const request = mediaRequestFor(s, job.anchor);
-      let outcome: MediaOutcome | undefined;
-      let skipped: string | undefined;
-      let failure: string | undefined;
-      if (s.settings.pictures === 'off') skipped = 'pictures-off';
-      else if (!request) skipped = 'anchor-gone';
-      else if (ranToday(s) >= DAILY_LIMIT) return;
-      else {
-        const ctx = context(s, 'mediaConsider', request.term, 'media', request.context ?? '');
-        ctx.media = request;
-        try {
-          outcome = await consult(backend, 'mediaConsider', ctx);
-        } catch (error) {
-          if (error instanceof OfflineMediaUnavailable) skipped = 'offline';
-          else failure = 'failed: ' + String((error as Error)?.message ?? error).slice(0, 200);
-        }
-      }
-      await enqueue(() => {
-        if (closed) return;
-        db.exec('BEGIN IMMEDIATE');
-        try {
-          const { s: latest } = read();
-          const current = latest.mediaJobs.find((item) => item.id === job.id);
-          if (current?.status === 'pending') {
-            const now = new Date();
-            if (outcome && request && mediaRequestFor(latest, job.anchor)) {
-              applyOutcome(latest, request, outcome, now);
-              finishJob(latest, current, 'done', now);
-            } else if (outcome) finishJob(latest, current, 'skipped', now, 'anchor-gone');
-            else if (failure) finishJob(latest, current, 'failed', now, failure);
-            else finishJob(latest, current, 'skipped', now, skipped);
-            db.prepare('UPDATE journal SET body=?,revision=revision+1 WHERE id=1').run(JSON.stringify(latest));
+      if (s.settings.pictures !== 'off' && request && ranToday(s) >= DAILY_LIMIT) return;
+      await background('Media consideration', job.id, async () => {
+        let outcome: MediaOutcome | undefined;
+        let skipped: string | undefined;
+        let failure: string | undefined;
+        if (s.settings.pictures === 'off') skipped = 'pictures-off';
+        else if (!request) skipped = 'anchor-gone';
+        else {
+          const ctx = context(s, 'mediaConsider', request.term, 'media', request.context ?? '');
+          ctx.media = request;
+          try {
+            outcome = await consult(backend, 'mediaConsider', ctx);
+          } catch (error) {
+            if (error instanceof OfflineMediaUnavailable) skipped = 'offline';
+            else failure = 'failed: ' + String((error as Error)?.message ?? error).slice(0, 200);
           }
-          db.exec('COMMIT');
-        } catch (error) {
-          db.exec('ROLLBACK');
-          throw error;
         }
+        await enqueue(() => {
+          if (closed) {
+            activityOutcome('Discarded');
+            return;
+          }
+          db.exec('BEGIN IMMEDIATE');
+          try {
+            const { s: latest } = read();
+            const current = latest.mediaJobs.find((item) => item.id === job.id);
+            if (current?.status === 'pending') {
+              const now = new Date();
+              if (outcome && request && mediaRequestFor(latest, job.anchor)) {
+                const mediaId = applyOutcome(latest, request, outcome, now);
+                activityOutcome(mediaId ? 'Attached' : 'No attachment');
+                finishJob(latest, current, 'done', now);
+              } else if (outcome) {
+                finishJob(latest, current, 'skipped', now, 'anchor-gone');
+                activityOutcome('Discarded');
+              } else {
+                finishJob(latest, current, failure ? 'failed' : 'skipped', now, failure ?? skipped);
+                activityOutcome(failure ? 'Failed' : 'Skipped');
+              }
+              db.prepare('UPDATE journal SET body=?,revision=revision+1 WHERE id=1').run(JSON.stringify(latest));
+            } else activityOutcome('Discarded');
+            db.exec('COMMIT');
+          } catch (error) {
+            db.exec('ROLLBACK');
+            throw error;
+          }
+        });
       });
     }
   }
@@ -1663,43 +1706,49 @@ export function openJournal(path: string, backend: Backend = engine) {
       if (backend.mode === 'live' && judgedToday(db, zoneOf(db)) >= NOTICE_DAILY_LIMIT) return;
       const event = nextUnjudged(db, noticeSource, judgeFrom);
       if (!event) return;
-      const { s } = read();
-      const forms = recordTargets(db).map((t) => t.form);
-      const c = event.context as { respondingTo?: string; tutorSaid?: string; kind?: string; prompt?: string; reference?: string; explanation?: string };
-      const request: NoticeRequest = {
-        kind: event.kind as NoticeRequest['kind'],
-        text: event.text,
-        respondingTo: c.respondingTo,
-        tutorSaid: c.tutorSaid || undefined,
-        exercise: event.kind === 'answer' ? { prompt: c.prompt ?? '', reference: c.reference ?? '', explanation: c.explanation ?? '' } : undefined,
-        intended: event.targets,
-        knownInText: formsIn(event.text, forms),
-      };
-      const ctx = context(s, 'notice', event.text, event.surface, '');
-      ctx.notice = request;
-      let body: unknown;
-      try {
-        body = await consult(backend, 'notice', ctx);
-      } catch (error) {
-        body = { failed: String((error as Error)?.message ?? error).slice(0, 200) };
-      }
-      await enqueue(() => {
-        if (closed) return;
-        db.exec('BEGIN IMMEDIATE');
+      await background('Language notice', event.id, async () => {
+        const { s } = read();
+        const forms = recordTargets(db).map((t) => t.form);
+        const c = event.context as { respondingTo?: string; tutorSaid?: string; kind?: string; prompt?: string; reference?: string; explanation?: string };
+        const request: NoticeRequest = {
+          kind: event.kind as NoticeRequest['kind'],
+          text: event.text,
+          respondingTo: c.respondingTo,
+          tutorSaid: c.tutorSaid || undefined,
+          exercise: event.kind === 'answer' ? { prompt: c.prompt ?? '', reference: c.reference ?? '', explanation: c.explanation ?? '' } : undefined,
+          intended: event.targets,
+          knownInText: formsIn(event.text, forms),
+        };
+        const ctx = context(s, 'notice', event.text, event.surface, '');
+        ctx.notice = request;
+        let body: SituationOutput<'notice'> | { failed: string };
         try {
-          const at = new Date().toISOString();
-          addJudgment(db, { id: randomUUID(), eventId: event.id, at, source: noticeSource, body });
-          const notice = body as Partial<SituationOutput<'notice'>>;
-          // Needs and flawed uses become targets; a natural use only counts toward one that exists.
-          for (const need of notice.needs ?? [])
-            upsertTarget(db, { form: need.form, kind: need.kind, gloss: need.gloss, origin: 'noticed', at });
-          for (const use of notice.uses ?? [])
-            if (use.quality === 'flawed') upsertTarget(db, { form: use.form, kind: use.kind, origin: 'noticed', at });
-          db.exec('COMMIT');
+          body = await consult(backend, 'notice', ctx);
         } catch (error) {
-          db.exec('ROLLBACK');
-          throw error;
+          body = { failed: String((error as Error)?.message ?? error).slice(0, 200) };
         }
+        await enqueue(() => {
+          if (closed) {
+            activityOutcome('Discarded');
+            return;
+          }
+          db.exec('BEGIN IMMEDIATE');
+          try {
+            const at = new Date().toISOString();
+            addJudgment(db, { id: randomUUID(), eventId: event.id, at, source: noticeSource, body });
+            const notice = body as Partial<SituationOutput<'notice'>>;
+            // Needs and flawed uses become targets; a natural use only counts toward one that exists.
+            for (const need of notice.needs ?? [])
+              upsertTarget(db, { form: need.form, kind: need.kind, gloss: need.gloss, origin: 'noticed', at });
+            for (const use of notice.uses ?? [])
+              if (use.quality === 'flawed') upsertTarget(db, { form: use.form, kind: use.kind, origin: 'noticed', at });
+            activityOutcome('failed' in body ? 'Failed' : 'Applied');
+            db.exec('COMMIT');
+          } catch (error) {
+            db.exec('ROLLBACK');
+            throw error;
+          }
+        });
       });
     }
   }
@@ -1711,28 +1760,35 @@ export function openJournal(path: string, backend: Backend = engine) {
       const { s } = read();
       const session = s.practice.session;
       if (!session || !needsCard(s.practice)) return;
-      const pick = sessionSources(s, () => priorityOf(db), () => admittedOf(db))[0];
-      let outcome: Generated = null;
-      if (pick)
-        try {
-          outcome = await generateCard(s, pick, backend);
-        } catch (error) {
-          outcome = { failed: error };
-        }
-      await enqueue(() => {
-        if (closed) return;
-        db.exec('BEGIN IMMEDIATE');
-        try {
-          const { s: latest } = read();
-          if (latest.practice.session?.id === session.id && latest.practice.mode === s.practice.mode) {
-            applyGenerated(latest, pick, outcome, new Date());
-            db.prepare('UPDATE journal SET body=?,revision=revision+1 WHERE id=1').run(JSON.stringify(latest));
+      await background('Prepare practice card', practiceSlot(session, s.practice.cards.length), async () => {
+        const pick = sessionSources(s, () => priorityOf(db), () => admittedOf(db))[0];
+        let outcome: Generated = null;
+        if (pick)
+          try {
+            outcome = await generateCard(s, pick, backend);
+          } catch (error) {
+            outcome = { failed: error };
           }
-          db.exec('COMMIT');
-        } catch (error) {
-          db.exec('ROLLBACK');
-          throw error;
-        }
+        await enqueue(() => {
+          if (closed) {
+            activityOutcome('Discarded');
+            return;
+          }
+          db.exec('BEGIN IMMEDIATE');
+          try {
+            const { s: latest } = read();
+            if (latest.practice.session?.id === session.id && latest.practice.mode === s.practice.mode) {
+              const prior = latest.practice.cards.length;
+              applyGenerated(latest, pick, outcome, new Date());
+              activityOutcome(latest.practice.cards.length > prior ? 'Applied' : outcome && 'failed' in outcome ? 'Failed' : 'No card');
+              db.prepare('UPDATE journal SET body=?,revision=revision+1 WHERE id=1').run(JSON.stringify(latest));
+            } else activityOutcome('Discarded');
+            db.exec('COMMIT');
+          } catch (error) {
+            db.exec('ROLLBACK');
+            throw error;
+          }
+        });
       });
     }
   }
@@ -1786,14 +1842,16 @@ export function openJournal(path: string, backend: Backend = engine) {
     if (old) {
       if (old.fingerprint !== hash)
         throw new JournalConflict('This action ID already identifies a different request.');
+      activityOutcome('Receipt replay');
       return result();
     }
     const before = anchorIds(s);
+    const priorSlots = new Set(openSlots(s.practice));
     const outbox: Outbox = { events: [], judgments: [], priority: () => priorityOf(db), admitted: () => admittedOf(db) };
     await mutate(s, a, backend, reviewImport, outbox, onChatText);
-    queueMediaJobs(s, before);
     db.exec('BEGIN IMMEDIATE');
     try {
+      queueMedia(s, before);
       if (
         !db
           .prepare('UPDATE journal SET body=?,revision=revision+1 WHERE id=1 AND revision=?')
@@ -1802,6 +1860,18 @@ export function openJournal(path: string, backend: Backend = engine) {
         throw new JournalConflict('Another session updated the journal. Please retry.');
       db.prepare('INSERT INTO receipts VALUES (?,?)').run(a.id, hash);
       record(outbox);
+      if (activity) {
+        const intake = s.wordIntakes.find(item => item.requestId === a.id);
+        if (intake?.status === 'pending') activity.link('Word intake', intake.requestId);
+        if (intake?.status === 'ready') activityOutcome('Reused');
+        for (const event of outbox.events) {
+          if (productionKinds.includes(event.kind) &&
+              (event.kind !== 'answer' || event.context?.kind === 'open')) activity.link('Language notice', event.id);
+        }
+        for (const slot of openSlots(s.practice)) {
+          if (!priorSlots.has(slot)) activity.link('Prepare practice card', slot);
+        }
+      }
       syncTargets(db, s);
       db.exec('COMMIT');
     } catch (error) {
@@ -1840,7 +1910,7 @@ export function openJournal(path: string, backend: Backend = engine) {
     priority: (now?: Date) => priorityOf(db, now),
     close() {
       closed = true;
-      db.close();
+      if (!activity) db.close();
     },
   };
 }
