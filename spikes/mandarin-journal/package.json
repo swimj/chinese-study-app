@@ -17,7 +17,9 @@
     "journal:media-report": "node media-report.ts",
     "check": "tsc --noEmit",
     "test": "node --test *.test.ts *.test.mjs lookup-experiment/*.test.ts",
-    "lookup:eval": "node lookup-experiment/run.ts"
+    "lookup:eval": "node lookup-experiment/run.ts",
+    "journal:priority": "node priority-report.ts",
+    "journal:import-hosted": "node hosted-import.ts"
   },
   "dependencies": {
     "@openai/agents": "0.22.0",

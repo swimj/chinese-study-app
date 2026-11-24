@@ -6,12 +6,13 @@ import { practiceGen } from './practice.ts';
 import { reflect } from './reflect.ts';
 import { wordIntake } from './word-intake.ts';
 import { mediaConsider } from './media.ts';
+import { notice } from './notice.ts';
 
 import { voice } from './core.ts';
 export { voice, type TutorAction } from './core.ts';
 export type { Reflection } from './reflect.ts';
 
-export const situations = { ask, capture, wordIntake, reflect, feedback, practiceGen, mediaConsider };
+export const situations = { ask, capture, wordIntake, reflect, feedback, practiceGen, mediaConsider, notice };
 export type SituationName = keyof typeof situations;
 export type SituationOutput<K extends SituationName> = ReturnType<(typeof situations)[K]['validate']>;
 
@@ -32,6 +33,8 @@ export function situationFor(trigger: TurnContext['trigger']): SituationName {
       return 'wordIntake';
     case 'mediaConsider':
       return 'mediaConsider';
+    case 'notice':
+      return 'notice';
   }
 }
 
@@ -48,6 +51,7 @@ const validators: { [K in SituationName]: (result: TutorResult, input: TurnConte
   feedback: feedback.validate,
   practiceGen: practiceGen.validate,
   mediaConsider: mediaConsider.validate,
+  notice: notice.validate,
 };
 
 /** Validates a live or demo tutor result against one situation's contract. */

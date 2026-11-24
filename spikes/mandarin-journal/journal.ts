@@ -35,6 +35,12 @@ import { withMediaDefaults, type MediaState } from './media/model.ts';
 import { anchorIds, applyOutcome, DAILY_LIMIT, finishJob, mediaRequestFor, queueMediaJobs, ranToday } from './media/job.ts';
 import { OfflineMediaUnavailable } from './media/demo.ts';
 import type { MediaOutcome } from './situations/media.ts';
+import type { NoticeRequest } from './situations/notice.ts';
+import {
+  addJudgment, appendEvent, createRecordTables, events as recordEvents, formsIn, judgedToday, judgments as recordJudgments,
+  meta, nextUnjudged, setMeta, targets as recordTargets, upsertTarget, type NewEvent, type JudgmentRecord,
+} from './record.ts';
+import { rank, signalsFrom, type ChoiceJudgment, type Ranked } from './priority.ts';
 
 const text = z.string().trim().min(1).max(8000);
 const source = z.string().max(12000);
@@ -136,11 +142,14 @@ type Reflection = {
   takeaways: { annotationId: string; messageId: string; quote: string; text: string }[];
   end: number;
 };
-type Attempt = { id: string; card: Card; answer: string; result: Result };
+type Attempt = { id: string; card: QueuedCard; answer: string; result: Result };
 type Activity = { id: string; at: string; text: string; source: string; reference?: Reference };
 // rationale is the tutor's reason for choosing this exercise. It stays with the
 // card and is never treated as evidence about the learner.
-type QueuedCard = Card & { title?: string; introduction?: string; rationale?: string };
+// targets are the forms the journal asked this card to practice, when it asked for any.
+type QueuedCard = Card & { title?: string; introduction?: string; rationale?: string; targets?: string[] };
+/** What an action records beside the journal: events, and rule judgments made on the spot. */
+type Outbox = { events: NewEvent[]; judgments: JudgmentRecord[]; priority: () => Ranked[] };
 type Item = { word?: WordContent; id: string; kind: string; title: string; detail: string; source: string; reference?: Reference };
 type Result = { correct: boolean | null; feedback: string };
 type Practice = { started?: boolean; mode: string; cards: QueuedCard[]; index: number; result: Result | null };
@@ -181,6 +190,8 @@ const initial = (): State => ({
   mediaJobs: [],
   settings: { pictures: 'normal' },
 });
+/** Model reads of the learner's language per UTC day. */
+const NOTICE_DAILY_LIMIT = 150;
 export const live = !!process.env.OPENAI_API_KEY && process.env.JOURNAL_DEMO !== '1';
 type Backend = {
   importReading?: (url: URL) => ReturnType<typeof importArticle>;
@@ -357,7 +368,23 @@ function practiceSources(s: State, mode: string): string[] {
     ),
   ];
 }
-async function startPractice(s: State, mode: string, backend: Backend, continuing = false) {
+/**
+ * Daily mix asks for exercises on the highest-priority targets first, then
+ * falls back to recent journal material. Targets already in play are skipped.
+ */
+function prioritySources(s: State, ranked: Ranked[]): { source: string; target: Ranked['target'] }[] {
+  const inPlay = new Set([...s.pending, ...s.practice.cards.slice(s.practice.index)].flatMap((c) => c.targets ?? []));
+  return ranked
+    .filter((r) => !inPlay.has(r.target.form))
+    .slice(0, 6)
+    .map((r) => ({
+      target: r.target,
+      source:
+        'Target: ' + r.target.form + (r.target.pinyin ? ' (' + r.target.pinyin + ')' : '') +
+        (r.target.gloss ? ' · ' + r.target.gloss : '') + '\nWhy now: ' + r.reasons.join('; '),
+    }));
+}
+async function startPractice(s: State, mode: string, backend: Backend, continuing: boolean, outbox: Outbox) {
   const p = s.practice;
   if (p.mode === mode && p.index < p.cards.length) return;
   // Switching modes returns unattempted personal cards to the queue.
@@ -375,25 +402,33 @@ async function startPractice(s: State, mode: string, backend: Backend, continuin
       .map((a) => a.card);
   } else {
     cards = s.pending.splice(0, 3);
-    const sources = practiceSources(s, mode);
+    const material = practiceSources(s, mode).map((source) => ({ source, target: undefined }));
+    const prioritized = mode === 'Daily mix' ? prioritySources(s, outbox.priority()) : [];
+    const sources: { source: string; target?: Ranked['target'] }[] = [...prioritized, ...material];
     // The first visit opens quickly. Each explicit continuation can draw on more journal material.
     const budget = continuing ? 3 : cards.length ? 0 : 1;
     const previousPrompts = s.attempts.slice(-24).map((a) => a.card.prompt);
     for (let n = 0; n < budget && cards.length < 3 && sources.length; n++) {
-      const index = continuing ? (s.attempts.length + n) % sources.length : 0;
+      // Priority targets go in order; plain material rotates as before.
+      const index = prioritized.length ? n % sources.length : continuing ? (s.attempts.length + n) % sources.length : 0;
+      const { source, target } = sources[index];
       const ctx = context(
         s,
         'practice',
         mode === 'Build vocabulary'
           ? 'Teach one useful word or sense from the supplied material.'
-          : 'Offer a fresh, relevant exercise if this material supports one.',
+          : target
+            ? 'Offer a fresh exercise that practices the expression named in the supplied source. The learner sees only the exercise, so never call it “the target”.'
+            : 'Offer a fresh, relevant exercise if this material supports one.',
         mode,
-        sources[index],
+        source,
       );
       const savedWord = s.saved.find(
-        (item) => item.kind === 'Word' && item.title + ' · ' + item.detail === ctx.source,
+        (item) => item.kind === 'Word' && (item.title + ' · ' + item.detail === ctx.source || item.title === target?.form),
       );
       if (savedWord?.word) ctx.practiceWord = { title: savedWord.title, ...savedWord.word };
+      else if (target?.gloss)
+        ctx.practiceWord = { title: target.form, pinyin: target.pinyin ?? '', meaning: target.gloss, example: '', translation: '' };
       ctx.previousPrompts = [...previousPrompts, ...cards.map((c) => c.prompt)];
       try {
         const response = await consult(backend, 'practiceGen', ctx);
@@ -402,6 +437,7 @@ async function startPractice(s: State, mode: string, backend: Backend, continuin
         if (!fresh || ctx.previousPrompts.includes(fresh.prompt) || s.pending.some((c) => c.prompt === fresh.prompt))
           continue;
         if (mode === 'Build vocabulary') fresh.introduction = response.reply.trim();
+        if (target) fresh.targets = [target.form];
         cards.push(fresh);
       } catch {
         s.notice = 'The tutor could not prepare more practice this time.';
@@ -502,6 +538,7 @@ async function postAnnotation(
   s: State,
   action: Extract<Action, { type: 'annotationPost' }>,
   backend: Backend,
+  outbox: Outbox,
 ) {
   const { anchor, annotationId, message, askTutor } = action;
   if (Boolean(anchor) === Boolean(annotationId))
@@ -531,6 +568,10 @@ async function postAnnotation(
     thread.messages.push({ role: 'user', text: message, at });
   }
   if (anchor) s.annotationThreads.push(thread);
+  outbox.events.push({
+    id: action.id, at, kind: 'annotation', surface: thread.anchor.surface, ref: thread.id,
+    text: message, context: { respondingTo: thread.anchor.quote },
+  });
   const activity = askTutor
     ? 'Discussed a selection in '
     : anchor
@@ -578,7 +619,7 @@ function isReadingLink(text: string) {
 }
 
 async function handleHomeCapture(
-  s: State, backend: Backend, a: { id: string; text: string; context?: string }, followUpTo?: Message,
+  s: State, backend: Backend, a: { id: string; text: string; context?: string }, outbox: Outbox, followUpTo?: Message,
 ) {
   const original = followUpTo?.captureOriginId
     ? s.tutor.find(turn => turn.role === 'user' && turn.id === followUpTo.captureOriginId)
@@ -601,6 +642,7 @@ async function handleHomeCapture(
   if (route.kind === 'word') {
     const wordContext = [source, original?.text, a.text === route.target ? '' : a.text].filter(Boolean).join('\n');
     addWord(s.wordIntakes, s.saved, { type: 'addWord', id: a.id, text: route.target, context: wordContext });
+    outbox.events.push({ id: a.id, at: new Date().toISOString(), kind: 'addWord', surface: 'home', text: route.target, context: { context: wordContext, sent: a.text } });
     const ready = s.wordIntakes.at(-1)?.status === 'ready';
     s.tutor.push(learner, { role: 'assistant', text: ready
       ? route.target + ' is already in your vocabulary.'
@@ -610,16 +652,44 @@ async function handleHomeCapture(
   const askContext: TurnContext = { ...ctx, trigger: 'ask' };
   const response = await consult(backend, 'ask', askContext);
   s.tutor.push(learner, { role: 'assistant', text: response.reply, source });
+  outbox.events.push({
+    id: a.id, at: new Date().toISOString(), kind: 'ask', surface: 'home', text: a.text,
+    context: { respondingTo: source.slice(0, 600) || undefined, tutorSaid: response.reply },
+  });
   applyAction(s, response.action, askContext);
 }
 
-async function mutate(s: State, a: Action, backend: Backend, reviewImport: ReturnType<typeof createImportReviewer>) {
+function answerEvent(attempt: Attempt, at: string | null): NewEvent {
+  const c = attempt.card;
+  return {
+    id: attempt.id, at, kind: 'answer', surface: 'practice', ref: c.id, text: attempt.answer,
+    context: {
+      kind: c.kind, prompt: c.prompt, reference: c.answer, explanation: c.explanation,
+      correct: attempt.result.correct, tutorSaid: attempt.result.feedback,
+    },
+    targets: c.targets ?? [],
+  };
+}
+function choiceJudgment(eventId: string, correct: boolean, targets: string[], at: string): JudgmentRecord {
+  const body: ChoiceJudgment = { correct, targets };
+  return { id: randomUUID(), eventId, at, source: 'rule:choice-v1', body };
+}
+
+async function mutate(
+  s: State,
+  a: Action,
+  backend: Backend,
+  reviewImport: ReturnType<typeof createImportReviewer>,
+  outbox: Outbox,
+) {
   s.notice = '';
+  const now = new Date().toISOString();
   switch (a.type) {
     case 'capture':
       if (isReadingLink(a.text)) return;
-      return handleHomeCapture(s, backend, a);
+      return handleHomeCapture(s, backend, a, outbox);
     case 'addWord':
+      outbox.events.push({ id: a.id, at: now, kind: 'addWord', surface: 'home', text: a.text, context: { context: a.context } });
       return addWord(s.wordIntakes, s.saved, a);
     case 'clarifyWord':
     case 'retryWord':
@@ -693,6 +763,10 @@ async function mutate(s: State, a: Action, backend: Backend, reviewImport: Retur
       thread.capturedAt ??= at;
       if (a.note) thread.messages.push({ role: 'user', text: a.note, at });
       if (!existing) s.annotationThreads.push(thread);
+      if (!existing?.capturedAt)
+        outbox.events.push({ id: a.id, at, kind: 'capture', surface: 'read', ref: thread.id, text: anchor.quote });
+      if (a.note)
+        outbox.events.push({ id: a.id + '-note', at, kind: 'annotation', surface: 'read', ref: thread.id, text: a.note, context: { respondingTo: anchor.quote } });
       const reference = annotationReference(s, thread);
       logActivity(s, activity + reference.label, reference.label, reference);
       return;
@@ -703,10 +777,11 @@ async function mutate(s: State, a: Action, backend: Backend, reviewImport: Retur
         s,
         { ...a, type: 'annotationPost', anchor, message: a.text, askTutor: false },
         backend,
+        outbox,
       );
     }
     case 'annotationPost':
-      return postAnnotation(s, a, backend);
+      return postAnnotation(s, a, backend, outbox);
     case 'chat':
     case 'reflect': {
       const thread = activeThread(s);
@@ -717,6 +792,10 @@ async function mutate(s: State, a: Action, backend: Backend, reviewImport: Retur
       const discussion = imported ? readingSource(s.reading, imported.id) : undefined;
       if (a.type === 'reflect') return reflect(s, backend, discussion ?? a.source);
       const reply = await backend.friend(context(s, 'ask', a.message, 'chat', discussion ?? source));
+      outbox.events.push({
+        id: a.id, at: now, kind: 'chat', surface: 'chat', ref: thread.id, text: a.message,
+        context: { topic: thread.title, respondingTo: thread.turns.findLast((m) => m.role === 'assistant')?.text },
+      });
       thread.turns.push(
         { id: a.id, role: 'user', text: a.message, source: a.source },
         { id: randomUUID(), role: 'assistant', text: reply, source: a.source },
@@ -740,7 +819,7 @@ async function mutate(s: State, a: Action, backend: Backend, reviewImport: Retur
         const original = s.tutor.find(m => m.role === 'user' && m.id === a.captureQuestionId);
         if (!question || question.captureResolved || !original)
           throw new JournalConflict('This tutor question is no longer waiting for a reply.');
-        await handleHomeCapture(s, backend, { id: a.id, text: a.message }, original);
+        await handleHomeCapture(s, backend, { id: a.id, text: a.message }, outbox, original);
         question.captureResolved = true;
         return;
       }
@@ -748,6 +827,10 @@ async function mutate(s: State, a: Action, backend: Backend, reviewImport: Retur
       const ctx = context(s, 'ask', a.message, a.surface, anchor?.source ?? a.source);
       if (anchor?.reference.kind === 'reading') ctx.readingContext = anchor.source;
       const response = await consult(backend, 'ask', ctx);
+      outbox.events.push({
+        id: a.id, at: now, kind: 'ask', surface: a.surface, ref: a.referenceId, text: a.message,
+        context: { respondingTo: ctx.source.slice(0, 600) || undefined, tutorSaid: response.reply },
+      });
       s.tutor.push(
         { role: 'user', text: a.message, source: ctx.source, reference: anchor?.reference },
         { role: 'assistant', text: response.reply, source: ctx.source, reference: anchor?.reference },
@@ -769,7 +852,7 @@ async function mutate(s: State, a: Action, backend: Backend, reviewImport: Retur
       return;
     }
     case 'practice':
-      return startPractice(s, a.mode, backend, a.continue);
+      return startPractice(s, a.mode, backend, !!a.continue, outbox);
     case 'mediaReaction': {
       const item = s.media.find((m) => m.id === a.mediaId);
       if (!item) throw new JournalConflict('This picture is no longer on the board.');
@@ -828,6 +911,9 @@ async function mutate(s: State, a: Action, backend: Backend, reviewImport: Retur
       }
       p.result = result;
       s.attempts.push({ id: a.id, card: c, answer: a.answer, result });
+      outbox.events.push(answerEvent(s.attempts[s.attempts.length - 1], now));
+      if (c.kind === 'choice' && c.targets?.length)
+        outbox.judgments.push(choiceJudgment(a.id, correct === true, c.targets, now));
       return;
     }
   }
@@ -922,6 +1008,54 @@ function upgrade(body: string): State {
 }
 
 /**
+ * Earlier journal activity as events. Older shapes kept no time for most of it,
+ * so those events carry none. Choice attempts get their rule judgment; the
+ * model never reads converted history.
+ */
+function convertHistory(s: State): Outbox {
+  const out: Outbox = { events: [], judgments: [], priority: () => [] };
+  for (const thread of s.threads)
+    thread.turns.forEach((m, i) => {
+      if (m.role !== 'user') return;
+      const respondingTo = thread.turns.slice(0, i).findLast((t) => t.role === 'assistant')?.text;
+      out.events.push({ id: 'history-chat-' + m.id, at: null, kind: 'chat', surface: 'chat', ref: thread.id, text: m.text, context: { topic: thread.title, respondingTo } });
+    });
+  s.tutor.forEach((m, i) => {
+    if (m.role === 'user') out.events.push({ id: 'history-ask-' + i, at: null, kind: 'ask', surface: 'tutor', text: m.text, context: { respondingTo: m.source?.slice(0, 600) } });
+  });
+  for (const t of s.annotationThreads) {
+    if (t.capturedAt)
+      out.events.push({ id: 'history-capture-' + t.id, at: t.capturedAt, kind: 'capture', surface: 'read', ref: t.id, text: t.anchor.quote });
+    t.messages.forEach((m, i) => {
+      if (m.role === 'user')
+        out.events.push({ id: 'history-note-' + t.id + '-' + i, at: m.at ?? null, kind: 'annotation', surface: t.anchor.surface, ref: t.id, text: m.text, context: { respondingTo: t.anchor.quote } });
+    });
+  }
+  for (const attempt of s.attempts) {
+    out.events.push(answerEvent(attempt, null));
+    if (attempt.card.kind === 'choice' && attempt.card.targets?.length)
+      out.judgments.push(choiceJudgment(attempt.id, attempt.result.correct === true, attempt.card.targets, new Date().toISOString()));
+  }
+  for (const intake of s.wordIntakes)
+    out.events.push({ id: 'history-word-' + intake.id, at: null, kind: 'addWord', surface: 'home', text: intake.text, context: { context: intake.context } });
+  return out;
+}
+
+/** Saved words are targets the learner chose. */
+function syncTargets(db: DatabaseSync, s: State) {
+  const at = new Date().toISOString();
+  for (const item of s.saved)
+    if (item.kind === 'Word')
+      upsertTarget(db, { form: item.title, gloss: item.word?.meaning ?? item.detail, pinyin: item.word?.pinyin ?? null, origin: 'saved', at });
+}
+
+/** The current priority ranking over a journal database. */
+export function priorityOf(db: DatabaseSync, now = new Date()) {
+  const byId = new Map(recordEvents(db).map((e) => [e.id, e]));
+  return rank(recordTargets(db), signalsFrom(recordJudgments(db), byId), now);
+}
+
+/**
  * Reads a journal file without opening it for work: no background jobs, no
  * writes. For reports over a live journal or a copy.
  */
@@ -948,6 +1082,28 @@ export function openJournal(path: string, backend: Backend = engine) {
     const row = db.prepare('SELECT revision,body FROM journal WHERE id=1').get()!;
     return { revision: Number(row.revision), s: upgrade(String(row.body)) };
   }
+  function record(outbox: Pick<Outbox, 'events' | 'judgments'>) {
+    for (const e of outbox.events) appendEvent(db, e);
+    for (const j of outbox.judgments) addJudgment(db, j);
+  }
+  createRecordTables(db);
+  // The first open with a record converts earlier activity. Only events from
+  // then on are read by the model.
+  if (!meta(db, 'judge_from')) {
+    db.exec('BEGIN IMMEDIATE');
+    try {
+      const { s } = read();
+      record(convertHistory(s));
+      syncTargets(db, s);
+      setMeta(db, 'judge_from', new Date().toISOString());
+      db.exec('COMMIT');
+    } catch (error) {
+      db.exec('ROLLBACK');
+      throw error;
+    }
+  }
+  const judgeFrom = meta(db, 'judge_from')!;
+  const noticeSource = backend.mode === 'live' ? 'model:' + (process.env.JOURNAL_MODEL || 'gpt-6.2-sol') + '/notice-v1' : 'demo:notice-v1';
   let tail: Promise<unknown> = Promise.resolve();
   function enqueue<T>(operation: () => T | Promise<T>): Promise<T> {
     const result = tail.then(operation);
@@ -993,6 +1149,7 @@ export function openJournal(path: string, backend: Backend = engine) {
                 const before = anchorIds(latest);
                 finishWord(intake, latest.saved, decision);
                 queueMediaJobs(latest, before);
+                syncTargets(db, latest);
               } catch {
                 failure = 'The tutor returned an incomplete word. Try again.';
               }
@@ -1063,6 +1220,53 @@ export function openJournal(path: string, backend: Backend = engine) {
       });
     }
   }
+  // Reads each new piece of the learner's language, newest first, within a daily
+  // limit. A failed read is recorded so it is not retried forever.
+  async function prepareNotices() {
+    while (!closed) {
+      if (backend.mode === 'live' && judgedToday(db) >= NOTICE_DAILY_LIMIT) return;
+      const event = nextUnjudged(db, noticeSource, judgeFrom);
+      if (!event) return;
+      const { s } = read();
+      const forms = recordTargets(db).map((t) => t.form);
+      const c = event.context as { respondingTo?: string; tutorSaid?: string; kind?: string; prompt?: string; reference?: string; explanation?: string };
+      const request: NoticeRequest = {
+        kind: event.kind as NoticeRequest['kind'],
+        text: event.text,
+        respondingTo: c.respondingTo,
+        tutorSaid: c.tutorSaid || undefined,
+        exercise: event.kind === 'answer' ? { prompt: c.prompt ?? '', reference: c.reference ?? '', explanation: c.explanation ?? '' } : undefined,
+        intended: event.targets,
+        knownInText: formsIn(event.text, forms),
+      };
+      const ctx = context(s, 'notice', event.text, event.surface, '');
+      ctx.notice = request;
+      let body: unknown;
+      try {
+        body = await consult(backend, 'notice', ctx);
+      } catch (error) {
+        body = { failed: String((error as Error)?.message ?? error).slice(0, 200) };
+      }
+      await enqueue(() => {
+        if (closed) return;
+        db.exec('BEGIN IMMEDIATE');
+        try {
+          const at = new Date().toISOString();
+          addJudgment(db, { id: randomUUID(), eventId: event.id, at, source: noticeSource, body });
+          const notice = body as Partial<SituationOutput<'notice'>>;
+          // Needs and flawed uses become targets; a natural use only counts toward one that exists.
+          for (const need of notice.needs ?? [])
+            upsertTarget(db, { form: need.form, kind: need.kind, gloss: need.gloss, origin: 'noticed', at });
+          for (const use of notice.uses ?? [])
+            if (use.quality === 'flawed') upsertTarget(db, { form: use.form, kind: use.kind, origin: 'noticed', at });
+          db.exec('COMMIT');
+        } catch (error) {
+          db.exec('ROLLBACK');
+          throw error;
+        }
+      });
+    }
+  }
   // Model work runs outside the user action queue; see prepareWords.
   function worker(task: () => Promise<void>) {
     let running = false;
@@ -1091,6 +1295,7 @@ export function openJournal(path: string, backend: Backend = engine) {
   }
   const words = worker(prepareWords);
   const media = worker(prepareMedia);
+  const notices = worker(prepareNotices);
   const wakeWords = words.wake;
   const wakeMedia = media.wake;
 
@@ -1114,7 +1319,8 @@ export function openJournal(path: string, backend: Backend = engine) {
       return result();
     }
     const before = anchorIds(s);
-    await mutate(s, a, backend, reviewImport);
+    const outbox: Outbox = { events: [], judgments: [], priority: () => priorityOf(db) };
+    await mutate(s, a, backend, reviewImport, outbox);
     queueMediaJobs(s, before);
     db.exec('BEGIN IMMEDIATE');
     try {
@@ -1125,6 +1331,8 @@ export function openJournal(path: string, backend: Backend = engine) {
       )
         throw new JournalConflict('Another session updated the journal. Please retry.');
       db.prepare('INSERT INTO receipts VALUES (?,?)').run(a.id, hash);
+      record(outbox);
+      syncTargets(db, s);
       db.exec('COMMIT');
     } catch (error) {
       db.exec('ROLLBACK');
@@ -1132,17 +1340,20 @@ export function openJournal(path: string, backend: Backend = engine) {
     }
     if (s.wordIntakes.some(item => item.status === 'pending')) wakeWords();
     if (s.mediaJobs.some((job) => job.status === 'pending')) wakeMedia();
+    if (outbox.events.length) notices.wake();
     return result();
   }
   wakeWords();
   wakeMedia();
+  notices.wake();
   return {
     get: () => publicState(read().s, backend.mode),
     /** Whether background word or media work is pending or running. */
     busy() {
       const { s } = read();
       return (
-        words.busy() || media.busy() ||
+        words.busy() || media.busy() || notices.busy() ||
+        (!!nextUnjudged(db, noticeSource, judgeFrom) && (backend.mode !== 'live' || judgedToday(db) < NOTICE_DAILY_LIMIT)) ||
         s.wordIntakes.some((item) => item.status === 'pending') ||
         (s.mediaJobs.some((job) => job.status === 'pending') && ranToday(s) < DAILY_LIMIT && s.settings.pictures !== 'off')
       );
@@ -1153,6 +1364,8 @@ export function openJournal(path: string, backend: Backend = engine) {
     act(a: Action) {
       return enqueue(() => perform(a));
     },
+    /** What is worth practicing next, with reasons. */
+    priority: (now?: Date) => priorityOf(db, now),
     close() {
       closed = true;
       db.close();

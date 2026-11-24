@@ -47,6 +47,14 @@ Local SQLite stores a single learner’s journal and idempotency receipts. Threa
 
 The first personalized round can start with one exercise or previously queued cards. Continuing can generate up to three more at a time. Open responses receive feedback without a correctness grade. The journal has no mastery transitions or timed SRS scheduler.
 
+### The record and priority
+
+Beside the journal state, the same SQLite file keeps a record (`record.ts`): **events** for what the learner did, in their own words (chat lines, questions to the tutor, notes, saved passages, added words, exercise answers); **judgments** that interpret events; and **targets**, the words, expressions and constructions being trained. Events commit with the action that produced them. The first open with this version converts earlier activity into events without times.
+
+A background job reads each new chat line, question, note and open answer once (`situations/notice.ts`, never shown to the learner). It records expressions used naturally or with a flaw, needs where the learner reached for something they lacked, and, for an exercise, whether each intended expression was used or avoided. It receives what the tutor already said about the text and stays consistent with it. Choice answers are judged by rule. Converted history is never sent to the model. Each judgment names its source, so judgments can be rerun; only the newest reading of an event counts.
+
+`priority.ts` (version 0) ranks targets from the record. A need, flaw, miss or avoidance raises a target, fading by half every two weeks; two clean days after the latest weakness retire it. Saved words not yet practiced rank next. Words brought in from the hosted app contribute at most 0.3 (a fresh need scores 3), ordered by due date, miss rate, recency of the last miss and whether they were in the stash. Practice already done today waits. Daily mix asks for exercises on the top targets first, then falls back to recent journal material; each card records the expression it was asked to practice. `npm run journal:priority` prints the ranking with reasons.
+
 ```sh
 npm run check
 npm test

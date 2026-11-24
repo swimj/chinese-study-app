@@ -1,6 +1,7 @@
 import { demoCapture, requestsCaptureNote } from './situations/capture.ts';
 import { demoIntake, demoStashGlosses } from './word-intake-demo.ts';
 import { demoMedia } from './media/demo.ts';
+import { demoNotice } from './situations/notice.ts';
 import type { TurnContext, TutorResult } from './tutor.ts';
 
 export type Card = {
@@ -401,6 +402,8 @@ export function demoTutor(input: TurnContext): TutorResult {
       return { capture: demoCapture(input) };
     case 'mediaConsider':
       return demoMedia(input);
+    case 'notice':
+      return { notice: demoNotice(input) };
     case 'wordIntake':
       if (!input.wordIntake) throw new Error('Missing word intake');
       return { reply: '', action: null, wordDecision: demoIntake(input.wordIntake) };

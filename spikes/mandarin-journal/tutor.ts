@@ -3,12 +3,14 @@ import { z } from 'zod';
 import type { CaptureDecision } from './situations/capture.ts';
 import type { WordDecision, WordRequest, WordContent } from './word-intake.ts';
 import type { MediaConsideration, MediaRequest } from './situations/media.ts';
+import type { Notice, NoticeRequest } from './situations/notice.ts';
 import { instructionsFor, situationFor, situations, type Reflection, type SituationName, type TutorAction } from './situations/index.ts';
 
 export interface TurnContext {
-  trigger: 'capture' | 'ask' | 'miss' | 'practice' | 'reflect' | 'answer' | 'wordIntake' | 'mediaConsider';
+  trigger: 'capture' | 'ask' | 'miss' | 'practice' | 'reflect' | 'answer' | 'wordIntake' | 'mediaConsider' | 'notice';
   captureFollowUp?: { text: string; question: string; previousReply?: string };
   wordIntake?: WordRequest;
+  notice?: NoticeRequest;
   media?: MediaRequest;
   practiceWord?: { title: string } & WordContent;
   message: string;
@@ -39,6 +41,7 @@ export type TutorResult = {
   reflection?: Reflection | null;
   observation?: string | null;
   media?: MediaConsideration | null;
+  notice?: Notice | null;
 };
 
 const recallInput = z.object({
