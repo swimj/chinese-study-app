@@ -464,6 +464,9 @@ function attemptContent(attempt, card, result) {
     surface: 'practice', referenceId: attempt.id, label: 'your practice answer',
     source: [card.prompt, attempt.answer, result.feedback].join('\n'),
   }), 'text-button'));
+  // A bad exercise counts neither for nor against the learner.
+  if (attempt?.flagged) box.append(node('p', 'Flagged as a bad exercise. It won’t count.', 'small flagged'));
+  else if (attempt) box.append(button('Flag as a bad exercise', () => submit({ type: 'flagExercise', attemptId: attempt.id }), 'text-button'));
   return box;
 }
 function renderSessionProgress(session) {
@@ -501,8 +504,8 @@ function renderSessionEnd(body, mode, done, session) {
   const end = node('section', undefined, 'session-end');
   const heading = node('h2', failed ? 'Practice paused' : exhausted && !session.ended ? 'Nothing more to practice for now' : 'Session complete');
   end.append(heading);
-  if (session.finished) {
-    const count = session.finished === 1 ? '1 exercise' : session.finished + ' exercises';
+  if (session.exercises) {
+    const count = session.exercises === 1 ? '1 exercise' : session.exercises + ' exercises';
     end.append(node('p', count + ' · ' + session.spentMinutes + ' min', 'sub'));
   }
   if (!exhausted) {
@@ -578,6 +581,10 @@ function renderPractice() {
     settleFocus(renderSessionEnd(body, mode, done, session));
     return;
   }
+  if (card.kind === 'lesson') {
+    renderLesson(body, card, hadFocus);
+    return;
+  }
   // A Continue that ends the session says so.
   const exercise = renderExercise(card, result, attempt, session?.last ? 'Finish session →' : 'Continue →');
   const focusExercise = () => settleFocus(exercise.querySelector(result ? 'button.primary' : '.recall input') ?? exercise.querySelector('.prompt'));
@@ -613,6 +620,28 @@ function renderPractice() {
     return;
   }
   // Opening a taught card puts Continue under the learner's hand, unless they are typing elsewhere.
+  const active = document.activeElement;
+  if (teaching.control && page === 'practice' && (hadFocus || !active || active === document.body || body.contains(active)))
+    teaching.control.focus({ preventScroll: true });
+}
+// A lesson teaches in beats and asks nothing: its last Continue moves the session on.
+function renderLesson(body, card, hadFocus) {
+  const beats = card.teaching ?? [];
+  const step = ui.teaching?.id === card.id ? ui.teaching : null;
+  const teaching = createTeaching(beats, {
+    shown: step?.shown,
+    onAdvance(shown) {
+      ui.teaching = { id: card.id, shown };
+      persist();
+    },
+    async onDone() {
+      if (await submit({ type: 'next', cardId: card.id })) return;
+      // The lesson stays in front of the learner when moving on fails.
+      renderedPractice = null;
+      renderPractice();
+    },
+  });
+  body.append(teaching.element);
   const active = document.activeElement;
   if (teaching.control && page === 'practice' && (hadFocus || !active || active === document.body || body.contains(active)))
     teaching.control.focus({ preventScroll: true });

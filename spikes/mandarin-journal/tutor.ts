@@ -84,6 +84,14 @@ const recall = tool<typeof recallInput, TurnContext>({
 });
 
 const model = process.env.JOURNAL_MODEL || 'gpt-6.2-sol';
+/**
+ * Teaching runs on the model and effort the hosted app's introductions used, which
+ * taught well at a fraction of the tutor's cost. JOURNAL_TEACH_MODEL overrides it;
+ * JOURNAL_MODEL stays the model for every other situation.
+ */
+export const TEACH_MODEL = process.env.JOURNAL_TEACH_MODEL || 'gpt-6-luna';
+const modelFor = (name: SituationName) =>
+  name === 'teach' ? { model: TEACH_MODEL, modelSettings: { store: false, reasoning: { effort: 'high' as const } } } : { model, modelSettings: { store: false } };
 const runner = new Runner({ tracingDisabled: true });
 const agents = new Map<SituationName, Agent<TurnContext, z.ZodObject>>();
 function agentFor(name: SituationName) {
@@ -92,8 +100,7 @@ function agentFor(name: SituationName) {
     const situation: { tools?: Tool<TurnContext>[]; standalone?: boolean } = situations[name];
     agent = new Agent<TurnContext, z.ZodObject>({
       name: situation.standalone ? 'Journal back office' : 'Journal tutor',
-      model,
-      modelSettings: { store: false },
+      ...modelFor(name),
       tools: situation.tools ?? [recall],
       outputType: situations[name].schema,
       instructions: instructionsFor(name),
@@ -109,7 +116,8 @@ export async function runSituation(name: SituationName, input: TurnContext): Pro
   const result = await runner.run(agentFor(name), JSON.stringify(situation.buildInput(input)), {
     context: input,
     maxTurns: 5,
-    signal: AbortSignal.timeout(60_000),
+    // High-effort teaching can think for a while.
+    signal: AbortSignal.timeout(name === 'teach' ? 120_000 : 60_000),
   });
   if (!result.finalOutput) throw new Error('Tutor returned no completed turn');
   return situation.schema.parse(result.finalOutput);

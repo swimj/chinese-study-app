@@ -24,7 +24,8 @@ import {
 } from './annotations.ts';
 export { JournalConflict } from './annotations.ts';
 import { catalogue, demoFriend, demoTutor, type Card } from './practice.ts';
-import { teachingFor, type Beat, type TeachTarget } from './teaching.ts';
+import type { Beat, TeachTarget } from './teaching.ts';
+import { assignPolicy } from './lifecycle.ts';
 import { friendTurn, tutorTurn, type TurnContext, type TutorResult } from './tutor.ts';
 import { validateTurn, type Reflection as TutorReflection, type SituationName, type SituationOutput, type TutorAction } from './situations/index.ts';
 
@@ -44,7 +45,8 @@ import {
 import { rank, signalsFrom, type ChoiceJudgment, type Ranked } from './priority.ts';
 import {
   extend, finishCard, freshAllowed, MAX_ATTEMPTS, MAX_FAILURES, needsCard, newSession, noteFailure, resume, stale,
-  cardSeconds, cardTime, formsFor, type CardKind, type Purpose, type Session,
+  cardSeconds, currentCard, dueAllowed, finishesSession, formsFor, openRecalls, pendingRecalls, recallOf, wrappingUp,
+  type CardKind, type Purpose, type Session, type Stage,
 } from './session.ts';
 
 const text = z.string().trim().min(1).max(8000);
@@ -118,6 +120,7 @@ export const actionSchema = z.discriminatedUnion('type', [
     ),
   z.object({ id, type: z.literal('answer'), answer: text, cardId: text }),
   z.object({ id, type: z.literal('next'), cardId: text }),
+  z.object({ id, type: z.literal('flagExercise'), attemptId: text }),
   z.object({ id, type: z.literal('saveReading'), title: text, detail: text, source }),
   z.object({ id, type: z.literal('mediaReaction'), mediaId: text, reaction: z.enum(['keep', 'notForMe']) }),
   z.object({ id, type: z.literal('settings'), pictures: z.enum(['off', 'quiet', 'normal']) }),
@@ -149,15 +152,22 @@ type Reflection = {
   takeaways: { annotationId: string; messageId: string; quote: string; text: string }[];
   end: number;
 };
-type Attempt = { id: string; card: QueuedCard; answer: string; result: Result };
+/** flagged: when the learner marked the exercise as bad; it then counts for nothing. */
+type Attempt = { id: string; card: QueuedCard; answer: string; result: Result; flagged?: string };
 type Activity = { id: string; at: string; text: string; source: string; reference?: Reference };
 // rationale is the tutor's reason for choosing this exercise. It stays with the
 // card and is never treated as evidence about the learner.
 // targets are the forms the journal asked this card to practice, when it asked for any.
 // purpose is why the journal asked for it; queued and catalogue cards have none.
-// teaching is the beat sequence that introduces a never-studied target; introduction
-// is the practice generator's own paragraph, shown when teaching is unavailable.
-type QueuedCard = Card & { title?: string; introduction?: string; teaching?: Beat[]; rationale?: string; targets?: string[]; purpose?: Purpose };
+// stage is where a settling word's recall sits in its lifecycle.
+// A lesson card (kind lesson, purpose teach) carries only teaching: the beat sequence
+// that introduces a never-studied target; it asks nothing, and the word's recall comes
+// on a later card. introduction is the practice generator's own paragraph on a Build
+// vocabulary card, which still teaches from material before its exercise.
+type QueuedCard = Omit<Card, 'kind'> & {
+  kind: Card['kind'] | 'lesson'; title?: string; introduction?: string; teaching?: Beat[]; rationale?: string;
+  targets?: string[]; purpose?: Purpose; stage?: Stage;
+};
 /** What an action records beside the journal: events, and rule judgments made on the spot. */
 type Outbox = { events: NewEvent[]; judgments: JudgmentRecord[]; priority: () => Ranked[] };
 type Item = { word?: WordContent; id: string; kind: string; title: string; detail: string; source: string; reference?: Reference };
@@ -233,7 +243,8 @@ function publicState(s: State, mode: Backend['mode'], now = new Date()) {
     // An ended session left for a while is put away; the next visit starts a fresh one.
     putAway = !!p.session && !session,
     ended = !!session?.ended,
-    current = ended ? undefined : p.cards[p.index],
+    // While wrapping up past the box, only the recall of a word taught this session shows.
+    current = session ? currentCard(p) : p.cards[p.index],
     // A generating session with nothing in front of the learner is waiting for its next card.
     waiting = !!session && !ended && !session.stopped && !current && p.mode !== 'Past mistakes';
   return {
@@ -280,13 +291,14 @@ function publicState(s: State, mode: Backend['mode'], now = new Date()) {
             budgetMinutes: Math.round(session.budget / 60),
             spentMinutes: Math.round(session.spent / 60),
             finished: p.index,
+            // Lessons teach and ask nothing, so the count of exercises leaves them out.
+            exercises: p.cards.slice(0, p.index).filter((c) => c.kind !== 'lesson').length,
             ready: Math.max(0, p.cards.length - p.index - (current ? 1 : 0)),
             ended,
             waiting,
             stopped: session.stopped ?? null,
-            // Whether finishing the current card spends the rest of the session.
-            last:
-              !!current && session.spent + cardTime(current, session.shownAt, now) >= session.budget,
+            // Whether finishing the current card ends the session.
+            last: !!current && finishesSession(p, now),
           }
         : null,
     },
@@ -414,57 +426,111 @@ function practiceSources(s: State, mode: string): string[] {
     ),
   ];
 }
-type PracticeSource = { source: string; purpose: Purpose; target?: Ranked['target']; contrast?: boolean };
+/** What a card on a target needs to know about it. */
+type TargetInfo = Pick<Ranked['target'], 'form' | 'gloss' | 'pinyin'>;
+/** taughtWith: the sentences a settling word was taught with, so its recall can move to a fresh situation. */
+type PracticeSource = {
+  source: string; purpose: Purpose; target?: TargetInfo; contrast?: boolean; stage?: Stage; taughtWith?: string[];
+};
+const describeTarget = (t: TargetInfo) =>
+  'Target: ' + t.form + (t.pinyin ? ' (' + t.pinyin + ')' : '') + (t.gloss ? ' · ' + t.gloss : '');
 /**
  * Daily mix asks for exercises on the highest-priority targets first, then
  * falls back to recent journal material. Targets already queued or carded in
- * this session are skipped. allowed limits how many new words may be offered.
+ * this session are skipped. allowed limits how many new words may be offered,
+ * and due how many scheduled recalls.
  */
-function prioritySources(s: State, ranked: Ranked[], allowed = 1): PracticeSource[] {
+function prioritySources(s: State, ranked: Ranked[], allowed = 1, due = Infinity): PracticeSource[] {
   const inPlay = new Set([...s.pending, ...s.practice.cards].flatMap((c) => c.targets ?? []));
   let fresh = 0;
-  return ranked
-    .filter((r) => !inPlay.has(r.target.form) && (!r.fresh || fresh++ < allowed))
+  let scheduled = 0;
+  // A taught word still waiting for its first recall goes ahead of everything else.
+  const first = (r: Ranked) => Number(r.stage === 'first');
+  return [...ranked]
+    .sort((a, b) => first(b) - first(a))
+    .filter(
+      (r) =>
+        !inPlay.has(r.target.form) &&
+        (!r.fresh || fresh++ < allowed) &&
+        (r.purpose !== 'settle' || r.stage === 'first' || scheduled++ < due),
+    )
     .slice(0, 6)
     .map((r) => ({
       target: r.target,
       purpose: r.purpose,
       contrast: r.contrast,
-      source:
-        'Target: ' + r.target.form + (r.target.pinyin ? ' (' + r.target.pinyin + ')' : '') +
-        (r.target.gloss ? ' · ' + r.target.gloss : '') + '\nWhy now: ' + r.reasons.join('; '),
+      ...(r.stage ? { stage: r.stage, taughtWith: r.taughtWith } : {}),
+      // A settling word's card needs no reasons: they name the journal's schedule.
+      source: describeTarget(r.target) + (r.purpose === 'settle' ? '' : '\nWhy now: ' + r.reasons.join('; ')),
     }));
 }
-/** What teaching knows about a target: its reading and gloss, the saved intake example, and why now. */
-function teachTarget(target: Ranked['target'], source: string, saved?: Item): TeachTarget {
-  const why = source.split('\nWhy now: ')[1];
-  const met = saved?.source && saved.source !== saved.title ? 'met in: ' + saved.source : '';
+/** Where the learner met a saved word, in their own context: the passage around it, or what they wrote when saving it. */
+function encounterOf(s: State, saved: Item | undefined): string | undefined {
+  if (!saved) return;
+  const thread = saved.reference?.kind === 'annotation' && s.annotationThreads.find((t) => t.id === saved.reference!.id);
+  if (thread) {
+    try {
+      const { title, blocks } = resolveAnchor(s, thread.anchor);
+      const notes = thread.messages.filter((m) => m.role === 'user' && !/^\s*save\s*$/i.test(m.text)).map((m) => 'Learner’s note: ' + m.text);
+      const passage = blocks.map((b) => (b.role ? (b.role === 'user' ? 'Learner: ' : 'Conversation partner: ') : '') + b.text).join('\n');
+      return [title, passage.slice(0, 900), ...notes].join('\n');
+    } catch {
+      return;
+    }
+  }
+  const intake = s.wordIntakes.find((w) => w.savedIds?.includes(saved.id) && w.context?.trim());
+  if (intake?.context) return intake.context.trim();
+  return saved.source && saved.source !== saved.title ? saved.source : undefined;
+}
+/** What teaching knows about a target: its reading and gloss, where the learner met it, and the example saved with it. */
+export function teachTarget(s: State, target: TargetInfo, saved?: Item): TeachTarget {
+  const encounter = encounterOf(s, saved);
   return {
     form: target.form,
     pinyin: target.pinyin ?? saved?.word?.pinyin ?? null,
     gloss: target.gloss ?? saved?.word?.meaning ?? null,
-    ...(saved?.word?.example ? { example: saved.word.example, translation: saved.word.translation } : {}),
-    ...(why || met ? { why: [why, met].filter(Boolean).join('; ') } : {}),
+    ...(encounter ? { encounter } : {}),
+    ...(saved?.word?.example ? { savedExample: { text: saved.word.example, translation: saved.word.translation } } : {}),
   };
+}
+/**
+ * The recall of a word taught on this session's lesson card, once a few other cards have
+ * come between. While the session wraps up past its box, the recall is asked for at once.
+ */
+function sessionRecalls(p: Practice): PracticeSource[] {
+  const wrapping = wrappingUp(p);
+  const open = openRecalls(p);
+  return pendingRecalls(p.cards)
+    .filter((r) => (wrapping ? open.includes(r.form) : r.ready))
+    .flatMap((r) => {
+      const lesson = p.cards.find((c) => c.kind === 'lesson' && c.targets?.includes(r.form));
+      if (!lesson) return [];
+      const target = { form: r.form, gloss: lesson.explanation || null, pinyin: null };
+      return [{ source: describeTarget(target), purpose: 'settle' as const, stage: 'first' as const, target, taughtWith: taughtSentences(lesson.teaching ?? []) }];
+    });
 }
 /** What the next card of the current session could be about, best first. */
 function sessionSources(s: State, ranked: () => Ranked[]): PracticeSource[] {
   const p = s.practice;
   const skipped = new Set(p.session?.skipped ?? []);
-  const prioritized = p.mode === 'Daily mix' ? prioritySources(s, ranked(), freshAllowed(p.cards)) : [];
+  const recalls = sessionRecalls(p).filter((x) => !skipped.has(x.source));
+  // Past the box, the session only finishes its open work.
+  if (wrappingUp(p)) return recalls;
+  const prioritized = p.mode === 'Daily mix' ? prioritySources(s, ranked(), freshAllowed(p), dueAllowed(p.cards)) : [];
   const material = practiceSources(s, p.mode).map((source): PracticeSource => ({ source, purpose: 'material' }));
   const all = [...prioritized, ...material].filter((x) => !skipped.has(x.source));
   // Priority targets go in order; plain material rotates, least used first.
   const uses = p.session?.uses ?? {};
   const rest = all.filter((x) => x.purpose === 'material').sort((a, b) => (uses[a.source] ?? 0) - (uses[b.source] ?? 0));
-  return [...all.filter((x) => x.purpose !== 'material'), ...rest];
+  return [...recalls, ...all.filter((x) => x.purpose !== 'material'), ...rest];
 }
-// The form follows the purpose (formsFor): an expression being taught, reviewed or
+// The form follows the purpose (formsFor): an expression being settled, reviewed or
 // repaired is tested by typed recall; a choice only for a contrast the learner has
-// demonstrably confused; open production is conversation drawn from material.
-const purposeMessages: Record<Purpose, string> = {
-  teach:
-    'Teach the expression named in the supplied source, then check it with typed recall in a different situation: a concise English cue or a short phrase cloze for which this expression is the natural answer. The learner sees only your reply and the exercise, so never call it “the target”.',
+// demonstrably confused; open production is conversation drawn from material. A new
+// word is taught on a lesson card, which asks for no exercise.
+const purposeMessages: Record<Exclude<Purpose, 'teach'>, string> = {
+  settle:
+    'The learner was taught the expression named in the supplied source and is settling it. Offer typed recall: a concise English cue or a short phrase cloze, in a situation and sentence different from the ones it was taught with, for which this expression is the natural answer. The learner sees only the exercise, so never call it “the target”.',
   review:
     'A review of the expression named in the supplied source, which the learner has met before. Offer a recall exercise: a concise English cue or a short phrase cloze for which this expression is the natural answer, typed from memory. The learner sees only the exercise, so never call it “the target”.',
   weakness:
@@ -476,22 +542,32 @@ const contrastMessage =
   ' The learner has missed this expression more than once, or slipped on it in their own Chinese and has since had a recall. When the evidence shows exactly which forms they confused, as when they wrote one look-alike for another, a choice among those forms now fits: it shows whether they can tell them apart. When it shows no such confusion, use recall again.';
 /** What the generator is asked for, given the card's purpose and the forms it may take. */
 export function purposeMessage(purpose: Purpose, forms: CardKind[]): string {
+  if (purpose === 'teach') throw new Error('A new word is taught on a lesson card, not asked as an exercise');
   return purposeMessages[purpose] + (forms.includes('choice') ? contrastMessage : '');
 }
-/**
- * Teaching for a card that introduces its expression. Beats come from the
- * teaching situation; the generator's own reply is the fallback introduction.
- */
-function teachCard(card: QueuedCard, reply: string, beats: Beat[] | undefined) {
-  if (beats?.length) card.teaching = beats;
-  else card.introduction = reply.trim() || undefined;
-}
-/** The Chinese sentences a teaching sequence showed, so the exercise can move to a fresh situation. */
+/** The Chinese sentences a teaching sequence showed, so a recall can move to a fresh situation. */
 const taughtSentences = (beats: Beat[]) =>
   beats.flatMap((b) => b.parts.filter((p) => p.kind === 'chinese').map((p) => p.text));
-/** One model call for one card. Null when the tutor offered nothing new. Reads s, never writes it. */
+/**
+ * One model call for one card. Null when the tutor offered nothing new. Reads s, never writes it.
+ * A new word gets a lesson card: teaching beats and nothing to answer.
+ */
 async function generateCard(s: State, pick: PracticeSource, backend: Backend): Promise<QueuedCard | null> {
   const mode = s.practice.mode;
+  const target = pick.target;
+  const savedWord = s.saved.find(
+    (item) => item.kind === 'Word' && (item.title + ' · ' + item.detail === pick.source || item.title === target?.form),
+  );
+  if (pick.purpose === 'teach') {
+    if (!target) throw new Error('A lesson needs a target');
+    const ctx = context(s, 'teach', '', mode, pick.source);
+    ctx.teach = teachTarget(s, target, savedWord);
+    const { beats } = await consult(backend, 'teach', ctx);
+    return {
+      id: randomUUID(), kind: 'lesson', title: target.form, prompt: target.form, choices: [], answer: target.form,
+      explanation: target.gloss ?? '', source: pick.source, teaching: beats, targets: [target.form], purpose: 'teach',
+    };
+  }
   // Build vocabulary teaches from material, so its check is a taught word's.
   const forms = mode === 'Build vocabulary' ? formsFor('teach') : formsFor(pick.purpose, pick.contrast);
   const ctx = context(
@@ -504,28 +580,20 @@ async function generateCard(s: State, pick: PracticeSource, backend: Backend): P
     pick.source,
   );
   ctx.exerciseForms = forms;
-  const target = pick.target;
-  const savedWord = s.saved.find(
-    (item) => item.kind === 'Word' && (item.title + ' · ' + item.detail === ctx.source || item.title === target?.form),
-  );
   if (savedWord?.word) ctx.practiceWord = { title: savedWord.title, ...savedWord.word };
   else if (target?.gloss)
     ctx.practiceWord = { title: target.form, pinyin: target.pinyin ?? '', meaning: target.gloss, example: '', translation: '' };
   ctx.previousPrompts = [...s.attempts.slice(-24).map((a) => a.card.prompt), ...s.practice.cards.map((c) => c.prompt)];
-  // A new word is taught first; the exercise then checks it in a situation the teaching did not use.
-  const beats =
-    pick.purpose === 'teach' && target
-      ? await teachingFor(teachTarget(target, pick.source, savedWord), ctx, async (c) => (await consult(backend, 'teach', c)).beats)
-      : undefined;
-  if (beats?.length)
-    ctx.source += '\nJust taught with these sentences; check the expression in a different situation and sentence: ' + taughtSentences(beats).join(' / ');
+  if (pick.taughtWith?.length)
+    ctx.source += '\nTaught with these sentences; recall it in a different situation and sentence: ' + pick.taughtWith.join(' / ');
   const response = await consult(backend, 'practiceGen', ctx);
   const card = exerciseCard(response.action, ctx);
   // A repeat of a served or queued prompt is skipped like an empty turn, not a failure.
   if (!card || ctx.previousPrompts.includes(card.prompt) || s.pending.some((c) => c.prompt === card.prompt)) return null;
   card.purpose = pick.purpose;
+  if (pick.stage) card.stage = pick.stage;
   if (target) card.targets = [target.form];
-  if (mode === 'Build vocabulary' || pick.purpose === 'teach') teachCard(card, response.reply, beats);
+  if (mode === 'Build vocabulary') card.introduction = response.reply.trim() || undefined;
   return card;
 }
 /** One generation: a card, nothing new (null), or the error that stopped it. */
@@ -533,7 +601,9 @@ type Generated = QueuedCard | null | { failed: unknown };
 /**
  * Applies one generation to the current session: a new card at the end, a note
  * that a source gave nothing, or a failure. Appending never touches the card in
- * front of the learner or its answer.
+ * front of the learner or its answer. While the session wraps up past its box, the
+ * recall that closes it goes in front of other prepared cards; if none can be
+ * prepared, the session ends instead of waiting.
  */
 function applyGenerated(s: State, pick: PracticeSource | undefined, outcome: Generated, now: Date) {
   const p = s.practice;
@@ -557,25 +627,33 @@ function applyGenerated(s: State, pick: PracticeSource | undefined, outcome: Gen
     session.skipped.push(pick.source);
     // Each empty turn costs a model call while the learner may be waiting.
     if ((session.empties = (session.empties ?? 0) + 1) >= MAX_EMPTIES) session.stopped = 'exhausted';
-  } else if (!outcome.targets?.some((form) => p.cards.some((c) => c.targets?.includes(form)))) {
-    p.cards.push(outcome);
+  } else if (
+    // Each target appears once per session, except a taught word's recall after its lesson.
+    !outcome.targets?.some((form) =>
+      p.cards.some((c) => c.targets?.includes(form) && !(c.kind === 'lesson' && outcome.purpose === 'settle')),
+    )
+  ) {
+    if (wrappingUp(p) && recallOf(openRecalls(p), outcome)) p.cards.splice(p.index, 0, outcome);
+    else p.cards.push(outcome);
     session.failures = 0;
     session.empties = 0;
     if (pick.purpose === 'material') session.uses[pick.source] = (session.uses[pick.source] ?? 0) + 1;
     // A learner waiting for this card sees it now.
-    if (p.index === p.cards.length - 1 && !session.ended) session.shownAt = now.toISOString();
+    if (currentCard(p) === outcome) session.shownAt = now.toISOString();
   }
   if (session.attempts >= MAX_ATTEMPTS && !session.stopped) session.stopped = 'exhausted';
+  // Open work that cannot be prepared does not hold the session open.
+  if (session.stopped && wrappingUp(p)) session.ended = true;
 }
 /** Prepares the card in front of the learner inside the action, when nothing is ready. */
 const MAX_EMPTIES = 3;
 async function generateNow(s: State, backend: Backend, ranked: () => Ranked[], now: Date) {
-  // The learner waits for this card. A new word needs teaching first (two model
-  // calls), so another priority item opens the session when there is one.
+  // The learner waits for this card. A lesson is a slower, deliberate model call,
+  // so another priority item opens the session when there is one.
   const sources = sessionSources(s, ranked);
   const pick =
     sources[0]?.purpose === 'teach'
-      ? (sources.find((source) => source.purpose === 'review' || source.purpose === 'weakness') ?? sources[0])
+      ? (sources.find((source) => source.purpose !== 'teach' && source.purpose !== 'material') ?? sources[0])
       : sources[0];
   let outcome: Generated = null;
   if (pick)
@@ -589,7 +667,7 @@ async function generateNow(s: State, backend: Backend, ranked: () => Ranked[], n
 /** Choice cards whose latest attempt was a miss, newest first, as many as the budget holds. */
 function missedCards(s: State, budget: number): QueuedCard[] {
   const latest = new Map(s.attempts.map((a) => [a.card.id, a]));
-  const missed = [...latest.values()].reverse().filter((a) => a.result.correct === false).map((a) => a.card);
+  const missed = [...latest.values()].reverse().filter((a) => a.result.correct === false && !a.flagged).map((a) => a.card);
   let total = 0;
   return missed.filter((c, i) => (total += cardSeconds(c)) <= budget || i === 0);
 }
@@ -629,7 +707,13 @@ async function startPractice(s: State, mode: string, backend: Backend, keepGoing
   s.practice = { started: true, mode, cards: [], index: 0, result: null, session: fresh };
   if (!generates) s.practice.cards = missedCards(s, fresh.budget);
   else {
-    s.practice.cards = s.pending.splice(0, 3);
+    // A word taught last time whose recall the learner left before is first in line:
+    // its recall card if one was prepared, or a new one in this action.
+    const firstRecall = (c: QueuedCard) => c.purpose === 'settle' && c.stage === 'first';
+    s.pending.sort((a, b) => Number(firstRecall(b)) - Number(firstRecall(a)));
+    if (mode === 'Daily mix' && !s.pending.some(firstRecall) && prioritySources(s, outbox.priority()).some((x) => x.stage === 'first'))
+      await generateNow(s, backend, outbox.priority, now);
+    s.practice.cards.push(...s.pending.splice(0, 3));
     // The first card costs at most one model call; the rest are prepared ahead.
     if (!s.practice.cards.length) {
       if (sessionSources(s, outbox.priority).length) await generateNow(s, backend, outbox.priority, now);
@@ -874,6 +958,7 @@ function answerEvent(attempt: Attempt, at: string | null): NewEvent {
       // A card that introduced its target taught it.
       taught: (!!c.introduction || !!c.teaching?.length) && !!c.targets?.length,
       purpose: c.purpose ?? null,
+      ...(c.stage ? { stage: c.stage } : {}),
     },
     targets: c.targets ?? [],
   };
@@ -1077,11 +1162,31 @@ async function mutate(
     case 'settings':
       s.settings.pictures = a.pictures;
       return;
+    case 'flagExercise': {
+      const attempt = s.attempts.find((x) => x.id === a.attemptId);
+      if (!attempt) throw new JournalConflict('This practice answer could not be found.');
+      if (attempt.flagged) return;
+      attempt.flagged = now;
+      // The flag is the learner's own act on the answer event; priority leaves that answer out.
+      outbox.events.push({ id: a.id, at: now, kind: 'flag', surface: 'practice', ref: attempt.id, text: '', targets: attempt.card.targets ?? [] });
+      return;
+    }
     case 'answer':
     case 'next': {
       const p = s.practice,
-        c = p.cards[p.index];
+        c = p.session ? currentCard(p) : p.cards[p.index];
       if (!c || a.cardId !== c.id) throw new JournalConflict('This exercise changed. Refresh the session.');
+      if (c.kind === 'lesson') {
+        if (a.type === 'answer') throw new JournalConflict('A lesson has nothing to answer.');
+        // Finishing a lesson teaches its word, under a graduation policy chosen now and kept with the event.
+        outbox.events.push({
+          id: a.id, at: now, kind: 'lesson', surface: 'practice', ref: c.id, text: '',
+          context: { purpose: c.purpose ?? null, sentences: taughtSentences(c.teaching ?? []), graduation: assignPolicy() },
+          targets: c.targets ?? [],
+        });
+        finishCard(p, new Date(now));
+        return;
+      }
       if (a.type === 'next') {
         if (!p.result) throw new JournalConflict('Answer before continuing.');
         finishCard(p, new Date(now));
@@ -1263,8 +1368,9 @@ function convertHistory(s: State): Outbox {
   }
   for (const attempt of s.attempts) {
     out.events.push(answerEvent(attempt, null));
-    if (attempt.card.kind !== 'open' && attempt.card.targets?.length)
-      out.judgments.push(choiceJudgment(attempt.id, attempt.result.correct === true, attempt.card.targets, new Date().toISOString(), attempt.card.kind));
+    const kind = attempt.card.kind;
+    if ((kind === 'choice' || kind === 'recall') && attempt.card.targets?.length)
+      out.judgments.push(choiceJudgment(attempt.id, attempt.result.correct === true, attempt.card.targets, new Date().toISOString(), kind));
   }
   for (const intake of s.wordIntakes)
     out.events.push({ id: 'history-word-' + intake.id, at: null, kind: 'addWord', surface: 'home', text: intake.text, context: { context: intake.context } });

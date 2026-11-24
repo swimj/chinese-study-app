@@ -4,8 +4,13 @@
 // these tables sit beside it in the same SQLite file and commit with it.
 import type { DatabaseSync } from 'node:sqlite';
 
-/** Kinds of learner activity. Production kinds carry the learner's own language. */
-export type EventKind = 'chat' | 'ask' | 'annotation' | 'answer' | 'addWord' | 'capture' | 'reflect';
+/**
+ * Kinds of learner activity. Production kinds carry the learner's own language.
+ * lesson: the learner stepped through a lesson card; its context keeps the sentences
+ * taught and the graduation policy assigned then. flag: the learner marked the
+ * exercise answered in event `ref` as bad, so it counts for nothing.
+ */
+export type EventKind = 'chat' | 'ask' | 'annotation' | 'answer' | 'addWord' | 'capture' | 'reflect' | 'lesson' | 'flag';
 /**
  * Events the judgment reads: language the tutor has already responded to. Chat
  * lines are read through their reflection, which carries the learner's lines

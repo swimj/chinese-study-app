@@ -10,6 +10,12 @@
 // Target use in an open-production answer is an optional signal: a flawed use
 // raises priority, but a natural use never counts as clean, because the card
 // itself steered the learner toward the expression.
+//
+// A word taught on a lesson card follows its own bounded lifecycle (lifecycle.ts):
+// only typed recall counts toward its graduation, due recalls rank high, and a word
+// whose first recall has not happened yet is first in line. An exercise the learner
+// flagged as bad counts for nothing either way.
+import { isDue, lifecycle, type Assignment, type Lifecycle } from './lifecycle.ts';
 import type { Notice } from './situations/notice.ts';
 import type { JudgmentRecord, RecordedEvent, Target } from './record.ts';
 
@@ -23,6 +29,10 @@ const UNKNOWN_AGE_DAYS = 14;
 const GRADUATE_AFTER = 2;
 /** The hosted SRS contributes at most this much, against about 3 for one fresh need. */
 const HOSTED_WEIGHT = 0.3;
+/** A taught word waiting for its first recall: ahead of everything else. */
+const FIRST_RECALL = 10;
+/** A due settling recall or check-up: above a fresh need (about 3), so it competes high. */
+const DUE_RECALL = 3.5;
 /** New words taught per UTC day, as the hosted app's default new-word limit. */
 export const NEW_PER_DAY = 5;
 /** With this many weaknesses and newly taught words still open, nothing new is taught. */
@@ -39,8 +49,15 @@ export type Role = 'needed' | 'flawed' | 'missed' | 'avoided' | 'used' | 'correc
 const weakness: Partial<Record<Role, number>> = { needed: 3, flawed: 2, missed: 2, taught: 2 };
 /** Evidence that a weakness has resolved: recall from memory, or the learner's own natural use outside practice. */
 const clean = (s: Signal) => s.role === 'correct' || (s.role === 'used' && !s.practice);
-/** practice marks signals from an exercise answer, as opposed to the learner's own use elsewhere. */
-export type Signal = { form: string; role: Role; at: string | null; eventId: string; evidence?: string; practice?: boolean };
+/**
+ * practice marks signals from an exercise answer, as opposed to the learner's own use elsewhere.
+ * exercise: the bounded form a rule-judged signal came from. A taught signal from a lesson
+ * carries the graduation policy assigned then and the sentences it was taught with.
+ */
+export type Signal = {
+  form: string; role: Role; at: string | null; eventId: string; evidence?: string; practice?: boolean;
+  exercise?: 'recall' | 'choice'; graduation?: Assignment; sentences?: string[];
+};
 
 /** A choice or typed recall answer's outcome, judged by rule with no model call. */
 export type ChoiceJudgment = { correct: boolean; targets: string[] };
@@ -48,6 +65,8 @@ export type ChoiceJudgment = { correct: boolean; targets: string[] };
 /** Flattens judgments into per-form signals. Each judgment dates from its event. */
 export function signalsFrom(judgmentList: JudgmentRecord[], eventsById: Map<string, RecordedEvent>): Signal[] {
   const out: Signal[] = [];
+  // An exercise the learner flagged as bad never counts for or against them.
+  const flagged = new Set([...eventsById.values()].filter((e) => e.kind === 'flag' && e.ref).map((e) => e.ref!));
   // Judgments can be rerun: only the newest model reading of each event counts.
   const latest = new Map<string, JudgmentRecord>();
   for (const j of judgmentList) {
@@ -58,14 +77,15 @@ export function signalsFrom(judgmentList: JudgmentRecord[], eventsById: Map<stri
   for (const j of judgmentList) {
     if (!j.source.startsWith('rule:') && latest.get(j.eventId) !== j) continue;
     const event = eventsById.get(j.eventId);
-    if (!event) continue;
+    if (!event || flagged.has(event.id)) continue;
     const at = event.at;
     const practice = event.kind === 'answer';
     const push = (form: string, role: Role, evidence?: string) => out.push({ form, role, at, eventId: event.id, evidence, practice });
     if (j.source.startsWith('rule:')) {
       const body = j.body as ChoiceJudgment;
-      const right: Role = j.source.startsWith('rule:choice') ? 'recognized' : 'correct';
-      for (const form of body.targets) push(form, body.correct ? right : 'missed', event.text);
+      const exercise = j.source.startsWith('rule:choice') ? 'choice' : 'recall';
+      const right: Role = exercise === 'choice' ? 'recognized' : 'correct';
+      for (const form of body.targets) out.push({ form, role: body.correct ? right : 'missed', at, eventId: event.id, evidence: event.text, practice, exercise });
       continue;
     }
     const n = j.body as Notice;
@@ -73,25 +93,35 @@ export function signalsFrom(judgmentList: JudgmentRecord[], eventsById: Map<stri
     for (const need of n.needs) push(need.form, 'needed', need.evidence);
     for (const x of n.intended) push(x.form, x.outcome === 'natural' ? 'used' : x.outcome === 'flawed' ? 'flawed' : 'avoided', event.text);
   }
-  for (const event of eventsById.values())
-    if (event.kind === 'answer' && event.context.taught)
+  for (const event of eventsById.values()) {
+    // Before lesson cards, teaching rode on the exercise card that checked it.
+    if (event.kind === 'answer' && event.context.taught && !flagged.has(event.id))
       for (const form of event.targets) out.push({ form, role: 'taught', at: event.at, eventId: event.id, practice: true });
+    if (event.kind === 'lesson') {
+      const graduation = event.context.graduation as Assignment | undefined;
+      const sentences = event.context.sentences as string[] | undefined;
+      for (const form of event.targets) out.push({ form, role: 'taught', at: event.at, eventId: event.id, practice: true, graduation, sentences });
+    }
+  }
   return out;
 }
 
 /**
  * pressing: an open weakness or a word still settling. fresh: chosen and never taught.
- * purpose: what a card on this target is for. A new word is taught; a flaw or need in
- * the learner's own Chinese is a weakness; anything else (a miss, a word still settling
- * after teaching, the hosted app's due words) is a review. All three are tested by
- * typed recall (session.ts formsFor).
+ * purpose: what a card on this target is for. A new word is taught; a word taught on a
+ * lesson card is settled by recall (stage: its first recall, a scheduled one, or the
+ * check-up); a flaw or need in the learner's own Chinese is a weakness; anything else (a
+ * miss, a word taught before lesson cards, the hosted app's due words) is a review. All
+ * are tested by typed recall (session.ts formsFor).
+ * life: the lifecycle of a word taught on a lesson card, under its assigned policy.
  * contrast: the learner has demonstrably confused this target with another form: a
  * miss on it twice, or a slip in their own Chinese followed by a bounded exercise on
  * it. Only then may a card be a choice.
  */
 export type Ranked = {
   target: Target; score: number; reasons: string[]; signals: number; pressing?: boolean; fresh?: boolean;
-  purpose: 'teach' | 'review' | 'weakness'; contrast?: boolean;
+  purpose: 'teach' | 'review' | 'weakness' | 'settle'; contrast?: boolean;
+  stage?: 'first' | 'scheduled' | 'checkup'; life?: Lifecycle; taughtWith?: string[];
 };
 const production = new Set<Role>(['needed', 'flawed']);
 /** Signals from a rule-judged (bounded) exercise. */
@@ -127,6 +157,8 @@ export function rank(targetList: Target[], signals: Signal[], nowDate = new Date
     byForm.set(s.form, list);
   }
   const ranked: Ranked[] = [];
+  // Open work for backpressure, counted whether or not it is due now.
+  let open = 0;
   const taughtToday = new Set(signals.filter((s) => s.role === 'taught' && s.at && day(s.at) === today).map((s) => s.form)).size;
   for (const t of targetList) {
     if (t.hosted?.dismissed) continue;
@@ -137,8 +169,36 @@ export function rank(targetList: Target[], signals: Signal[], nowDate = new Date
     let fresh = false;
     let purpose: Ranked['purpose'] = 'review';
     let contrast = false;
+    let stage: Ranked['stage'];
+    let settleScore = 0;
 
-    const weak = own.filter((s) => weakness[s.role]);
+    // A word taught on a lesson card follows its assigned policy; its misses and
+    // teaching belong to that lifecycle, and only a slip in its use stays a weakness.
+    const lesson = own.filter((s) => s.role === 'taught' && s.graduation && s.at).sort((a, b) => a.at!.localeCompare(b.at!))[0];
+    const life = lesson
+      ? lifecycle(
+          lesson.graduation!.policy,
+          lesson.at!,
+          own.filter((s) => s.exercise && s.at).map((s) => ({ at: s.at!, correct: s.role !== 'missed', typed: s.exercise === 'recall' })),
+        )
+      : undefined;
+    if (life) {
+      const due = isDue(life, today);
+      if (life.state === 'first' || life.state === 'settling') pressing = true;
+      if (due) {
+        purpose = 'settle';
+        stage = life.state === 'first' ? 'first' : life.state === 'graduated' ? 'checkup' : 'scheduled';
+        settleScore = stage === 'first' ? FIRST_RECALL : DUE_RECALL;
+      }
+      reasons.push(
+        `policy ${life.policy} · ` +
+          (life.state === 'first' ? 'taught, first recall not done yet'
+          : life.state === 'settling' ? `settling, ${life.clean} of ${life.needed} clean · ${due ? 'recall due' : 'next recall ' + life.due}`
+          : life.state === 'graduated' ? `graduated · ${due ? 'check-up due' : 'check-up ' + life.due}`
+          : 'graduated and checked'),
+      );
+    }
+    const weak = own.filter((s) => (life ? production.has(s.role) : weakness[s.role]));
     if (weak.length) {
       const lastWeak = Math.min(...weak.map((s) => ageDays(s.at, now)));
       const cleanDays = new Set(own.filter((s) => clean(s) && ageDays(s.at, now) < lastWeak).map((s) => (s.at ? day(s.at) : '?'))).size;
@@ -148,7 +208,7 @@ export function rank(targetList: Target[], signals: Signal[], nowDate = new Date
         score += sum * (1 - 0.35 * cleanDays);
         pressing = true;
         const slips = weak.filter((s) => production.has(s.role));
-        if (slips.length) purpose = 'weakness';
+        if (slips.length && purpose !== 'settle') purpose = 'weakness';
         const lastSlip = Math.min(...slips.map((s) => ageDays(s.at, now)));
         contrast =
           weak.filter((s) => s.role === 'missed').length >= 2 ||
@@ -180,11 +240,20 @@ export function rank(targetList: Target[], signals: Signal[], nowDate = new Date
       score *= 0.3;
       reasons.push('practiced today');
     }
-    if (score > 0) ranked.push({ target: t, score, reasons, signals: own.length, pressing, fresh, purpose, ...(contrast ? { contrast } : {}) });
+    // A due recall is not held back by practice today: the first recall belongs to
+    // today's teaching, and a scheduled one is due at most once a day.
+    score += settleScore;
+    if (pressing) open++;
+    if (score > 0)
+      ranked.push({
+        target: t, score, reasons, signals: own.length, pressing, fresh, purpose,
+        ...(contrast && purpose !== 'settle' ? { contrast } : {}),
+        ...(stage ? { stage } : {}),
+        ...(life ? { life, taughtWith: lesson!.sentences ?? [] } : {}),
+      });
   }
   ranked.sort((a, b) => b.score - a.score);
   // Backpressure on new words: a daily limit, and none while too much is still open.
-  const open = ranked.filter((r) => r.pressing).length;
   const allowance = open >= PRESSING_LIMIT ? 0 : Math.max(0, NEW_PER_DAY - taughtToday);
   let admitted = 0;
   return ranked.filter((r) => !r.fresh || admitted++ < allowance);
