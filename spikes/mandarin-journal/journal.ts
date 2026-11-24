@@ -43,7 +43,7 @@ import {
 } from './record.ts';
 import { rank, signalsFrom, type ChoiceJudgment, type Ranked } from './priority.ts';
 import {
-  extend, finishCard, freshAllowed, MAX_ATTEMPTS, MAX_FAILURES, needsCard, newSession, stale,
+  extend, finishCard, freshAllowed, MAX_ATTEMPTS, MAX_FAILURES, needsCard, newSession, noteFailure, resume, stale,
   cardSeconds, cardTime, type Purpose, type Session,
 } from './session.ts';
 
@@ -513,18 +513,22 @@ async function generateCard(s: State, pick: PracticeSource, backend: Backend): P
   if (mode === 'Build vocabulary' || pick.purpose === 'teach') teachCard(card, response.reply, beats);
   return card;
 }
+/** One generation: a card, nothing new (null), or the error that stopped it. */
+type Generated = QueuedCard | null | { failed: unknown };
 /**
  * Applies one generation to the current session: a new card at the end, a note
  * that a source gave nothing, or a failure. Appending never touches the card in
  * front of the learner or its answer.
  */
-function applyGenerated(s: State, pick: PracticeSource | undefined, outcome: QueuedCard | null | 'failed', now: Date) {
+function applyGenerated(s: State, pick: PracticeSource | undefined, outcome: Generated, now: Date) {
   const p = s.practice;
   const session = p.session;
   if (!session) throw new Error('No practice session to prepare for');
   session.attempts++;
   if (!pick) session.stopped = 'exhausted';
-  else if (outcome === 'failed') {
+  else if (outcome && 'failed' in outcome) {
+    noteFailure(session, outcome.failed, now);
+    console.warn('[journal] practice card preparation failed (' + (session.failures + 1) + ' in a row): ' + session.errors!.at(-1)!.error);
     if (++session.failures >= MAX_FAILURES) {
       session.stopped = 'failed';
       s.notice = 'The tutor could not prepare more practice this time.';
@@ -558,12 +562,12 @@ async function generateNow(s: State, backend: Backend, ranked: () => Ranked[], n
     sources[0]?.purpose === 'teach'
       ? (sources.find((source) => source.purpose === 'review' || source.purpose === 'weakness') ?? sources[0])
       : sources[0];
-  let outcome: QueuedCard | null | 'failed' = null;
+  let outcome: Generated = null;
   if (pick)
     try {
       outcome = await generateCard(s, pick, backend);
-    } catch {
-      outcome = 'failed';
+    } catch (error) {
+      outcome = { failed: error };
     }
   applyGenerated(s, pick, outcome, now);
 }
@@ -588,7 +592,9 @@ async function startPractice(s: State, mode: string, backend: Backend, keepGoing
     // A card is in front of the learner, or one is being prepared.
     if (!session.ended && (p.index < p.cards.length || (generates && !session.stopped))) return;
     if (keepGoing) {
-      extend(session, now);
+      // Try again after failed preparation resumes the same time; Keep going adds more.
+      if (session.stopped === 'failed' && !session.ended) resume(session, now);
+      else extend(session, now);
       if (!generates) {
         // Another round over what is still missed.
         p.cards = missedCards(s, session.budget - session.spent);
@@ -1201,6 +1207,16 @@ function upgrade(body: string): State {
       );
     }
   }
+  // A deck saved before practice ran in timed sessions is put away: its personal
+  // cards return to the queue and the next visit starts a session from current material.
+  const practice = parsed.practice;
+  if (!practice.session && practice.cards.length) {
+    if (practice.mode !== 'Past mistakes') {
+      const remaining = practice.cards.slice(practice.index + (practice.result ? 1 : 0));
+      parsed.pending.unshift(...remaining.filter((c) => !catalogue.some((seed) => seed.id === c.id)));
+    }
+    parsed.practice = { mode: practice.mode, cards: [], index: 0, result: null };
+  }
   return parsed;
 }
 
@@ -1473,12 +1489,12 @@ export function openJournal(path: string, backend: Backend = engine) {
       const session = s.practice.session;
       if (!session || !needsCard(s.practice)) return;
       const pick = sessionSources(s, () => priorityOf(db))[0];
-      let outcome: QueuedCard | null | 'failed' = null;
+      let outcome: Generated = null;
       if (pick)
         try {
           outcome = await generateCard(s, pick, backend);
-        } catch {
-          outcome = 'failed';
+        } catch (error) {
+          outcome = { failed: error };
         }
       await enqueue(() => {
         if (closed) return;

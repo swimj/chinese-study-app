@@ -7,10 +7,11 @@ import { DatabaseSync } from 'node:sqlite';
 import test from 'node:test';
 import { importHosted, type HostedExport } from './hosted-import.ts';
 import { openJournal } from './journal.ts';
-import { demoFriend, demoTutor } from './practice.ts';
+import { catalogue, demoFriend, demoTutor } from './practice.ts';
 import { events } from './record.ts';
 import {
-  AHEAD, cardSeconds, cardTime, CHUNK_SECONDS, extend, finishCard, freshAllowed, needsCard, newSession, SESSION_SECONDS, stale,
+  AHEAD, cardSeconds, cardTime, CHUNK_SECONDS, extend, finishCard, freshAllowed, needsCard, newSession, noteFailure, resume,
+  SESSION_SECONDS, stale,
   type Purpose, type Session,
 } from './session.ts';
 import type { TurnContext, TutorResult } from './tutor.ts';
@@ -81,6 +82,7 @@ test('a session ends when its time is spent, prepares ahead within the budget, a
   finishCard(p, now);
   assert.equal(p.session.ended, true, 'the open card took the last of the time');
   assert.equal(p.index, 1);
+  assert.equal(p.session.shownAt, null, 'the learner sees the end, not the prepared card behind it');
   assert.equal(needsCard(p), false, 'an ended session prepares nothing');
   extend(p.session, now);
   assert.equal(p.session.ended, false);
@@ -91,6 +93,25 @@ test('a session ends when its time is spent, prepares ahead within the budget, a
   assert.equal(needsCard(p), false);
   // Past mistakes replays what exists and prepares nothing.
   assert.equal(needsCard({ ...p, mode: 'Past mistakes', session: newSession(now) }), false);
+});
+
+test('finishing a card needs its session, and Try again resumes a paused session without adding time', () => {
+  const now = new Date('2026-11-24T12:00:00Z');
+  assert.throws(() => finishCard({ mode: 'Daily mix', cards: [card('choice')], index: 0, result: null }, now), /No practice session/);
+  const session = newSession(now);
+  session.spent = 300;
+  session.stopped = 'failed';
+  session.failures = 2;
+  resume(session, now);
+  assert.equal(session.budget, SESSION_SECONDS);
+  assert.equal(session.stopped, undefined);
+  assert.equal(session.failures, 0);
+  assert.throws(() => resume(session, now), /Only a session paused/);
+  for (let i = 0; i < 7; i++) noteFailure(session, new Error('boom ' + i + ' ' + 'x'.repeat(300)), now);
+  assert.equal(session.errors?.length, 5, 'only the latest few reasons are kept');
+  assert.match(session.errors![4].error, /^Error: boom 6 x+$/);
+  assert.equal(session.errors![4].error.length, 200);
+  assert.equal(session.errors![4].at, now.toISOString());
 });
 
 test('one new word per four session cards', () => {
@@ -238,10 +259,15 @@ test('failing generation stops the session instead of trapping it, and Keep goin
     assert.equal(s.practice.session?.stopped, 'failed');
     assert.equal(s.practice.done, true, 'the learner sees an end state, not an endless wait');
     assert.match(s.notice, /could not prepare/);
+    const stopped = body(box.path).practice.session;
+    assert.deepEqual(stopped.errors?.map((e) => e.error), ['Error: offline', 'Error: offline'], 'each failure keeps its reason');
+    assert.ok(stopped.errors?.every((e) => !Number.isNaN(Date.parse(e.at))));
     failing = false;
     s = await j.act({ id: randomUUID(), type: 'practice', mode: 'Daily mix', continue: true });
     assert.ok(s.practice.card);
     assert.equal(s.practice.session?.stopped, null);
+    assert.equal(body(box.path).practice.session.budget, SESSION_SECONDS, 'Try again resumes without adding time');
+    assert.equal(body(box.path).practice.session.id, stopped.id, 'the same session continues');
   } finally {
     j.close();
     box.done();
@@ -319,6 +345,34 @@ test('a session that keeps getting nothing new stops after a few tries and says 
     const session = j.get().practice.session!;
     assert.equal(session.stopped, 'exhausted');
     assert.ok(practiceCalls <= 3, `stopped after ${practiceCalls} empty generations`);
+  } finally {
+    j.close();
+    box.done();
+  }
+});
+
+test('a deck saved before sessions existed is put away, and the next visit starts a session from current material', async () => {
+  const box = sandbox();
+  const j0 = openJournal(box.path, { ...demo, tutor: async (ctx) => (ctx.trigger === 'practice' ? choiceCard() : demoTutor(ctx)) });
+  await j0.act({ id: randomUUID(), type: 'chat', message: '我想去外面透透气。', source: '' });
+  await settle(j0);
+  j0.close();
+  // The shape practice had before #624: starter cards and one personal card, no session.
+  const personal = { id: 'personal-1', kind: 'choice', source: 'Chat', prompt: '他＿＿去了。', accepted: [], choices: ['也', '又'], answer: '也', explanation: 'e' };
+  body(box.path, (b) => {
+    b.practice = { started: true, mode: 'Daily mix', cards: [...catalogue.slice(0, 3), personal], index: 0, result: null } as unknown as Stored['practice'];
+  });
+  const j = openJournal(box.path, { ...demo, tutor: async (ctx) => (ctx.trigger === 'practice' ? choiceCard() : demoTutor(ctx)) });
+  try {
+    let s = j.get();
+    assert.equal(s.practice.card, null, 'the stale deck is not served as if current');
+    assert.equal(s.practice.done, false, 'the practice page starts a session on its own');
+    s = await j.act({ id: randomUUID(), type: 'practice', mode: 'Daily mix' });
+    assert.ok(s.practice.session, 'a proper session starts');
+    assert.equal(s.practice.card?.id, personal.id, 'the unattempted personal card comes back first');
+    await settle(j);
+    const ids = body(box.path).practice.cards.map((c) => (c as { id?: string }).id);
+    assert.ok(!ids.some((id) => catalogue.some((seed) => seed.id === id)), 'starter cards are dropped');
   } finally {
     j.close();
     box.done();
