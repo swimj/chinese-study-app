@@ -47,6 +47,7 @@ read before every edit.
 | --- | --- |
 | Write or maintain documentation | [Authoring procedure](docs/documentation-authoring.md), following the [documentation principles](docs/documentation-principles.md) |
 | Reason about implementation choices and quality | [Development principles](docs/development-principles.md); [testing map](docs/testing.md) for affected coverage |
+| Keep a document that evolves over a discussion (a "living doc") | [living-doc skill](.agents/skills/living-doc/SKILL.md) |
 | Organize, publish, or revise pull requests | [PR delivery and Graphite stacks](docs/stacked-feature-development-and-review.md) |
 | Create, adapt, or review a model prompt | [Prompt development](docs/prompt-development.md): working lineage, contract adaptation, and behavioral comparisons |
 | Set up a contributor environment or find a command | [Contributor setup and scripts](docs/scripts.md#contributor-setup-and-local-checks); [package.json](package.json) for command definitions |
