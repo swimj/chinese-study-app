@@ -211,6 +211,56 @@ can still go straight into the text.
   applied inline: legacy reader notes, neglect of Practice and Conversation,
   the partner settled as a separate character, and a prototype-stage tradeoff
   on stale content (not a lasting rule).
+- *(Nov 24)* **Justin on what Home is for (reframes Observed 1–3 and Open
+  1–4).**
+  - **No blue-ribbon board.** Showing what the learner said well feels bland
+    or condescending; Justin's attention goes to what he can do better.
+    Production is what the learner *does*, not what Home *displays*.
+    Observed 1 should be reframed: the problem isn't that the board shows
+    corrections; it's that it leads with the error rather than the moment.
+  - **Themes emerge; they're never forced.** A single rich item, such as a
+    long article, is its own theme. Grouping starts only once there's enough
+    content across separate sources. Managing things per item is reasonable
+    until then.
+  - **Day 60, in three layers:**
+    1. *Landmarks.* Reliable portals to the core actions (conversation,
+       reading, practice) at the same visual scale as the content. They are
+       crafted, not vanilla, and always in the same place, like the
+       Poké Mart, Pokémon Center and gym that every town in a Pokémon game
+       has, each town with its own flair. They answer the vague
+       "I want to do a little Chinese" mood with options varied enough that
+       one fits the moment, as an alternative to doom-scrolling.
+    2. *What's alive.* A handful of post-it reminders, not twenty, of recent
+       points still solidifying, perhaps cycling. This is a leveled-up
+       lock-screen word app: ambient, low-intent. It differs because each
+       post-it leads with its tie to the past, the memory or scene (an
+       "Instagram memory" moment), with the language point underneath.
+    3. *The collection.* Browsing saved pieces should feel like going
+       through trinkets that bring back memories. It's an active collection:
+       what surfaces has a growth arc. A set of collected items, such as an
+       article's notes, can be a room, just as a reading is a room.
+  - **Surface policy plus semantic zoom.** Home doesn't show every note. As
+    one example: when a theme fills most of the view, switch into a richer
+    view of that theme without the surrounding noise. This is an
+    illustration of the interaction pattern, not a spec.
+- *(Nov 24)* **Claude's response to the above, for the rewrite.**
+  - *Agreed:* production is the product, but not the display. The board's job
+    is the growth edge, framed by memory. This replaces "the learner's
+    language as hero" in Mental models.
+  - *Risk:* a post-it is only better than a lock-screen widget if its memory
+    is real. A word saved bare, with no context, degrades into a flashcard.
+    So the surface policy should prefer pieces with rich context, and capture
+    may need to invite a line of context without nagging.
+  - *Risk:* cycling post-its must not become SRS under another name
+    ([MODEL principles 2 and 4](MODEL.md#principles)). Seeing a post-it is
+    ambient, not practice, and it counts as no evidence.
+  - *Landmarks need today's offer, not a generic label.* The building is
+    constant; what's inside varies (the reading underway, a conversation to
+    pick up, ten minutes of practice). Keep the set small: a few landmarks
+    and maybe one special, so the landing doesn't become a menu.
+  - *Open:* what does tapping a post-it do: open its memory, open its room,
+    or start a quick rep? How many post-its, and how fast do they cycle?
+    What does the town look like on a phone, perhaps as a street?
 
 ## Decision log
 
