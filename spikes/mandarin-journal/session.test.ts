@@ -614,9 +614,11 @@ test('a flagged exercise is marked on its attempt and recorded, and leaves Past 
     await settle(j);
     const card = j.get().practice.card!;
     await j.act({ id: randomUUID(), type: 'answer', cardId: card.id, answer: '不知道' });
+    assert.equal(j.get().practice.canReviewMisses, true);
     const attempt = j.get().attempts.at(-1)!;
     const s = await j.act({ id: randomUUID(), type: 'flagExercise', attemptId: attempt.id });
     assert.ok(s.attempts.at(-1)!.flagged);
+    assert.equal(s.practice.canReviewMisses, false);
     const flag = events(new DatabaseSync(box.path, { readOnly: true })).find((e) => e.kind === 'flag')!;
     assert.equal(flag.ref, attempt.id);
     const past = await j.act({ id: randomUUID(), type: 'practice', mode: 'Past mistakes' });
