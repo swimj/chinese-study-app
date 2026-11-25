@@ -162,18 +162,52 @@ export function buildScrapbook(state, { readingLabel, media }) {
     .sort((a, b) => (a.kind === LOOSE) - (b.kind === LOOSE) || b.recency - a.recency);
 }
 
-// One honest next step, from state alone: what is waiting, else what is underway.
-export function todayStep(state, { readingLabel }) {
-  const practice = state.practice;
-  const queued = [...(state.activity || [])].reverse().find((a) => a.text.startsWith('Queued practice · '));
-  if (practice?.card && !practice.done) {
-    return { text: queued ? queued.text.replace('Queued practice · ', '') : 'An exercise is waiting where you left off.', label: 'Practice', href: '#practice' };
+// The wall and the room use the same filtered collection, including archive and deletion.
+export function wallOffers(state, clusters) {
+  const { card, result, session, done } = state.practice;
+  let practice = 'Start a session';
+  if (card) practice = result ? 'Continue after feedback' : 'Resume practice';
+  else if (session?.waiting) practice = 'Return to your session';
+  else if (done) practice = 'Revisit your session';
+  const remaining = session && !done && session.budgetMinutes - session.spentMinutes;
+  const practiceTime = remaining > 0 ? '≈ ' + remaining + ' min' : '';
+
+  const visible = new Set(clusters.map(group => group.key));
+  const { positions, documents, documentId } = state.reading;
+  let reading;
+  for (const id of new Set([documentId, ...Object.keys(positions).reverse()])) {
+    if (!visible.has('read:' + id)) continue;
+    const doc = documents.find(d => d.id === id);
+    const paragraph = doc?.paragraphs.find(p => p.id === positions[id]);
+    if (paragraph) {
+      reading = {
+        title: doc.title, excerpt: paragraph.text,
+        bookmark: '← left off at ¶ ' + (doc.paragraphs.indexOf(paragraph) + 1) + ' of ' + doc.paragraphs.length,
+        href: '#read/source/' + encodeURIComponent(id + '/' + paragraph.id),
+      };
+      break;
+    }
   }
-  const hidden = hiddenGroups(state.board);
-  const reading = [...Object.keys(state.reading?.positions || {}).reverse(), state.reading?.documentId]
-    .find(id => id && !hidden.has('read:' + id));
-  if (reading) return { text: readingLabel(state, reading), lang: 'zh', label: 'Keep reading', href: '#read/source/' + encodeURIComponent(reading) };
-  return { text: 'Tell your conversation partner about your day.', label: 'Talk', href: '#chat' };
+
+  const conversation = state.threads.find(t => t.id === state.activeThreadId && visible.has('chat:' + t.id)
+    && (t.hasTurns || state.chat.length)) || state.threads.findLast(t => t.hasTurns && visible.has('chat:' + t.id));
+  const pieces = new Map(clusters.flatMap(group => group.scraps.map(piece => [pieceKey(piece), piece])));
+  const note = state.annotationThreads.findLast(item => pieces.has('annotation:' + item.id));
+  const save = state.saved.findLast(item => pieces.has('saved:' + item.id));
+  const noteTime = note?.capturedAt || note?.messages[0]?.at || '';
+  const preferSave = save && (!note || (save.savedAt && save.savedAt >= noteTime));
+  const recent = preferSave ? pieces.get('saved:' + save.id) : note && pieces.get('annotation:' + note.id);
+  const offeredPiece = recent || clusters.find(group => group.scraps.length)?.scraps[0];
+  const piece = offeredPiece && {
+    title: offeredPiece.title || offeredPiece.quote || offeredPiece.text || offeredPiece.item.caption,
+    href: '#scrapbook/piece/' + encodeURIComponent(pieceKey(offeredPiece)),
+  };
+  return { practice, practiceTime, reading, conversation, piece, pieceCount: pieces.size };
+}
+
+function pieceKey(piece) {
+  const { kind, pieceId } = pieceTarget(piece);
+  return kind + ':' + pieceId;
 }
 
 export function createScrapbook({ host, viewport, world, node, link, getState, readingLabel, openThread, ui, persist, compose, react, submit }) {
@@ -384,6 +418,7 @@ export function createScrapbook({ host, viewport, world, node, link, getState, r
 
   function scrapNode(scrap, state, list = false) {
     const holder = node('div', undefined, 'scrap-holder holder-' + scrap.kind);
+    holder.dataset.piece = pieceKey(scrap);
     if (scrap.kind === 'media') {
       const el = node('article', undefined, 'scrap scrap-media scrap-media-' + scrap.item.kind);
       el.tabIndex = 0;
@@ -563,16 +598,32 @@ export function createScrapbook({ host, viewport, world, node, link, getState, r
       if (!state) return;
       // A final bookmark write can refresh the board just after returning to the story title.
       const focused = document.activeElement;
+      const restorePiece = world.contains(focused) && focused.matches('.scrap') && focused.closest('[data-piece]')?.dataset.piece;
       const restoreTitle = world.contains(focused) && focused.matches('.cluster-title')
         ? focused.closest('.cluster').dataset.key : undefined;
       const clusters = buildScrapbook(state, { readingLabel, media: compose(state, Date.now()) });
       world.replaceChildren(...clusters.map((c) => clusterNode(c, state, false)));
       host.querySelector('.board-empty').hidden = Boolean(clusters.length);
-      if (restoreTitle) {
+      if (restorePiece) {
+        this.showPiece(restorePiece);
+      } else if (restoreTitle) {
         layout();
         const cluster = [...world.children].find(el => el.dataset.key === restoreTitle);
         cluster?.querySelector('.cluster-title')?.focus({ preventScroll: true });
       } else requestAnimationFrame(layout);
+      return clusters;
+    },
+    showPiece(key) {
+      const piece = world.querySelector('[data-piece="' + CSS.escape(key) + '"] .scrap');
+      if (!piece) return false;
+      layout();
+      if (!narrow.matches) {
+        view.s = Math.max(view.s, .92);
+        apply();
+      }
+      piece.focus({ preventScroll: true });
+      if (narrow.matches) piece.scrollIntoView({ block: 'center', inline: 'center' });
+      return true;
     },
     showReading(id) {
       const cluster = [...world.children].find(el => el.dataset.key === 'read:' + id);

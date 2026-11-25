@@ -190,7 +190,7 @@ type QueuedCard = Omit<Card, 'kind'> & {
 /** What an action records beside the journal: events, and rule judgments made on the spot. */
 /** admitted: forms admitted as targets to teach, with the reason (admission.ts). */
 type Outbox = { events: NewEvent[]; judgments: JudgmentRecord[]; priority: () => Ranked[]; admitted: () => Map<string, string> };
-type Item = { word?: WordContent; id: string; kind: string; title: string; detail: string; source: string; reference?: Reference };
+type Item = { savedAt?: string; word?: WordContent; id: string; kind: string; title: string; detail: string; source: string; reference?: Reference };
 /** landed: whether an open answer landed as an apt reply, judged by the feedback; not shown as a grade. */
 type Result = { correct: boolean | null; feedback: string; landed?: boolean };
 // cards holds the whole session in order; index is the card in front of the learner.
@@ -418,7 +418,7 @@ function context(
 function keep(s: State, kind: string, title: string, detail: string, src: string, reference?: Reference) {
   const previous = s.saved.find(item => item.kind === kind && item.title === title && item.detail === detail && item.source === src);
   if (previous) return showSaved(s.board, [previous.id]);
-  s.saved.push({ id: randomUUID(), kind, title, detail, source: src, reference });
+  s.saved.push({ id: randomUUID(), savedAt: new Date().toISOString(), kind, title, detail, source: src, reference });
   logActivity(s, 'Saved ' + kind.toLowerCase() + ' · ' + title, reference?.label ?? src, reference);
 }
 /**

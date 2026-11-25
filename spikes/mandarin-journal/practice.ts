@@ -696,7 +696,7 @@ export function demoFriend(input: TurnContext): string {
       '哪怕只出去走一圈，街上的声音一换，心情也跟着松一点。',
       '晚上出去走走挺好，风凉一点，脚步也慢下来。',
     ];
-  else if (input.topic?.trim())
+  else if (input.topic?.trim() && input.topic !== 'Conversation')
     replies = [
       '说到' + input.topic + '，你最先想到的是哪一个画面？',
       '有时候一个小细节比从头讲起更有意思。你刚才想到的那个细节是什么？',

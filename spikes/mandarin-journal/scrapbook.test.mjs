@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { buildScrapbook, todayStep } from './public/scrapbook.js';
+import { buildScrapbook, wallOffers } from './public/scrapbook.js';
 
 const readingLabel = (state, id) => state.reading.documents.find((d) => d.id === id)?.title || id;
 const kiosk = { id: 'kiosk', title: '河边的报刊亭', paragraphs: [{ id: 'p1', text: '每次路过，我总觉得亭子在等什么人。' }, { id: 'p2', text: '窗台上搁着半杯茶。' }] };
@@ -43,7 +43,7 @@ test('board edits hide groups and pieces in place while keeping their sources av
   assert.deepEqual(visible.loose.scraps.map(s => s.title), ['报备']);
   assert.equal(state.saved.length, 3);
   assert.equal(state.reflections[0].takeaways.length, 1);
-  assert.equal(todayStep(state, { readingLabel }).href, '#chat');
+  assert.equal(wallOffers(state, Object.values(visible)).reading, undefined);
   state.board.archivedGroups = [];
   const restored = byKey(buildScrapbook(state, { readingLabel }))['read:kiosk'];
   assert.equal(restored.scraps[0].id, 'n1');
@@ -88,14 +88,43 @@ test('an unreflected conversation restored while another thread is open has a bo
   assert.deepEqual(byKey(buildScrapbook(state, { readingLabel }))['chat:other'].scraps, []);
 });
 
-test('today offers one step: waiting practice, else the reading underway, else conversation', () => {
-  const waiting = journal({
-    practice: { mode: 'Daily mix', card: { id: 'c1' }, result: null, done: false },
-    activity: [{ id: 'a1', at: '', text: 'Queued practice · Saying what “only” applies to', source: '' }],
+function offers(state) {
+  return wallOffers(state, buildScrapbook(state, { readingLabel }));
+}
+
+test('wall offers point to the current session, exact paragraph, conversation and visible piece', () => {
+  const state = journal({
+    practice: { card: { id: 'c1' }, done: false, session: { spentMinutes: 2, budgetMinutes: 10 } },
+    activity: [{ text: 'Queued practice · An older exercise' }],
   });
-  assert.deepEqual(todayStep(waiting, { readingLabel }), { text: 'Saying what “only” applies to', label: 'Practice', href: '#practice' });
-  assert.equal(todayStep(journal(), { readingLabel }).href, '#read/source/kiosk');
-  assert.equal(todayStep(journal({ reading: { positions: {}, documents: [] } }), { readingLabel }).href, '#chat');
+  const wall = offers(state);
+  assert.equal(wall.practice, 'Resume practice');
+  assert.equal(wall.practiceTime, '≈ 8 min');
+  assert.equal(wall.reading.href, '#read/source/kiosk%2Fp2');
+  assert.equal(wall.reading.excerpt, kiosk.paragraphs[1].text);
+  assert.equal(wall.reading.bookmark, '← left off at ¶ 2 of 2');
+  assert.equal(wall.conversation.id, 'library');
+  assert.equal(wall.piece.href, '#scrapbook/piece/annotation%3An1');
+  state.saved.at(-1).savedAt = '2026-11-25T01:23:00Z';
+  assert.equal(offers(state).piece.href, '#scrapbook/piece/saved%3Aw3');
+  state.practice.result = { feedback: 'Try again' };
+  assert.equal(offers(state).practice, 'Continue after feedback');
+});
+
+test('wall skips hidden pieces and invalid bookmarks and can open on a fresh journal', () => {
+  const state = journal({ board: { archivedGroups: ['chat:library', 'chat:birds'], deletedPieces: [{ kind: 'annotation', pieceId: 'n1' }] } });
+  state.reading.positions.kiosk = 'missing';
+  const wall = offers(state);
+  assert.equal(wall.reading, undefined);
+  assert.equal(wall.conversation, undefined);
+  assert.equal(wall.piece.href, '#scrapbook/piece/saved%3Aw2');
+  const fresh = offers(journal({ threads: [], chat: [], reflections: [], annotationThreads: [], saved: [],
+    practice: { card: null, done: false }, reading: { positions: {}, documents: [] } }));
+  assert.equal(fresh.practice, 'Start a session');
+  assert.equal(fresh.reading, undefined);
+  assert.equal(fresh.conversation, undefined);
+  assert.ok(!fresh.piece);
+  assert.equal(fresh.pieceCount, 0);
 });
 
 test('placed pictures become clippings beside their piece; latent ones wait on it, in table and list alike', () => {

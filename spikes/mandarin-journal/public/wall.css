@@ -170,3 +170,19 @@ body:is([data-view="chat"], [data-view="practice"]) .masthead { display: none; }
 @media (max-width: 760px) {
   .with-tutor .wall { margin-right: auto; padding-bottom: 72dvh; }
 }
+.offer-detail { display: block; margin-top: .55rem; }
+.offer-detail:empty, .bookmark-note:empty { display: none; }
+.ticket .offer-detail, .shoebox .wall-secondary, .postscript { font: .9rem/1.5 var(--sans); }
+.book-page .offer-detail { font: 1rem/1.8 var(--han); }
+.bookmark-note { display: block; margin-top: .65rem; font: 650 1.45rem/1.1 var(--hand); color: var(--green-ink); }
+.book-page .offer-detail, .postcard .offer, .shoebox .wall-secondary, .postscript {
+  display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden;
+}
+.postscript { color: #374039; margin: .55rem .3rem .15rem; padding-left: .6rem; border-left: 2px solid #b66c4e; }
+.wall-secondary { text-align: left; }
+.postcard .wall-secondary {
+  margin: .15rem 0 0; padding: .25rem .35rem; color: var(--green-ink);
+  font: 650 1.4rem/1.1 var(--hand);
+}
+.shoebox .wall-secondary { margin-top: .3rem; }
+.wall a:focus-visible, .wall button:focus-visible { outline: 3px solid #195449; outline-offset: 3px; }

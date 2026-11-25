@@ -21,7 +21,7 @@ Which journal opens is separate from the tutor mode. `npm start` opens this chec
 
 ## Home
 
-Home is a cork wall with four entrances. Practice is a ticket, Read a dog-eared page, Talk a postcard, and Scrapbook a shoebox. The notepad on the wall accepts a word, a link, or a sentence. The [delivery slices](design/delivery.md) record the release scope.
+Home is a cork wall with four entrances. Practice is a ticket, Read a dog-eared page, Talk a postcard, and Scrapbook a shoebox. The ticket opens the current session, the page resumes at the quoted paragraph, and the postcard opens the named conversation. **Just talk** starts a casual conversation. Select the piece on the shoebox label to find it on the table. With no bookmark the Read page opens reading import. The notepad on the wall accepts a word, a link, or a sentence. The [delivery slices](design/delivery.md) record the release scope.
 
 Open the shoebox for the scrapbook table. Each conversation and reading has its own cluster of pieces. Words without a source collect under Loose ends. Drag or scroll to move around the desktop table, pinch or Ctrl/⌘-scroll to zoom, or choose **See everything** from its menu. The phone lays out the clusters vertically.
 
