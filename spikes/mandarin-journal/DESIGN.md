@@ -274,7 +274,13 @@ These describe the prototype now, not lasting rules.
 
 ## Feedback awaiting the rewrite
 
-*(Empty since the Nov 25 rewrite.)*
+- *(Nov 25)* **Urban plans sketched** on the design canvas (page "Urban
+  plans"): A the desk, B the town, C the wall, D one invitation, plus small
+  interaction ideas. **Justin chose C, the wall,** and supports all the small
+  ideas: doors not links, peek on focus, time-of-day light, capture showing
+  where it went, visible characters, fresh and stale offers, a keyboard town,
+  and rotation instead of a carousel. Why the wall wins is still to be
+  recorded.
 
 ## Decision log
 
@@ -300,3 +306,4 @@ These describe the prototype now, not lasting rules.
 | 2026-11-25 | V1 landmarks: Practice, Read, Talk (root chat and projects), Scrapbook, plus the capture bar | Justin, design conversation |
 | 2026-11-25 | Purpose before tidiness: a crowded Home is acceptable for now; rotation over time is an option later | Justin, design conversation |
 | 2026-11-25 | What the partner explains or recasts counts as shown; practice parses it asynchronously | Justin, design conversation |
+| 2026-11-25 | Desktop V1 direction: the wall (urban plan C), with the small interaction ideas | Justin, canvas review |
