@@ -486,6 +486,7 @@ export function createScrapbook({ host, viewport, world, node, link, getState, r
   }
 
   function layout() {
+    if (host.hidden) return;
     if (narrow.matches) { apply(); return; }
     const items = [...world.children];
     if (!items.length) return;

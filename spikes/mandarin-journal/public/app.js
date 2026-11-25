@@ -8,7 +8,7 @@ import { compose } from './media-policy.js';
 import { createTeaching } from './teaching.js';
 
 const get = (id) => document.getElementById(id);
-const labels = { home: 'Journal', read: 'Reading', chat: 'Conversation', practice: 'Practice', saved: 'Scrapbook' };
+const labels = { home: 'Journal', scrapbook: 'Scrapbook', read: 'Reading', chat: 'Conversation', practice: 'Practice', saved: 'List' };
 const uiKey = 'mandarin-journal.ui.v1';
 function readUi() {
   try {
@@ -145,10 +145,8 @@ const capture = createCapture({
     renderTutor();
     capture.watch(state.wordIntakes);
     if (page === 'saved') renderSaved();
-    if (page === 'home') {
-      renderToday();
-      scrapbook.render();
-    }
+    renderToday();
+    scrapbook.render();
   },
 });
 const reader = createReading({
@@ -181,7 +179,8 @@ const scrapbook = createScrapbook({
     if (id === state.activeThreadId || await submit({ type: 'selectThread', threadId: id })) location.hash = 'chat';
   },
 });
-get('dock-tutor').onclick = (e) => setTutor(get('tutor-body').inert, true, true, e.currentTarget);
+const tutorSeals = document.querySelectorAll('[data-tutor-toggle]');
+for (const seal of tutorSeals) seal.onclick = () => setTutor(get('tutor-body').inert, true, true, seal);
 const pointButton = get('tutor-point');
 function setPointing(on) {
   pointButton.setAttribute('aria-pressed', String(on));
@@ -194,20 +193,19 @@ pointButton.onclick = () => {
 };
 function renderToday() {
   const step = todayStep(state, { readingLabel });
-  const text = get('today-text');
-  text.textContent = step.text;
-  if (step.lang) text.lang = step.lang; else text.removeAttribute('lang');
-  get('today-action').textContent = step.label;
-  get('today-action').href = step.href;
-  for (const place of document.querySelectorAll('.places a:not(#archive-link)')) place.hidden = place.getAttribute('href') === step.href.split('/')[0];
+  if (step.href === '#practice') get('wall-practice').querySelector('.offer').textContent = step.text;
+  if (step.label === 'Keep reading') {
+    get('wall-read').href = step.href;
+    get('wall-read').querySelector('.offer').textContent = step.text;
+  }
 }
-get('today').textContent = new Intl.DateTimeFormat(undefined, {
-  weekday: 'long', month: 'long', day: 'numeric',
+get('wall-date').textContent = new Intl.DateTimeFormat(undefined, {
+  weekday: 'long', month: 'short', day: 'numeric',
 }).format(new Date());
 
 function setTutor(open, focus = false, remember = true, opener = document.activeElement) {
   if (remember) { ui.tutorOpen = open; persist(); }
-  get('dock-tutor').setAttribute('aria-expanded', String(open));
+  for (const seal of tutorSeals) seal.setAttribute('aria-expanded', String(open));
   if (!open && typeof scrapbook !== 'undefined') { scrapbook.stopPicking(); scrapbook.clearAsked(); }
   const toggle = get('tutor-toggle');
   const body = get('tutor-body');
@@ -421,8 +419,10 @@ function renderTutor() {
   });
   for (const extra of existing.slice(state.tutor.length)) extra.remove();
   const needsReply = state.tutor.some(turn => replyTarget(state, turn));
-  get('dock-tutor').classList.toggle('needs-reply', needsReply);
-  get('dock-tutor').setAttribute('aria-label', needsReply ? 'Tutor has a question' : 'Tutor');
+  for (const seal of tutorSeals) {
+    seal.classList.toggle('needs-reply', needsReply);
+    seal.setAttribute('aria-label', needsReply ? 'Tutor has a question' : 'Tutor');
+  }
   get('tutor-attention').hidden = !needsReply;
   if (!state.tutor.length && ui.pending?.type !== 'tutor') log.replaceChildren(node('p', 'What’s on your mind?', 'sub'));
   if (atEnd || !existing.length) scroll.scrollTop = scroll.scrollHeight;
@@ -805,16 +805,10 @@ async function navigate(initial = false) {
   }
   for (const section of document.querySelectorAll('[data-page]')) section.hidden = section.dataset.page !== page;
   document.body.dataset.view = page;
-  get('tutor-point').hidden = page !== 'home';
+  get('tutor-point').hidden = page !== 'scrapbook';
+  if (page !== 'scrapbook') scrapbook.stopPicking();
   setTutor(Boolean(ui.tutorOpen), false, false);
   renderTutorContext();
-  if (page !== 'home' && page !== 'saved') ui.recent = page;
-  if (Object.hasOwn(labels, ui.recent)) {
-    get('recent').hidden = false;
-    get('recent-link').textContent = labels[ui.recent] + ' ↗';
-    get('recent-link').href = '#' + ui.recent;
-  }
-
   get('saved-link').setAttribute('aria-current', page === 'saved' ? 'page' : 'false');
   persist();
   if (!initial && previous !== page && !target.kind) {
@@ -823,12 +817,12 @@ async function navigate(initial = false) {
     if (heading) { heading.tabIndex = -1; heading.focus({ preventScroll: true }); }
   }
   if (!state) return;
-  if (page === 'home' && previous === 'read' && !target.kind) {
+  if (page === 'scrapbook' && previous === 'read' && !target.kind) {
     scrapbook.showReading(reader.documentId());
   }
   if (page === 'home' && target.kind === 'import') {
     if (!importDialog.open) {
-      importReturnFocus = importUrl ? get('word-text') : get('dock-menu').querySelector('summary');
+      importReturnFocus = importUrl ? get('word-text') : get('wall-read');
       importDialog.append(notice);
       reader.openImport(importUrl, target.id);
       importUrl = '';
@@ -1176,7 +1170,7 @@ get('tutor-form').onsubmit = (e) => {
     submit({ type: 'tutor', message, surface: 'home', source: label, ...target });
     return;
   }
-  const context = ui.tutorContext || { surface: page, source, referenceId };
+  const context = ui.tutorContext || { surface: page === 'scrapbook' ? 'home' : page, source, referenceId };
   const sourceLabel = context.label || (page === 'chat' ? thread().title : page === 'read' ? reader.title() : undefined);
   submit({ type: 'tutor', message, source: context.source, surface: context.surface, referenceId: context.referenceId, sourceLabel });
 };

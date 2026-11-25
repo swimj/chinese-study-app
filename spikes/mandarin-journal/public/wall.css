@@ -1,0 +1,172 @@
+@font-face {
+  font-family: 'Wall handwriting';
+  src: url('/wall/caveat-latin.woff2') format('woff2');
+  font-style: normal;
+  font-weight: 500 700;
+  font-display: swap;
+}
+
+/* Cork, stationery and ink are shared. Each pinned object has its own silhouette. */
+body[data-view="home"] {
+  background-color: #cca377;
+  background-image:
+    radial-gradient(ellipse at 28% 16%, #efd4ae42, transparent 68%),
+    radial-gradient(ellipse, #916e4966 .8px, transparent 1.45px),
+    radial-gradient(ellipse, #e6c79b80 .85px, transparent 1.4px);
+  background-size: auto, 7px 7px, 7px 7px;
+  background-position: center, 0 0, 3.5px 3.5px;
+}
+.wall {
+  --hand: 'Wall handwriting', 'Bradley Hand', cursive;
+  --green-ink: #31594b;
+  color: #292f28;
+  max-width: 92rem;
+  min-height: 100dvh;
+  margin-inline: auto;
+  padding: clamp(1rem, 4vw, 4rem);
+  container: wall / inline-size;
+}
+.with-tutor .wall { margin-right: min(27rem, 42vw); }
+.wall-header { display: flex; gap: .3rem .9rem; align-items: baseline; flex-wrap: wrap; color: #422c1c; }
+.wall-header h1, .wall-header time, .wall .capture h2 { font-family: var(--hand); text-transform: lowercase; }
+.wall-header h1 { margin: 0; font-size: clamp(2.8rem, 4vw, 3.55rem); font-weight: 700; line-height: .95; transform: rotate(-2deg); }
+.wall-header time { font-size: 1.45rem; font-weight: 600; line-height: 1.1; }
+.wall-header .tutor-seal { margin-left: auto; }
+.wall-objects {
+  display: grid;
+  align-items: start;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 2.6rem 2rem;
+  padding: 2.8rem .65rem 3rem;
+}
+.pinned, .wall .capture {
+  position: relative;
+  min-width: 0;
+  overflow-wrap: anywhere;
+  box-shadow: 1px 3px 3px #53371c38, 2px 9px 10px -7px #563d2b66;
+}
+.pinned::before, .wall .capture::before {
+  content: '';
+  position: absolute;
+  z-index: 1;
+  width: .97rem;
+  height: .97rem;
+  top: -.43rem;
+  left: var(--pin-x, 48%);
+  border-radius: 49% 51% 48% 52%;
+  background: var(--pin, #ad4931);
+  box-shadow: 1px 3px 3px #48341b4d, inset 1px 1px 2px #ffffff30;
+  pointer-events: none;
+}
+.object-label { display: block; font: 650 .75rem/1.4 var(--sans); letter-spacing: .13em; text-transform: uppercase; }
+.offer { display: block; font: 650 1.55rem/1.2 var(--serif); }
+.pinned[href]:hover, .pinned a:hover { text-decoration: none; }
+.pinned[href]:hover .offer, .pinned a:hover .offer { text-decoration: underline; text-decoration-thickness: 1px; text-underline-offset: .14em; }
+
+.ticket {
+  --pin-x: 47%;
+  padding: 1.4rem 1.45rem 1.25rem;
+  transform: rotate(-4deg);
+  background: #f5e2ad;
+}
+.ticket .object-label { color: #64491f; }
+.ticket .offer { margin-top: .45rem; font: 700 clamp(2.05rem, 3vw, 2.8rem)/1.05 var(--hand); }
+.ticket::after {
+  content: ''; position: absolute; inset: 0 -2px; z-index: -1;
+  background: repeating-linear-gradient(to bottom, #f5e2ad 0 4px, transparent 4px 7px);
+}
+.book-page {
+  --pin: #395e50;
+  padding: 1.7rem 1.55rem 1.4rem;
+  transform: rotate(2.6deg);
+  box-shadow: none;
+}
+.book-page::after {
+  content: ''; position: absolute; inset: 0; z-index: -1;
+  background: linear-gradient(213deg, transparent 1.25rem, #fffdf6 1.28rem) top right / 3rem 2.6rem no-repeat,
+    linear-gradient(#fffdf6 0 0) left / calc(100% - 2.99rem) 100% no-repeat,
+    linear-gradient(#fffdf6 0 0) bottom / 100% calc(100% - 2.59rem) no-repeat;
+  filter: drop-shadow(1px 3px 2px #59401e3b);
+}
+.postcard { --pin: #dfb756; padding: .68rem; background: #fffcf3; transform: rotate(-1.8deg); }
+.postcard a:first-child {
+  display: flex; flex-direction: column; justify-content: flex-end; align-items: flex-start;
+  min-height: 9.4rem; padding: 2rem .8rem .65rem;
+  background: linear-gradient(0deg, #102f2bed, #29433900 80%), url('/wall/river-postcard.jpg') center / cover, #547565;
+  color: #fffdf4;
+}
+.postcard .object-label { font-size: .66rem; margin-bottom: .2rem; }
+.postcard .offer { font-size: 1.43rem; }
+.postcard a:first-child::after, .shoebox a:first-child::after { content: ''; position: absolute; inset: 0; }
+.pinned .wall-secondary { position: relative; }
+@media (min-width: 761px) {
+  body:is([data-view="home"], [data-view="scrapbook"]) #tutor { width: min(27rem, 42vw); }
+  .with-tutor .scrapbook { right: min(27rem, 42vw); }
+}
+.shoebox {
+  --pin: #537492;
+  border: clamp(.65rem, 1.2vw, 1rem) solid #886847;
+  border-block-color: #967351 #846445;
+  border-radius: 3px;
+  padding: 1rem 1rem .9rem; background: #f4ebd9; transform: rotate(1.7deg);
+}
+.shoebox::before { top: -1.55rem; }
+.box-label { display: block; }
+.shoebox .offer { font: 700 2.05rem/1.05 var(--hand); color: #402d1c; }
+.wall-sticker {
+  justify-self: center; display: grid; place-items: center; align-self: center;
+  width: clamp(4.6rem, 7.7vw, 6.9rem); aspect-ratio: 1;
+  border-radius: 51% 49% 50% 47%; transform: rotate(-12deg);
+  color: #fff9e7; background: #b44b2d; box-shadow: 1px 2px 2px #63462a42;
+  font: 700 clamp(1.9rem, 2.8vw, 2.8rem)/1 'Kaiti SC', 'KaiTi', var(--han);
+}
+.wall .capture {
+  --pin: #365948;
+  inset: auto; width: auto; min-width: 0; transform: rotate(-2deg); z-index: auto;
+  padding: 1.25rem 1.3rem 1.15rem; border: 0; border-radius: 1px;
+  background: repeating-linear-gradient(to bottom, #fffdf7 0 calc(2.1rem - 1px), #c4d3dc calc(2.1rem - 1px) 2.1rem);
+}
+.wall .capture h2 { font-size: 1.72rem; line-height: 1.2; margin: 0; color: #3a2a1d; }
+.wall .intake-line { flex-wrap: wrap; gap: .5rem; margin-top: .5rem; }
+.wall .intake-line input { flex: 1 1 100%; color: var(--ink); }
+.wall .intake-line input::placeholder { color: #635d56; opacity: 1; font: 600 1.5rem/1 var(--hand); }
+.wall .capture:focus-within { outline: 2px solid var(--green-ink); outline-offset: 3px; }
+.wall .intake-line .primary { border-radius: 3rem; padding-inline: 1.2rem; }
+.room-home { display: inline-block; color: var(--solid); padding: .3rem .65rem; font-size: .95rem; }
+.dock .room-home { background: var(--paper); border-radius: .3rem; }
+body:is([data-view="chat"], [data-view="practice"]) .masthead { display: none; }
+
+@media (hover: hover) and (prefers-reduced-motion: no-preference) {
+  .pinned { transition: translate 150ms ease-out; }
+  .pinned:hover, .pinned:focus-within { translate: 0 -2px; }
+}
+
+/* The paper footprints and open cork follow the proportions of urban-plan-wall.png. */
+@container wall (min-width: 56rem) {
+  .wall-objects {
+    grid-template-columns: repeat(36, minmax(0, 1fr));
+    column-gap: 0; row-gap: clamp(2.7rem, 4.6cqw, 4.5rem);
+    padding: clamp(2.2rem, 3.6cqw, 3.6rem) 0 4rem;
+  }
+  .ticket { grid-column: 3 / 11; margin-top: 3.4cqw; }
+  .book-page { grid-column: 13 / 23; margin-inline: 1.1cqw; }
+  .postcard { grid-column: 25 / 35; margin: 4.6cqw .9cqw 0 0; }
+  .shoebox { grid-column: 6 / 16; margin: 0 0 0 .85cqw; }
+  .wall-sticker { grid-column: 21 / 24; margin-top: 3.4cqw; align-self: start; }
+  .wall .capture { grid-column: 26 / 36; }
+}
+@container wall (32rem < width < 56rem) {
+  .ticket { margin: 2rem .4rem 0 0; }
+  .postcard { margin-right: 1.4rem; }
+  .shoebox { margin: 2.2rem 0 0 .6rem; }
+}
+@container wall (max-width: 32rem) {
+  .wall-objects { grid-template-columns: minmax(0, 1fr); padding: 2.3rem .5rem; gap: 1.75rem; }
+  .ticket, .postcard { margin-right: 4%; }
+  .book-page, .shoebox { margin-left: 4%; }
+  .wall-sticker { display: none; }
+  .wall .capture { margin: 0; }
+}
+@media (max-width: 760px) {
+  .with-tutor .wall { margin-right: auto; padding-bottom: 72dvh; }
+}

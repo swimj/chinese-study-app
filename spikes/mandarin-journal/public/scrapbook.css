@@ -18,12 +18,12 @@
   overflow: hidden;
 }
 /* Home is the table itself: no masthead, frame or footer around it. */
-body[data-view="home"] .masthead,
-body[data-view="home"] .journal > footer { display: none; }
-body[data-view="home"] .journal { padding: 0; }
-body[data-view="home"] .layout,
-body[data-view="home"] .layout.with-tutor { display: block; }
-body[data-view="home"] #notice {
+body:is([data-view="home"], [data-view="scrapbook"]) .masthead,
+body:is([data-view="home"], [data-view="scrapbook"]) .journal > footer { display: none; }
+body:is([data-view="home"], [data-view="scrapbook"]) .journal { padding: 0; }
+body:is([data-view="home"], [data-view="scrapbook"]) .layout,
+body:is([data-view="home"], [data-view="scrapbook"]) .layout.with-tutor { display: block; }
+body:is([data-view="home"], [data-view="scrapbook"]) #notice {
   position: fixed;
   z-index: 20;
   top: 1rem;
@@ -32,8 +32,8 @@ body[data-view="home"] #notice {
 }
 /* The tutor is a sheet beside the table. Opening it narrows the view of the
    table instead of covering it, so nothing being discussed is hidden. */
-body[data-view="home"] .layout:not(.with-tutor) #tutor { display: none; }
-body[data-view="home"] #tutor {
+body:is([data-view="home"], [data-view="scrapbook"]) .layout:not(.with-tutor) #tutor { display: none; }
+body:is([data-view="home"], [data-view="scrapbook"]) #tutor {
   position: fixed;
   inset: 0 0 0 auto;
   margin: 0;
@@ -45,9 +45,9 @@ body[data-view="home"] #tutor {
   box-shadow: -12px 0 32px -24px #21463780;
   z-index: 10;
 }
-body[data-view="home"] #tutor .tutor-fold { flex: 1; min-height: 0; }
-body[data-view="home"] #tutor-body { display: flex; flex-direction: column; height: 100%; }
-body[data-view="home"] #tutor .thread { flex: 1; height: auto; min-height: 0; }
+body:is([data-view="home"], [data-view="scrapbook"]) #tutor .tutor-fold { flex: 1; min-height: 0; }
+body:is([data-view="home"], [data-view="scrapbook"]) #tutor-body { display: flex; flex-direction: column; height: 100%; }
+body:is([data-view="home"], [data-view="scrapbook"]) #tutor .thread { flex: 1; height: auto; min-height: 0; }
 .scrapbook { transition: right var(--tutor-duration, 340ms) var(--tutor-ease, ease); }
 .with-tutor .scrapbook { right: min(27rem, 100%); }
 .tutor-point {
@@ -369,20 +369,7 @@ a.scrap:focus-visible {
 .dock-panel a:hover,
 .dock-panel button:hover { background: var(--tint); text-decoration: none; }
 .dock-panel button { border-top: 1px solid #dfe7e0; border-radius: 0 0 .5rem .5rem; margin-top: .2rem; }
-.today-line {
-  display: flex;
-  align-items: center;
-  min-width: 0;
-  margin: 0;
-  padding: .3rem .35rem .3rem .75rem;
-  background: color-mix(in srgb, var(--panel) 92%, transparent);
-  border: 1px solid #c9d5cb;
-  border-radius: 999px;
-  box-shadow: 0 10px 26px -18px #21463766;
-  font: 1.02rem/1.35 var(--serif);
-}
-.today-line [lang="zh"] { font-family: var(--han); }
-.today-seal {
+.tutor-seal {
   flex: 0 0 auto;
   display: inline-flex;
   align-items: center;
@@ -396,8 +383,8 @@ a.scrap:focus-visible {
   color: #fff;
   font: .95rem/1 var(--han);
 }
-.today-seal.needs-reply { position: relative; }
-.today-seal.needs-reply[aria-expanded="false"]::after {
+.tutor-seal.needs-reply { position: relative; }
+.tutor-seal.needs-reply[aria-expanded="false"]::after {
   content: "";
   position: absolute;
   right: -.15rem;
@@ -408,21 +395,8 @@ a.scrap:focus-visible {
   border-radius: 50%;
   background: var(--clay);
 }
-.today-seal:hover:enabled { text-decoration: none; filter: brightness(1.1); }
-.today-seal[aria-expanded="true"] { box-shadow: 0 0 0 2px var(--panel), 0 0 0 4px var(--clay); }
-#today-text { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.today-go {
-  flex: 0 0 auto;
-  margin-left: .65rem;
-  padding: .32rem .85rem;
-  border-radius: 999px;
-  background: var(--solid);
-  color: var(--on);
-  font: 500 .88rem/1.4 var(--sans);
-}
-.today-go::after { content: ' →'; }
-.today-go:hover { text-decoration: none; filter: brightness(1.08); }
-
+.tutor-seal:hover:enabled { text-decoration: none; filter: brightness(1.1); }
+.tutor-seal[aria-expanded="true"] { box-shadow: 0 0 0 2px var(--panel), 0 0 0 4px var(--clay); }
 .capture {
   left: 50%;
   bottom: 1.1rem;
@@ -475,11 +449,9 @@ a.scrap:focus-visible {
   .cluster { position: static; width: auto !important; margin: 0 0 2.2rem; }
   .dock { position: sticky; top: max(.6rem, env(safe-area-inset-top)); left: 0; order: -1; margin: 0 0 1.6rem; max-width: none; z-index: 4; }
   .with-tutor .scrapbook { right: auto; }
-  body[data-view="home"] #tutor { inset: auto 0 0 0; width: 100%; height: 72dvh; border-width: 1px 0 0; border-radius: 1.1rem 1.1rem 0 0; }
-  body[data-view="home"] #tutor { transition: transform var(--tutor-duration, 340ms) var(--tutor-ease, ease); }
-  body.picking-piece[data-view="home"] #tutor { transform: translateY(calc(100% - 3.1rem)); }
-  .today-line { flex: 1; }
-  #today-text { white-space: normal; }
+  body:is([data-view="home"], [data-view="scrapbook"]) #tutor { inset: auto 0 0 0; width: 100%; height: 72dvh; border-width: 1px 0 0; border-radius: 1.1rem 1.1rem 0 0; }
+  body:is([data-view="home"], [data-view="scrapbook"]) #tutor { transition: transform var(--tutor-duration, 340ms) var(--tutor-ease, ease); }
+  body.picking-piece[data-view="scrapbook"] #tutor { transform: translateY(calc(100% - 3.1rem)); }
   .pieces {
     flex-wrap: nowrap;
     overflow-x: auto;
