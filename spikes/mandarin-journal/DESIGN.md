@@ -299,6 +299,9 @@ These describe the prototype now, not lasting rules.
   - **A small real gesture would be welcome but isn't essential:** for
     example, the learner can drag a pinned thing to re-pin it, and it stays
     where they put it. It makes the ownership feeling honest.
+    Re-pinning works only after the learner picks the thing up (select,
+    then drag), so a stray drag while panning never rearranges the wall.
+    This follows "controls appear on selection".
 
 ## Decision log
 
