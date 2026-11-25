@@ -90,10 +90,15 @@ export function compose(state, now = Date.now()) {
   };
 
   const caps = tasteCaps(media, t);
+  const deleted = new Set((state.board?.deletedPieces || []).filter(piece => piece.kind === 'media').map(piece => piece.pieceId));
   const system = [];
   for (const item of media) {
     const chosen = learnerChosen(item);
     out[item.id] = { level: chosen ? 'placed' : item.ceiling, reasons: [] };
+    if (deleted.has(item.id)) {
+      demote(item, 'none', 'deleted');
+      continue;
+    }
     // Nowhere to show it: its piece is no longer on the board.
     if (!home.has(item.anchor.id)) demote(item, 'none', 'no-anchor');
     if (chosen) continue;

@@ -18,4 +18,8 @@ export const policy: {
 };
 export function learnerChosen(item: MediaLike): boolean;
 export function tasteCaps(media: MediaLike[], now: number): Map<string, number>;
-export function compose(state: { media?: MediaLike[]; settings?: { pictures: string } }, now?: number | string): Record<string, Verdict>;
+export function compose(state: {
+  media?: MediaLike[];
+  settings?: { pictures: string };
+  board?: { archivedGroups: string[]; deletedGroups: string[]; deletedPieces: { kind: string; pieceId: string }[] };
+}, now?: number | string): Record<string, Verdict>;

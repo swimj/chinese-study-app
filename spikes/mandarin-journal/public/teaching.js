@@ -40,16 +40,21 @@ export function createTeaching(beats, { shown = 1, done = false, onAdvance = () 
   let count = done ? beats.length : Math.min(Math.max(shown, 1), beats.length);
   for (const beat of beats.slice(0, count)) list.append(renderBeat(beat));
   list.lastElementChild?.classList.add('current');
-  element.append(list);
+  const progress = node('p', undefined, 'small card-type');
+  const updateProgress = () => { progress.textContent = 'Introduction · ' + count + ' of ' + beats.length; };
+  updateProgress();
+  element.append(progress, list);
   if (done) return { element, control: null };
   const control = node('button', 'Continue', 'primary teaching-next');
   control.type = 'button';
+  control.setAttribute('aria-keyshortcuts', 'Space');
   control.onclick = () => {
     if (count < beats.length) {
       list.lastElementChild?.classList.remove('current');
       const item = renderBeat(beats[count++]);
       item.classList.add('current');
       list.append(item);
+      updateProgress();
       onAdvance(count);
       control.scrollIntoView({ block: 'nearest' });
       return;

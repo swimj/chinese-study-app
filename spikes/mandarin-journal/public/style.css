@@ -757,7 +757,7 @@ footer {
 
 /* Reserve room for open marginalia alongside the source on a wide desk. */
 @media (min-width: 70rem) {
-  .layout:not(.with-tutor) :is([data-page="read"], [data-page="chat"]) {
+  .layout:not(.with-tutor) [data-page="read"] {
     width: min(54rem, calc(100vw - 26rem - 6.6vw));
     margin-inline: max(0px, calc((100% - 72rem) / 2)) auto;
   }
@@ -790,11 +790,3 @@ footer {
 
 .masthead { flex-wrap: wrap; gap: .2rem 1.2rem; }
 .masthead nav { display: flex; align-items: baseline; gap: .4rem 1.2rem; flex-wrap: wrap; }
-.recall input {
-  display: block;
-  width: 100%;
-  max-width: 16rem;
-  margin-top: .4rem;
-  font-size: 1.25rem;
-}
-.recall button { margin-top: .75rem; }
