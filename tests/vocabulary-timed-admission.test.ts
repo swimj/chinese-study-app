@@ -13,7 +13,8 @@ import { admitTimedVocabularyStudy } from '../server/vocabulary/timed-admission.
 import { readVocabularyDueReviewObjectives, type VocabularyReviewSkill } from '../server/vocabulary/review-selection.ts';
 import { readVocabularyPureCueStreams } from '../server/vocabulary/pure-cue-serving.ts';
 import { timedReviewBound } from '../src/domain/timed-session.ts';
-import { createTimedSessionRecord, finalizeTimedSession } from '../server/db/vocabulary-timed-sessions.ts';
+import { dueRepertoireWords, hasProactiveDemand, proactiveHorizon, scanProactiveRepertoire } from '../server/db/proactive-repertoire.ts';
+import { createTimedSessionRecord, finalizeTimedSession, setDailyStudyMinutes } from '../server/db/vocabulary-timed-sessions.ts';
 import { createVocabularySession } from '../server/db/vocabulary-sessions.ts';
 import { projectVocabularySession } from '../src/domain/vocabulary-session.ts';
 
@@ -79,6 +80,41 @@ test('review admits the top of the ranking up to the bound and checks content on
   // Learning has no cap of its own and takes nothing from review.
   assert.deepEqual(admission.learningWordIds, ['w0300', 'w0301', 'w0302', 'w0303']);
 }));
+
+test('review preparation uses each learner’s full daily slice before pooling shared demand', () => {
+  const ids = alice(() => words(53, 1));
+  const horizon = proactiveHorizon(now);
+  alice(() => setDailyStudyMinutes(10));
+  // The Maintain word and fragile cue each consume a slot. The cue’s answer is outside the horizon.
+  db.prepare("UPDATE learner_words SET mode='maintain' WHERE word_id=?").run(ids[0]!);
+  db.prepare("UPDATE learner_word_schedules SET next_eligible_at=? WHERE word_id=?").run(at(13), ids[52]!);
+  alice(() => cue('fragile', ids[52]!, { next: at(-200) }));
+  const target = ids[49]!;
+  const slice = dueRepertoireWords(horizon);
+  assert.equal(slice.includes(ids[48]!), true);
+  assert.equal(slice.includes(target), false);
+  assert.equal(slice.includes(ids[0]!), false);
+  assert.equal(slice.includes('w0053'), true); // Solidify is outside the review bound.
+  assert.equal(slice.includes(ids[52]!), false);
+
+  db.prepare("INSERT INTO learners(learner_id,display_name,created_at) VALUES ('bob','Bob',?)").run(now);
+  db.prepare("INSERT INTO learner_words(learner_id,word_id,in_stash,added_at,mode,mode_changed_at) VALUES ('bob',?,1,?,'practice',?)")
+    .run(target, now, now);
+  db.prepare("INSERT INTO learner_word_schedules(learner_id,word_id,next_eligible_at,policy_version,scheduler_state_json,interval_hours,enabled) VALUES ('bob',?,?,'test','{}',24,1)")
+    .run(target, at(11));
+  assert.deepEqual(dueRepertoireWords(horizon, target), [target]);
+  // Make this target the only eligible Practice job, keeping competitors in the ranking.
+  db.prepare("UPDATE learner_words SET mode='maintain' WHERE learner_id='alice' AND mode='practice' AND word_id!=?").run(target);
+  scanProactiveRepertoire(now, 'test');
+  const job = db.prepare('SELECT work_id FROM vocabulary_practice_preparation WHERE word_id=?').get(target)!;
+  db.prepare("UPDATE learners SET disabled_at=? WHERE learner_id='bob'").run(now);
+  assert.equal(hasProactiveDemand(target, String(job.work_id), horizon, false), false);
+  alice(() => setDailyStudyMinutes(20));
+  assert.equal(hasProactiveDemand(target, String(job.work_id), horizon, false), true);
+  alice(() => setDailyStudyMinutes(10));
+  db.exec("UPDATE service_controls SET enabled=0 WHERE control_key='timed_sessions'");
+  assert.deepEqual(dueRepertoireWords(horizon, target), [target]);
+});
 
 test('a candidate that fails a content check is passed over and the next in rank takes its place', () => alice(() => {
   const ids = words(20);

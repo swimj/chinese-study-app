@@ -1,3 +1,8 @@
+import { timedReviewBound } from '../../src/domain/timed-session.ts';
+import { admitTimedReview } from '../vocabulary/timed-admission.ts';
+import { reviewContentUsable } from '../vocabulary/review-content.ts';
+import { runWithLearnerId } from './learner-context.ts';
+import { getDailyStudyMinutes, vocabularyTimedSessionsEnabled } from './vocabulary-timed-sessions.ts';
 import { createHash } from 'node:crypto';
 import { getDb } from './connection.ts';
 import { reviewUrgency } from './review-policy.ts';
@@ -12,6 +17,7 @@ export const REPERTOIRE_SCAN_LIMIT = 24;
 const REPERTOIRE_SCAN_EVENT = 'vocabulary.proactive_repertoire.scanned';
 
 type DemandRow = {
+  learnerId: string;
   wordId: string;
   mode: 'solidify' | 'practice';
   dueAt: string | null;
@@ -21,7 +27,7 @@ type DemandRow = {
 type PoolRow = { senseId: string | null; fallback: number; pureCue: number };
 
 const demandSql = `
-  SELECT w.word_id AS wordId,w.mode,s.next_eligible_at AS dueAt,s.last_practised_at AS lastPractisedAt,
+  SELECT w.learner_id AS learnerId,w.word_id AS wordId,w.mode,s.next_eligible_at AS dueAt,s.last_practised_at AS lastPractisedAt,
     s.interval_hours AS intervalHours
   FROM learners l JOIN learner_words w USING(learner_id)
   JOIN learner_word_schedules s USING(learner_id,word_id)
@@ -41,13 +47,27 @@ const demandSql = `
     ))
 `;
 
-/** Project production demand at a fixed horizon, before choosing a skill, applying the cap, or drawing timed items. */
+/** Project shared demand at the horizon, applying each learner’s review bound before deduplication. */
 export function dueRepertoireWords(horizon: string, wordId?: string): string[] {
   const rows = getDb().prepare(demandSql + (wordId === undefined ? '' : ' AND w.word_id=?'))
     .all(horizon, horizon, horizon, ...(wordId === undefined ? [] : [wordId])) as DemandRow[];
+  const timed = vocabularyTimedSessionsEnabled();
+  const slices = new Map<string, Set<string>>();
+  function reviewSlice(learnerId: string): Set<string> {
+    const existing = slices.get(learnerId);
+    if (existing) return existing;
+    const ids = runWithLearnerId(learnerId, () => {
+      const bound = timedReviewBound(getDailyStudyMinutes().minutes * 60_000);
+      const { reviewWords } = admitTimedReview(horizon, bound, (id, skill) => reviewContentUsable(id, skill, horizon));
+      return new Set(reviewWords.map(word => word.wordId));
+    });
+    slices.set(learnerId, ids);
+    return ids;
+  }
   const earliestDue = new Map<string, string>();
   for (const row of rows) {
     if (row.mode === 'practice' && reviewUrgency(row.intervalHours, row.lastPractisedAt || null, horizon) < 1) continue;
+    if (row.mode === 'practice' && timed && !reviewSlice(row.learnerId).has(row.wordId)) continue;
     const due = row.dueAt ?? '';
     const previous = earliestDue.get(row.wordId);
     if (previous === undefined || due < previous) earliestDue.set(row.wordId, due);
