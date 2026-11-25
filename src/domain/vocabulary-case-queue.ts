@@ -58,6 +58,14 @@ export type VocabularyCaseQueueItem = {
   finding:{kind:'unmappable'|'inventory_gap'|'needs_coverage'|'needs_operator'|'needs_repertoire'|'response_identity';message:string}|null;
   reassessment:{eligible:boolean;reason:string|null;source:{contentId:string;assessedVersion:number;currentVersion:number}|null};
 };
+export function vocabularyCaseRetirementKind(item: VocabularyCaseQueueItem): 'unresolved_sense' | 'no_change' | null {
+  const { eligible, source } = item.reassessment;
+  if (item.proposal || !eligible || !source || source.currentVersion !== source.assessedVersion) return null;
+  if (item.finding?.kind === 'unmappable' || item.finding?.kind === 'inventory_gap') return 'unresolved_sense';
+  if (item.currentAssessment && !item.needsDecision) return 'no_change';
+  return null;
+}
+
 export type VocabularyFallbackRepertoire = {
   sourceVersion: number;
   catalogVersion: number;

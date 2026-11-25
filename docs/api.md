@@ -829,6 +829,11 @@ version conflicts return 409.
 
 ### Exercise retirement proposals
 
+`POST /api/operator/vocabulary/case-queue/:id/retirement-proposal` takes
+`expectedVersion` and returns the updated case card. An open exercise case
+with a no-change judgment, unresolved sense, or inventory gap can propose
+retirement for its unchanged, active source when proposal editing is available.
+
 Vocabulary content proposals support `retire` alongside `create`, `update_existing`
 and `replace`. Retirement names the exact `sourceContentId`, `expectedVersion`,
 access scope, rationale and compulsory comparison `content` snapshot. The server

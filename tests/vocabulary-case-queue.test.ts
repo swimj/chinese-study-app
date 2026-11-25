@@ -200,21 +200,35 @@ test('review end traversal uses existing ordered index in both directions',()=>{
   console.log(JSON.stringify({caseQueueEndPlans:plans}));
 });
 
-test('unresolved sense retirement creates a reviewable proposal for the assessed exercise',()=>{
-  seedCase('unresolved');
-  sql.prepare("UPDATE vocabulary_reflection_jobs SET result_json=json_set(result_json,'$.input.admission',json(?)) WHERE job_id='job-unresolved'")
-    .run(JSON.stringify({outcome:'unmappable',rationale:'Only a compound use.',wordId:'word',catalogVersion:0,senseIds:[],sourceContentId:'source',sourceContentVersion:1}));
-  const before=getVocabularyCaseCard('unresolved','editor');
-  const drafted=proposeVocabularyCaseRetirement(before.caseId,before.version,'editor');
-  assert.deepEqual(drafted.proposal?.operations.map(op=>op.strategy),['retire']);
-  assert.equal(getVocabularyContentForMaintenance('source')?.availability,'active');
-  assert.throws(()=>proposeVocabularyCaseRetirement(before.caseId,before.version,'editor'),/Case review changed/);
-  assert.throws(()=>proposeVocabularyCaseRetirement(drafted.caseId,drafted.version,'editor'),/before proposing retirement/);
-  const proposal=drafted.proposal!;
-  const reviewId=approveVocabularyProposal(proposal.proposalId,proposal.version,'editor');
-  applyVocabularyProposal(proposal.proposalId,proposal.version,reviewId,'retirement-test','editor');
-  assert.equal(getVocabularyContentForMaintenance('source')?.availability,'retired');
-  assert.equal(getVocabularyCaseCard(before.caseId,'editor').served[0]?.prompt,'Served cue');
+for (const outcome of ['unmappable', 'single_sense'] as const) {
+  test(`${outcome} assessment without a proposal supports reviewable retirement`, () => {
+    seedCase('retirement');
+    sql.prepare("UPDATE vocabulary_reflection_jobs SET result_json=json_set(result_json,'$.input.admission',json(?)) WHERE job_id='job-retirement'")
+      .run(JSON.stringify({outcome, rationale:'Keep the current assessment.', wordId:'word', catalogVersion:0,
+        senseIds:outcome === 'single_sense' ? ['intended-sense'] : [], sourceContentId:'source', sourceContentVersion:1}));
+    const before = getVocabularyCaseCard('retirement', 'editor');
+    assert.equal(before.needsDecision, outcome === 'unmappable');
+    assert.equal(before.proposal, null);
+    const drafted = proposeVocabularyCaseRetirement(before.caseId, before.version, 'editor');
+    assert.deepEqual(drafted.proposal?.operations.map(op => [op.strategy, op.sourceContentId, op.expectedVersion]), [['retire', 'source', 1]]);
+    assert.equal(getVocabularyContentForMaintenance('source')?.availability, 'active');
+    assert.throws(() => proposeVocabularyCaseRetirement(before.caseId, before.version, 'editor'), /Case review changed/);
+    assert.throws(() => proposeVocabularyCaseRetirement(drafted.caseId, drafted.version, 'editor'), /before proposing retirement/);
+    const proposal = drafted.proposal!;
+    const reviewId = approveVocabularyProposal(proposal.proposalId, proposal.version, 'editor');
+    applyVocabularyProposal(proposal.proposalId, proposal.version, reviewId, 'retirement-test', 'editor');
+    assert.equal(getVocabularyContentForMaintenance('source')?.availability, 'retired');
+    assert.equal(getVocabularyCaseCard(before.caseId, 'editor').served[0]?.prompt, 'Served cue');
+  });
+}
+
+test('no-change retirement requires an unchanged source', () => {
+  seedCase('no-change');
+  const card = getVocabularyCaseCard('no-change', 'editor');
+  const source = getVocabularyContentForMaintenance('source')!;
+  updateVocabularyContent('source', source.version, {...source, body:{prompt:'Revised cue'}}, {kind:'operator', id:'editor'});
+  assert.throws(() => proposeVocabularyCaseRetirement(card.caseId, card.version, 'editor'), /before proposing retirement/);
+  assert.equal(getVocabularyCaseCard(card.caseId, 'editor').proposal, null);
 });
 
 test('retired-source unresolved finding remains visible and closes without a fabricated note or source change',()=>{
