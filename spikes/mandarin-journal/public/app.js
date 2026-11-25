@@ -319,7 +319,7 @@ function markBusy(value) {
   get('pending').textContent = chatting ? 'Waiting for a reply…' : '';
   renderPending();
   for (const el of document.querySelectorAll(
-    '#chat-form button, #tutor-form button, #thread-form button[type="submit"], #thread-form button:not([type]), #practice-mode, #practice-body form button, [data-mutation]',
+    '#chat-form button, #tutor-form button, #thread-form button[type="submit"], #thread-form button:not([type]), #practice-body form button, [data-mutation]',
   )) el.disabled = waiting;
   const lastSnapshot = state && threadReflections().at(-1);
   get('reflect').disabled = waiting || !state?.chat.length;
@@ -552,8 +552,7 @@ function renderSessionEnd(body, mode, done, session) {
     body.append(waiting);
     return waiting;
   }
-  const latestResults = new Map(state.attempts.map((a) => [a.card.id, a.result.correct]));
-  const emptyReview = done && mode === 'Past mistakes' && ![...latestResults.values()].includes(false);
+  const emptyReview = done && mode === 'Past mistakes' && !state.practice.canReviewMisses;
   if (emptyReview || !done || !session) {
     const text = node('p', emptyReview ? 'No missed exercises left to revisit.' : 'Ready when you are.');
     body.append(text);
@@ -612,7 +611,10 @@ function renderPractice() {
   const record = get('attempt-detail');
   get('active-practice').hidden = historical;
   record.hidden = !historical;
-  get('practice-mode').value = mode;
+  const reviewing = mode === 'Past mistakes';
+  const switchSession = get('practice-switch');
+  switchSession.hidden = !reviewing && !state.practice.canReviewMisses;
+  switchSession.textContent = reviewing ? 'Start regular practice' : 'Start a session with missed exercises';
   const attempt = historical ? state.attempts.find((a) => a.id === target.id)
     : result && state.attempts.findLast((a) => a.card.id === card?.id);
   const session = state.practice.session;
@@ -1121,7 +1123,13 @@ get('retry').onclick = () => {
 function startPractice(mode, more = false) {
   return submit({ type: 'practice', mode, ...(more ? { continue: true } : {}) });
 }
-get('practice-mode').onchange = (e) => startPractice(e.target.value);
+get('practice-switch').onclick = async () => {
+  const mode = state.practice.mode === 'Past mistakes' ? 'Daily mix' : 'Past mistakes';
+  if (await startPractice(mode) && page === 'practice') {
+    const body = get('practice-body');
+    focusTarget(body.querySelector('.teaching-next, .prompt, h2, p') || body);
+  }
+};
 // Space turns the practice card when the learner is reading the lesson or feedback.
 document.addEventListener('keydown', (e) => {
   if (e.key !== ' ' || e.repeat || e.isComposing || e.keyCode === 229 || e.defaultPrevented || page !== 'practice' || busy || ui.pending || e.altKey || e.ctrlKey || e.metaKey || e.shiftKey) return;

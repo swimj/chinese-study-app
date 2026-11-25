@@ -147,12 +147,6 @@
             <div id="attempt-detail" class="practice-paper" hidden></div>
             <div id="active-practice">
               <div class="practice-topline">
-                <label class="mode-label" for="practice-mode">Session
-                  <select id="practice-mode">
-                    <option>Daily mix</option>
-                    <option>Past mistakes</option>
-                  </select>
-                </label>
                 <div id="session-progress" class="session-progress" hidden>
                   <span id="session-time"></span>
                   <progress id="session-meter" aria-labelledby="session-time"></progress>
@@ -160,6 +154,7 @@
               </div>
               <p id="session-notice" class="notice" role="status" hidden></p>
               <div id="practice-body" class="practice-paper"></div>
+              <button type="button" id="practice-switch" class="text-button" data-mutation hidden></button>
             </div>
           </section>
           <section data-page="saved" hidden class="page">

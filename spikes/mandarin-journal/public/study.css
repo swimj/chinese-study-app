@@ -41,11 +41,8 @@ body:is([data-view="chat"], [data-view="practice"]) {
   gap: .6rem 1.25rem;
   margin-bottom: .85rem;
 }
-.practice-topline .mode-label,
-.practice-topline .session-progress { margin: 0; }
-.practice-topline .mode-label { gap: .5rem; font-size: .9rem; }
-.practice-topline .mode-label select { max-width: 100%; }
-.practice-topline .session-progress { gap: .45rem; padding: .3rem 0; }
+#practice-switch { margin-top: 1rem; }
+.practice-topline .session-progress { margin: 0; gap: .45rem; padding: .3rem 0; }
 .practice-topline progress { flex: none; width: 4.5rem; }
 
 .practice-paper,

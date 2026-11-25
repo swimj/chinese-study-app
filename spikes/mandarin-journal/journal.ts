@@ -299,6 +299,7 @@ function publicState(s: State, mode: Backend['mode'], now = new Date()) {
     notice: s.notice,
     practice: {
       mode: p.mode,
+      canReviewMisses: missedExercises(s).length > 0,
       card: current
         ? {
             id: current.id,
@@ -713,9 +714,12 @@ async function generateNow(s: State, backend: Backend, ranked: () => Ranked[], a
   applyGenerated(s, pick, outcome, now);
 }
 /** Choice cards whose latest attempt was a miss, newest first, as many as the budget holds. */
-function missedCards(s: State, budget: number): QueuedCard[] {
+function missedExercises(s: State): QueuedCard[] {
   const latest = new Map(s.attempts.map((a) => [a.card.id, a]));
-  const missed = [...latest.values()].reverse().filter((a) => a.result.correct === false && !a.flagged).map((a) => a.card);
+  return [...latest.values()].reverse().filter((a) => a.result.correct === false && !a.flagged).map((a) => a.card);
+}
+function missedCards(s: State, budget: number): QueuedCard[] {
+  const missed = missedExercises(s);
   let total = 0;
   return missed.filter((c, i) => (total += cardSeconds(c)) <= budget || i === 0);
 }
