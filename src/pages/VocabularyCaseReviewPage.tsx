@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import type { VocabularyCaseQueueItem, VocabularyCaseQueueQuery } from '../domain/vocabulary-case-queue';
+import { vocabularyCaseRetirementKind } from '../domain/vocabulary-case-queue';
 import { ApiRequestError } from '../services/api';
 import { vocabularyOperatorApi, type VocabularyOperatorApi, type VocabularyReassessmentModel } from '../features/vocabulary-operator/api';
 import type { VocabularyRepairTargetWorkspace } from '../domain/vocabulary-reflection';
@@ -278,6 +279,16 @@ function approve(reason = '') {
   const continuationLocked = noteActivity.dirty || !item || item.state === 'resolved' || item.approvalState === 'pending' || blocked || !!cueEdit || (!!item.frozen && !identityContinuation);
   const repairBlocked=item?.kind==='exercise_improvement'&&view!=='history'&&repairTargetBlocksMutation(item.caseId,repairTarget);
   const proposalResolved = item?.proposal && ['applied', 'closed'].includes(item.proposal.status);
+  const retirementKind = item && vocabularyCaseRetirementKind(item);
+  const retirementAction = item && retirementKind && (
+    <button className="secondary-button" disabled={reviewLocked || item.stale || !!item.activeJob || !!repairBlocked}
+      onClick={() => void run(async () => {
+        installCard(await api.proposeCaseRetirement(item.caseId, item.version));
+        setMoreOpen(false);
+      }, 'Retirement proposed. Ready for review.')}>
+      Retire exercise…
+    </button>
+  );
   const [repertoireRefresh, setRepertoireRefresh] = useState(0);
   const reviewFallback = item?.repertoireReviewAvailable && !item.proposal && item.reassessment.eligible &&
     item.reassessment.source?.currentVersion === item.reassessment.source?.assessedVersion &&
@@ -318,18 +329,14 @@ function approve(reason = '') {
             <div className="vocabulary-operator-actions">
               {item.proposal && !proposalResolved && <button disabled={reviewLocked && !approvalUnconfirmed || busy || item.stale || item.requiresDetails || repairBlocked} onClick={()=>{if(approvalUnconfirmed||mayLeaveDetails())approve();}}>{approvalUnconfirmed ? 'Retry approval' : 'Approve and apply'}</button>}
               {!proposalResolved && <button className="secondary-button" disabled={reviewLocked || (!item.proposal && !item.currentAssessment && !item.needsDecision)} onClick={()=>{if(mayLeaveDetails())resolve();}}>{item.proposal ? 'Dismiss proposal' : item.responseIdentityOptions?.length?'Close case':'Done'}</button>}
-              {!item.proposal && item.reassessment.eligible && item.reassessment.source?.currentVersion === item.reassessment.source?.assessedVersion &&
-                (item.finding?.kind === 'unmappable' || item.finding?.kind === 'inventory_gap') &&
-                <button className="secondary-button" disabled={reviewLocked || item.stale || !!item.activeJob || !!repairBlocked}
-                  onClick={() => void run(async () => { installCard(await api.proposeCaseRetirement(item.caseId, item.version)); }, 'Retirement proposed. Ready for review.')}>
-                  Retire exercise…
-                </button>}
+              {retirementKind === 'unresolved_sense' && retirementAction}
               {item.reassessment.eligible && <button className="secondary-button" disabled={(item.responseIdentityOptions?.length ? continuationLocked : reviewLocked) || !!item.activeJob} aria-haspopup="dialog" onClick={() => openReassessment()}>{item.responseIdentityOptions?.length?'Choose response identities':'Reassess'}{repairTarget?.blocked?' · target pending':''}</button>}
               {item.frozen && item.latestJob?.status === 'succeeded' && item.responseIdentityOptions?.length && !item.activeJob && <button className="secondary-button" disabled={blocked || !!cueEdit || noteActivity.dirty} onClick={()=>void run(async()=>{installCard(await api.abandonReassessment(item.caseId,item.version,item.latestJob!.jobId));},'Reassessment abandoned; the earlier assessment is available.')}>Abandon reassessment</button>}
               <button className="secondary-button" disabled={reviewLocked || !!item.activeJob} onClick={()=>void run(async()=>{const card=await api.setCaseDeferred(item.caseId,item.version,!item.deferredAt);savedQueues.current={};installCard(card,true);},item.deferredAt?'Returned to review.':'Case deferred.')}>{item.deferredAt?'Return to review':'Defer'}</button>
               <span className="vocabulary-action-spacer" /><button className="secondary-button" aria-expanded={showDetails} onClick={() => setShowDetails(value => !value)}>Details</button><button className="secondary-button" aria-expanded={moreOpen} onClick={() => setMoreOpen(value => !value)}>More</button>
             </div>
             {moreOpen && <div className="vocabulary-more-actions">
+              {retirementKind === 'no_change' && retirementAction}
               {!proposalResolved&&<button className="secondary-button" disabled={reviewLocked} onClick={()=>openAction('resolve')}>{item.proposal?'Dismiss with reason…':'Done with note…'}</button>}
               {item.proposal&&!proposalResolved&&<button className="secondary-button" disabled={reviewLocked||item.stale||item.requiresDetails||repairBlocked} onClick={()=>openAction('approve')}>Approve with note…</button>}
               {item.proposal && !proposalResolved && <button className="secondary-button" disabled={reviewLocked || repairBlocked} onClick={() => openDetails(true)}>Edit proposal</button>}

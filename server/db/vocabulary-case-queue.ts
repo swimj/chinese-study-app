@@ -8,6 +8,7 @@ import { isVocabularyDefinitionFallback } from '../../src/domain/vocabulary-prod
 import { assertVocabularyCaseEditable, touchVocabularyCaseReview } from './vocabulary-case-reviews.ts';
 import { randomUUID } from 'node:crypto';
 import type { VocabularyCaseQueueItem, VocabularyCaseQueuePage, VocabularyCaseQueueQuery, VocabularyServedReview, VocabularyOperationReview, VocabularyAssessmentSummary, VocabularyAdvisorySummary, VocabularyFallbackRepertoire, VocabularyFallbackGenerationInput } from '../../src/domain/vocabulary-case-queue.ts';
+import { vocabularyCaseRetirementKind } from '../../src/domain/vocabulary-case-queue.ts';
 import type { ReflectionModelChoice } from '../reflection/model-arms.ts';
 import { isOperatorSubject, parseOperatorAllowlist } from '../operator-access.ts';
 import { config, getDb } from './connection.ts';
@@ -361,10 +362,8 @@ export function proposeVocabularyCaseRetirement(caseId: string, expectedVersion:
   return changeCase(caseId, expectedVersion, actorId, id => {
     const card = getVocabularyCaseCard(id, actorId);
     const sourceRef = card.reassessment.source;
-    if (card.state !== 'open' || card.proposal || card.activeJob || card.stale || !card.reassessment.eligible ||
-        !sourceRef || sourceRef.currentVersion !== sourceRef.assessedVersion ||
-        (card.finding?.kind !== 'unmappable' && card.finding?.kind !== 'inventory_gap')) {
-      throw new VocabularyReflectionConflict('Review the current unresolved exercise before proposing retirement');
+    if (card.state !== 'open' || card.activeJob || card.stale || !sourceRef || !vocabularyCaseRetirementKind(card)) {
+      throw new VocabularyReflectionConflict('Review the current exercise before proposing retirement');
     }
     const source = getVocabularyContentForMaintenance(sourceRef.contentId);
     if (!source || source.kind !== 'exercise' || source.availability !== 'active') {
