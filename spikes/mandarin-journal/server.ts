@@ -55,6 +55,7 @@ const files = new Map([
   ['/reading.js', ['reading.js', 'text/javascript']],
   ['/reader-lookup.js', ['reader-lookup.js', 'text/javascript']],
   ['/reading.css', ['reading.css', 'text/css']],
+  ['/study.css', ['study.css', 'text/css']],
   ['/style.css', ['style.css', 'text/css']],
   ['/scrapbook.js', ['scrapbook.js', 'text/javascript']],
   ['/scrapbook.css', ['scrapbook.css', 'text/css']],
@@ -77,15 +78,16 @@ for (const [folder, extensions] of [
   }
 }
 
-const actionLabels: Record<z.infer<typeof actionSchema>['type'], string> = {
+const actionLabels: Record<Exclude<z.infer<typeof actionSchema>['type'], 'readingPosition'>, string> = {
   capture: 'Home capture', tutor: 'Ask the tutor', chat: 'Send chat message', reflect: 'Reflect on chat',
   practice: 'Prepare practice', next: 'Next practice card', answer: 'Answer practice card',
   newThread: 'Start conversation', selectThread: 'Open conversation', importReading: 'Import reading',
-  importPdf: 'Import PDF', readingPosition: 'Save reading position', captureReading: 'Save passage',
+  importPdf: 'Import PDF', captureReading: 'Save passage',
   annotate: 'Annotate reading', annotationPost: 'Post margin note', saveReading: 'Save reading',
   mediaReaction: 'Respond to picture', settings: 'Change settings', addWord: 'Add word',
   timeZone: 'Set learning time zone', flagExercise: 'Flag practice exercise',
   clarifyWord: 'Clarify word', retryWord: 'Retry word preparation',
+  boardGroup: 'Organize board item', deletePiece: 'Delete scrapbook piece',
 };
 
 class RequestError extends Error {
@@ -182,6 +184,10 @@ const server = createServer(async (req, res) => {
         return;
       }
       const action = actionSchema.parse(payload);
+      if (action.type === 'readingPosition') {
+        json(200, await journal.act(action));
+        return;
+      }
       await activity.action(actionLabels[action.type], action.id, async () => {
         if (action.type === 'chat' && req.headers.accept?.split(',').some(type => type.trim() === 'application/x-ndjson')) {
           res.writeHead(200, { 'Content-Type': 'application/x-ndjson; charset=utf-8', 'Cache-Control': 'no-store' });

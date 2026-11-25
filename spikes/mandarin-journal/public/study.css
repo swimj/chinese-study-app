@@ -1,0 +1,177 @@
+/* Conversation and practice share the reader's desk and its folding tutor. */
+body:is([data-view="chat"], [data-view="practice"]) {
+  min-height: 100dvh;
+  background: var(--desk-dots) 0 0 / 26px 26px var(--table);
+
+  & .journal {
+    width: 100%;
+    padding: clamp(.8rem, 2.5vw, 1.6rem) clamp(1rem, 3vw, 3rem) 5rem;
+  }
+  & .layout { display: block; }
+  & .masthead { border: 0; padding: 0; }
+  & .brand { font-size: 1.2rem; }
+  & .brand .seal { width: 1.65rem; height: 1.85rem; font-size: 1.2rem; }
+  & .masthead nav { font-size: .9rem; }
+  & .study-page {
+    width: min(100%, 44rem);
+    margin: 0 auto;
+    padding: clamp(1rem, 4vh, 3rem) 0 0;
+  }
+  & .study-page h1 {
+    margin: 0 0 .35em;
+    font-size: clamp(2.5rem, 5vw, 3.75rem);
+    overflow-wrap: anywhere;
+    hyphens: auto;
+  }
+  & .study-page h1[tabindex="-1"]:focus { outline: none; }
+  & .journal > footer { width: min(100%, 44rem); margin-inline: auto; }
+}
+@media (min-width: 861px) {
+  body:is([data-view="chat"], [data-view="practice"]) .journal:has(.with-tutor) {
+    width: calc(100% - min(27rem, 35vw));
+    margin-inline: 0 auto;
+  }
+}
+
+.practice-topline {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: .6rem 1.25rem;
+  margin-bottom: .85rem;
+}
+.practice-topline .mode-label,
+.practice-topline .session-progress { margin: 0; }
+.practice-topline .mode-label { gap: .5rem; font-size: .9rem; }
+.practice-topline .mode-label select { max-width: 100%; }
+.practice-topline .session-progress { gap: .45rem; padding: .3rem 0; }
+.practice-topline progress { flex: none; width: 4.5rem; }
+
+.practice-paper,
+.conversation-sheet {
+  --sheet-padding: clamp(1rem, 3.8vw, 2.25rem);
+  border: 1px solid #d5dbce;
+  border-radius: 4px;
+  background: var(--paper);
+  padding: var(--sheet-padding);
+  overflow-wrap: anywhere;
+  box-shadow: 0 1px 1px #21463712, 0 9px 22px -14px #21463757;
+}
+#practice-body:has(.exercise, .teaching) {
+  box-shadow: 0 3px var(--card), 0 4px #c5ccbd, 0 7px var(--paper), 0 8px #cbd3c5, 0 15px 24px -13px #21463757;
+}
+.practice-paper .card-type {
+  margin: 0 0 .8rem;
+  color: var(--clay);
+}
+.practice-paper .prompt {
+  margin: 0 0 1.25rem;
+  font: 500 clamp(1.45rem, 3vw, 2.05rem)/1.55 var(--serif);
+}
+.practice-paper .options {
+  display: grid;
+  gap: .55rem;
+}
+.practice-paper .options button {
+  min-height: 2.75rem;
+  padding: .65rem 1rem;
+  border-color: #becabe;
+  background: var(--paper);
+  font: 1.14rem/1.5 var(--serif);
+}
+.practice-paper .options button:is(:hover, :focus-visible):enabled {
+  text-decoration: none;
+  background: var(--tint);
+  border-color: var(--solid);
+}
+.practice-response {
+  display: grid;
+  justify-items: end;
+  gap: .9rem;
+  border-top: 1px solid var(--line);
+  padding-top: 1rem;
+}
+.practice-response label { width: 100%; font-size: .9rem; color: var(--quiet); }
+.practice-response :is(input, textarea) {
+  display: block;
+  width: 100%;
+  min-width: 0;
+  margin-top: .3rem;
+  color: var(--ink);
+  background: #fff;
+  font: 1.25rem/1.55 var(--han);
+}
+.practice-paper .feedback {
+  margin-bottom: 0;
+  padding-bottom: 0;
+  border-bottom: 0;
+}
+.practice-paper .feedback .answer-text { font: 1.2rem/1.6 var(--han); }
+.practice-paper .feedback-actions {
+  border-top: 1px solid var(--line);
+  padding-top: .8rem;
+  margin-top: 1.2rem;
+  gap: .4rem 1rem;
+}
+.practice-next { margin-inline-start: auto; }
+.practice-paper .teaching { max-width: none; margin: 0; }
+.teaching .teaching-next { display: flex; width: fit-content; margin-inline-start: auto; }
+.teaching + .exercise { border-top: 1px solid var(--line); padding-top: 1rem; margin-top: 1rem; }
+.practice-paper .beat-note { background: var(--card); }
+.practice-paper .session-end h2,
+.practice-paper .session-waiting { margin-top: 0; }
+#session-notice:not([hidden]) { margin-bottom: .85rem; }
+
+.conversation-sheet .thread-tools { padding: 0 0 .85rem; border-top: 0; gap: .5rem; }
+.conversation-sheet .thread-tools select { flex: 1 1 10rem; }
+.conversation-sheet .thread-tools button { color: var(--solid); }
+.conversation-sheet .chat-messages { margin: 1.2rem 0; }
+.conversation-sheet .turn-list { gap: .8rem; }
+.conversation-sheet .message {
+  max-width: calc(100% - 2.5rem);
+  padding: .65rem .85rem;
+  border-inline-start: 3px solid #a6bbae;
+  border-radius: 2px;
+  background: #eef3ec;
+  font: 1.2rem/1.65 var(--serif);
+}
+.conversation-sheet .message.out {
+  border: 0;
+  border-inline-end: 3px solid #caba80;
+  background: var(--card);
+  color: var(--ink);
+}
+.conversation-sheet .reflection-summary {
+  margin: .35rem 0;
+  padding: .6rem .85rem;
+  border: 0;
+  border-inline-start: 2px solid var(--clay);
+  background: var(--tutor-tint);
+}
+.conversation-sheet #chat-form {
+  padding-top: .9rem;
+  border-top: 1px solid var(--line);
+}
+.conversation-sheet #chat-draft {
+  font: 1.2rem/1.6 var(--han);
+  background: #fff;
+}
+.conversation-sheet .tools {
+  justify-content: space-between;
+  margin: .65rem 0 0;
+}
+@media (max-width: 860px) {
+  html:has(body:is([data-view="chat"], [data-view="practice"])) {
+    scroll-padding-bottom: calc(4.5rem + env(safe-area-inset-bottom));
+  }
+}
+@media (hover: hover) and (pointer: fine) {
+  .practice-paper [aria-keyshortcuts="Space"]::after {
+    content: "Space" / "";
+    font: .7rem/1.3 var(--sans);
+    padding: .1em .35em;
+    border: 1px solid currentColor;
+    border-radius: 3px;
+  }
+}

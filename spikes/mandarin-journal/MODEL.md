@@ -69,6 +69,11 @@ The line is between things and traces, not between learner content and
 annotations: a margin note is a piece and also produces record entries.
 "Journal" in the code means the whole store; prefer these terms in design.
 
+Learners curate the scrapbook independently of the learning record. Archiving
+or deleting a board item changes what appears there. Deleting a margin note
+also removes it from the passage or conversation where the learner wrote it.
+Its recorded event, judgments, and any practice targets keep their own lifecycle.
+
 ## Principles
 
 1. **The log is the source of truth.** Events are immutable; everything else is

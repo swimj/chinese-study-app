@@ -56,6 +56,15 @@ import {
 const text = z.string().trim().min(1).max(8000);
 const source = z.string().max(12000);
 const id = z.string().uuid();
+const pieceKind = z.enum(['annotation', 'saved', 'line', 'observation', 'media']);
+type PieceKind = z.infer<typeof pieceKind>;
+type Board = {
+  archivedGroups: string[];
+  deletedGroups: string[];
+  deletedPieces: { kind: PieceKind; pieceId: string; actionId: string }[];
+};
+const emptyBoard = (): Board => ({ archivedGroups: [], deletedGroups: [], deletedPieces: [] });
+
 export const actionSchema = z.discriminatedUnion('type', [
   addWordAction, clarifyWordAction, retryWordAction,
   z.object({
@@ -127,6 +136,8 @@ export const actionSchema = z.discriminatedUnion('type', [
   z.object({ id, type: z.literal('flagExercise'), attemptId: text }),
   z.object({ id, type: z.literal('saveReading'), title: text, detail: text, source }),
   z.object({ id, type: z.literal('mediaReaction'), mediaId: text, reaction: z.enum(['keep', 'notForMe']) }),
+  z.object({ id, type: z.literal('boardGroup'), key: text, disposition: z.enum(['visible', 'archived', 'deleted']) }),
+  z.object({ id, type: z.literal('deletePiece'), kind: pieceKind, pieceId: text }),
   z.object({ id, type: z.literal('settings'), pictures: z.enum(['off', 'quiet', 'normal']) }),
   // The browser reports its IANA zone; learning days follow it (day.ts).
   z.object({ id, type: z.literal('timeZone'), timeZone: z.string().max(64).refine(validZone, 'Unknown time zone.') }),
@@ -185,6 +196,7 @@ type Result = { correct: boolean | null; feedback: string; landed?: boolean };
 // cards holds the whole session in order; index is the card in front of the learner.
 type Practice = { started?: boolean; mode: string; cards: QueuedCard[]; index: number; result: Result | null; session?: Session };
 type State = {
+  board: Board;
   wordIntakes: WordIntake[];
   tutor: Message[];
   activeThreadId: string;
@@ -203,6 +215,7 @@ type State = {
   notice: string;
 } & MediaState;
 const initial = (): State => ({
+  board: emptyBoard(),
   wordIntakes: [],
   tutor: [],
   activeThreadId: 'first',
@@ -257,26 +270,29 @@ function publicState(s: State, mode: Backend['mode'], now = new Date()) {
     current = session ? currentCard(p) : putAway ? undefined : p.cards[p.index],
     // A generating session with nothing in front of the learner is waiting for its next card.
     waiting = !!session && !ended && !session.stopped && !current && p.mode !== 'Past mistakes';
+  const hiddenNotes = new Set(s.board.deletedPieces.filter(p => p.kind === 'annotation').map(p => p.pieceId));
+  const annotationThreads = s.annotationThreads.filter(t => !hiddenNotes.has(t.id));
   return {
     mode,
+    board: s.board,
     wordIntakes: s.wordIntakes,
     tutor: s.tutor,
     activeThreadId: s.activeThreadId,
-    threads: s.threads.map(({ turns, ...thread }) => thread),
+    threads: s.threads.map(({ turns, ...thread }) => ({ ...thread, hasTurns: turns.length > 0 })),
     chat: activeThread(s).turns,
-    reflections: s.reflections,
+    reflections: s.reflections.map(r => ({ ...r, takeaways: r.takeaways.filter(t => !hiddenNotes.has(t.annotationId)) })),
     attempts: s.attempts,
     activity: s.activity,
     reading: {
       documentId: s.reading.documentId,
       positions: s.reading.positions,
-      annotations: readingNotes(s.annotationThreads),
+      annotations: readingNotes(annotationThreads),
       documents: documentsFor(s.reading).map(doc => {
         const importWarning = legacyImportWarning(doc);
         return importWarning ? { ...doc, ...importWarning } : doc;
       }),
     },
-    annotationThreads: s.annotationThreads,
+    annotationThreads,
     saved: s.saved,
     media: s.media,
     settings: s.settings,
@@ -313,6 +329,41 @@ function publicState(s: State, mode: Backend['mode'], now = new Date()) {
     },
   };
 }
+function deletedPiece(board: Board, kind: PieceKind, id: string) {
+  return board.deletedPieces.some(p => p.kind === kind && p.pieceId === id);
+}
+
+// Saving a previously deleted piece is a new choice. Slow word preparation
+// supplies the deletion to compare against the action that requested the save.
+function showSaved(board: Board, ids: string[], canRestore: (actionId: string) => boolean = () => true) {
+  board.deletedPieces = board.deletedPieces.filter(p => p.kind !== 'saved' || !ids.includes(p.pieceId) || !canRestore(p.actionId));
+}
+
+function pieceExists(s: State, kind: PieceKind, id: string) {
+  switch (kind) {
+    case 'annotation': return s.annotationThreads.some(t => t.id === id);
+    case 'saved': return s.saved.some(item => item.id === id);
+    case 'line': return s.threads.some(t => t.turns.some(m => m.role === 'user' && m.id === id));
+    case 'observation': return s.tutor.some(m => m.kind === 'observation' && m.reference?.kind !== 'reflection' && m.id === id);
+    case 'media': return s.media.some(item => item.id === id);
+  }
+}
+
+function setBoardGroup(s: State, { key, disposition }: Extract<Action, { type: 'boardGroup' }>) {
+  const exists = s.threads.some(t => 'chat:' + t.id === key) || documentsFor(s.reading).some(d => 'read:' + d.id === key);
+  if (!exists) throw new JournalConflict('This board item is unavailable.');
+  if (s.board.deletedGroups.includes(key)) {
+    if (disposition === 'deleted') return;
+    throw new JournalConflict('This board item has been deleted.');
+  }
+  if (disposition === 'archived') {
+    if (!s.board.archivedGroups.includes(key)) s.board.archivedGroups.push(key);
+    return;
+  }
+  s.board.archivedGroups = s.board.archivedGroups.filter(k => k !== key);
+  if (disposition === 'deleted') s.board.deletedGroups.push(key);
+}
+
 function activeThread(s: State): Thread {
   const thread = s.threads.find((t) => t.id === s.activeThreadId);
   if (!thread) throw new Error('Missing active conversation');
@@ -365,14 +416,10 @@ function context(
   };
 }
 function keep(s: State, kind: string, title: string, detail: string, src: string, reference?: Reference) {
-  if (
-    !s.saved.some(
-      (item) => item.kind === kind && item.title === title && item.detail === detail && item.source === src,
-    )
-  ) {
-    s.saved.push({ id: randomUUID(), kind, title, detail, source: src, reference });
-    logActivity(s, 'Saved ' + kind.toLowerCase() + ' · ' + title, reference?.label ?? src, reference);
-  }
+  const previous = s.saved.find(item => item.kind === kind && item.title === title && item.detail === detail && item.source === src);
+  if (previous) return showSaved(s.board, [previous.id]);
+  s.saved.push({ id: randomUUID(), kind, title, detail, source: src, reference });
+  logActivity(s, 'Saved ' + kind.toLowerCase() + ' · ' + title, reference?.label ?? src, reference);
 }
 /**
  * Applies a tutor's action. A stash happens only on the learner's explicit request to
@@ -734,7 +781,7 @@ async function startPractice(s: State, mode: string, backend: Backend, keepGoing
 
 function resolveReference(s: State, key: string, supplied: string): { reference: Reference; source: string } {
   const annotation = s.annotationThreads.find((t) => t.id === key);
-  if (annotation)
+  if (annotation && !deletedPiece(s.board, 'annotation', annotation.id))
     return {
       reference: annotationReference(s, annotation),
       source: describeAnnotation(s, annotation),
@@ -769,7 +816,7 @@ function resolveReference(s: State, key: string, supplied: string): { reference:
     };
   }
   if (key.includes('/') || documentsFor(s.reading).some((doc) => doc.id === key)) {
-    const reading = { ...s.reading, annotations: readingNotes(s.annotationThreads) };
+    const reading = { ...s.reading, annotations: readingNotes(s.annotationThreads.filter(t => !deletedPiece(s.board, 'annotation', t.id))) };
     const { document, paragraph, annotation } = resolveReadingReference(key, reading);
     const selected = supplied.match(/^Selected text: (.+)$/m)?.[1];
     const quote =
@@ -824,7 +871,7 @@ async function postAnnotation(
   const thread: AnnotationThread | undefined = anchor
     ? { id: action.id, anchor, messages: [] }
     : s.annotationThreads.find((t) => t.id === annotationId);
-  if (!thread) throw new JournalConflict('This annotation is unavailable.');
+  if (!thread || deletedPiece(s.board, 'annotation', thread.id)) throw new JournalConflict('This annotation is unavailable.');
   const reference = annotationReference(s, thread);
   const at = new Date().toISOString();
   if (askTutor) {
@@ -955,6 +1002,7 @@ async function handleHomeCapture(
 /** An explicit save that reused an existing word: admitted by rule, explained from what was prepared before. */
 function finishSavedAtOnce(s: State, intake: WordIntake, outbox: Outbox) {
   const items = savedOf(s, intake);
+  showSaved(s.board, items.map(item => item.id));
   outbox.judgments.push(explicitAdmission(intake.id, items.map((item) => item.title), 'explicit save'));
   recordWordOutcome(s, intake, intakeReply(items.map(describeSaved).join('\n\n'), items.map((item) => item.title)));
 }
@@ -1014,7 +1062,11 @@ async function mutate(
       outbox.events.push({ id: a.id, at: now, kind: 'addWord', surface: 'home', text: a.text, context: { context: a.context, intent: 'save' } });
       addWord(s.wordIntakes, s.saved, a, 'save');
       const intake = s.wordIntakes.at(-1)!;
-      if (intake.status === 'ready') outbox.judgments.push(explicitAdmission(a.id, savedOf(s, intake).map((item) => item.title), 'explicit save'));
+      if (intake.status === 'ready') {
+        const items = savedOf(s, intake);
+        showSaved(s.board, items.map(item => item.id));
+        outbox.judgments.push(explicitAdmission(a.id, items.map(item => item.title), 'explicit save'));
+      }
       return;
     }
     case 'clarifyWord':
@@ -1077,8 +1129,8 @@ async function mutate(
     case 'captureReading': {
       const { anchor } = a;
       resolveAnchor(s, anchor);
-      const existing = s.annotationThreads.find(({ anchor: other }) =>
-        other.surface === anchor.surface && other.ownerId === anchor.ownerId &&
+      const existing = s.annotationThreads.find(({ id, anchor: other }) =>
+        !deletedPiece(s.board, 'annotation', id) && other.surface === anchor.surface && other.ownerId === anchor.ownerId &&
         other.startId === anchor.startId && other.startOffset === anchor.startOffset &&
         other.endId === anchor.endId && other.endOffset === anchor.endOffset
       );
@@ -1185,6 +1237,13 @@ async function mutate(
       item.reactions[a.reaction === 'keep' ? 'kept' : 'notForMe'] = new Date().toISOString();
       return;
     }
+    case 'boardGroup':
+      return setBoardGroup(s, a);
+    case 'deletePiece':
+      if (deletedPiece(s.board, a.kind, a.pieceId)) return;
+      if (!pieceExists(s, a.kind, a.pieceId)) throw new JournalConflict('This piece is unavailable.');
+      s.board.deletedPieces.push({ kind: a.kind, pieceId: a.pieceId, actionId: a.id });
+      return;
     case 'settings':
       s.settings.pictures = a.pictures;
       return;
@@ -1254,6 +1313,7 @@ async function mutate(
             if (response.observation)
               s.tutor.push({
                 role: 'assistant',
+                id: randomUUID(),
                 kind: 'observation',
                 text: response.observation,
                 source: c.source,
@@ -1301,6 +1361,7 @@ function recordWordOutcome(s: State, intake: WordIntake, reply?: string) {
 // Opens a stored body in the current shape; older journal shapes are upgraded in memory.
 function upgrade(body: string): State {
   const parsed = JSON.parse(body) as State & { chat?: Message[] };
+  parsed.board ??= emptyBoard();
   parsed.wordIntakes ??= [];
   // Before word questions lived in the tutor, unresolved requests appeared above the Home bar.
   for (const intake of parsed.wordIntakes) {
@@ -1339,6 +1400,10 @@ function upgrade(body: string): State {
     }
     delete parsed.chat;
   }
+  // Older board observations had only their text, which can repeat across distinct turns.
+  parsed.tutor.forEach((message, index) => {
+    if (message.kind === 'observation' && message.reference?.kind !== 'reflection') message.id ??= 'legacy-observation-' + index;
+  });
   parsed.reading.imports ??= [];
   if (!parsed.annotationThreads) {
     parsed.annotationThreads = parsed.reading.annotations.map((note) => ({
@@ -1615,10 +1680,16 @@ export function openJournal(path: string, backend: Backend = engine, activity?: 
               let reply: string | undefined;
               if (intake.status === 'ready') {
                 if (!explanation) throw new Error('A ready word has no explanation');
-                const titles = savedOf(latest, intake).map((item) => item.title);
+                const items = savedOf(latest, intake);
+                const titles = items.map(item => item.title);
                 const at = new Date().toISOString();
-                if (explicit) addJudgment(db, explicitAdmission(intake.id, titles, 'explicit save', at));
-                else if (admission) {
+                if (explicit) {
+                  addJudgment(db, explicitAdmission(intake.id, titles, 'explicit save', at));
+                  // Both actions have committed receipts. A later deletion wins even across a restart.
+                  showSaved(latest.board, items.map(item => item.id), deleted => Boolean(db.prepare(
+                    'SELECT 1 FROM receipts d, receipts s WHERE d.id=? AND s.id=? AND d.rowid < s.rowid',
+                  ).get(deleted, intake.requestId)));
+                } else if (admission) {
                   const body: AdmissionBody = { decisions: admission.decisions ?? [], request: admission.request, ...(admission.failed ? { failed: admission.failed } : {}) };
                   addJudgment(db, { id: randomUUID(), eventId: intake.id, at, source: admitSource, body });
                 }

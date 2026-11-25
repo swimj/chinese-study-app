@@ -139,6 +139,7 @@ const capture = createCapture({
     if (JSON.stringify(state.wordIntakes) === JSON.stringify(updated.wordIntakes)) return;
     state.wordIntakes = updated.wordIntakes;
     state.saved = updated.saved;
+    state.board = updated.board;
     state.activity = updated.activity;
     state.tutor = updated.tutor;
     renderTutor();
@@ -173,7 +174,7 @@ importDialog.oncancel = event => { event.preventDefault(); dismissImport(); };
 
 const scrapbook = createScrapbook({
   host: get('scrapbook'), viewport: get('scrap-viewport'), world: get('scrap-world'),
-  node, link, ui, persist, readingLabel, compose,
+  node, link, ui, persist, readingLabel, compose, submit,
   getState: () => state,
   react: (mediaId, reaction) => submit({ type: 'mediaReaction', mediaId, reaction }),
   openThread: async (id) => {
@@ -198,7 +199,7 @@ function renderToday() {
   if (step.lang) text.lang = step.lang; else text.removeAttribute('lang');
   get('today-action').textContent = step.label;
   get('today-action').href = step.href;
-  for (const place of document.querySelectorAll('.places a')) place.hidden = place.getAttribute('href') === step.href.split('/')[0];
+  for (const place of document.querySelectorAll('.places a:not(#archive-link)')) place.hidden = place.getAttribute('href') === step.href.split('/')[0];
 }
 get('today').textContent = new Intl.DateTimeFormat(undefined, {
   weekday: 'long', month: 'long', day: 'numeric',
@@ -395,7 +396,7 @@ function renderTutor() {
   const existing = [...log.querySelectorAll('[data-turn]')];
   state.tutor.forEach((message, i) => {
     const item = wordForTurn(state, message);
-    const stamp = JSON.stringify([message, item?.status]);
+    const stamp = JSON.stringify([message, item?.status, message.reference && sourceHref(message.reference)]);
     if (existing[i]?.dataset.turn === stamp) return;
     const el = messageNode(message);
     const reply = replyTarget(state, message);
@@ -458,7 +459,7 @@ function renderChat() {
     renderedThread = state.activeThreadId;
     log.replaceChildren();
   }
-  // Turns and reflections are immutable. Preserve old nodes so the live log only announces additions.
+  // Keep existing turns in the live log. A reflection’s visible notes can change when the learner deletes a piece.
   const entries = [];
   state.chat.forEach((message, i) => {
     entries.push({ key: 'turn-' + message.id, message });
@@ -467,21 +468,32 @@ function renderChat() {
   });
   const matches = Array.from(log.children).every((el, i) => el.dataset.entry === entries[i]?.key);
   if (!matches) log.replaceChildren();
-  for (const entry of entries.slice(log.childElementCount)) {
+  entries.forEach((entry, i) => {
+    const existing = log.children[i];
+    const noteCount = entry.snapshot && String(entry.snapshot.takeaways.length);
+    if (existing && existing.dataset.noteCount === noteCount) return;
     const el = entry.snapshot ? reflectionSummary(entry.snapshot) : messageNode(entry.message, true);
     el.dataset.entry = entry.key;
-    log.append(el);
-  }
+    if (entry.snapshot) {
+      el.dataset.noteCount = noteCount;
+      el.open = existing?.open || false;
+    }
+    if (existing) existing.replaceWith(el);
+    else log.append(el);
+  });
   chatDraft.value = ui.chatDrafts?.[state.activeThreadId] || '';
 }
-function attemptContent(attempt, card, result) {
+function attemptContent(attempt, card, result, next) {
   const box = node('div', undefined, 'feedback');
   if (attempt) {
     box.append(node('p', 'Your answer', 'small'), node('p', attempt.answer, 'answer-text'));
   }
   box.append(node('strong', result.correct === true ? 'Correct' : result.correct === false ? 'Review' : 'Tutor feedback'),
     node('p', result.feedback, 'result'));
-  if (!attempt) return box;
+  if (!attempt) {
+    if (next) box.append(next);
+    return box;
+  }
   const actions = node('div', undefined, 'feedback-actions');
   actions.append(withIcon(labelled(button('Ask', () => primeTutor({
     surface: 'practice', referenceId: attempt.id, label: 'your practice answer',
@@ -490,6 +502,7 @@ function attemptContent(attempt, card, result) {
   // A bad exercise counts neither for nor against the learner.
   if (attempt.flagged) actions.append(withIcon(node('p', 'Flagged · won’t count', 'small flagged'), 'flag'));
   else actions.append(withIcon(labelled(button('Flag', () => submit({ type: 'flagExercise', attemptId: attempt.id }), 'text-button quiet'), 'Flag as a bad exercise'), 'flag'));
+  if (next) actions.append(next);
   box.append(actions);
   return box;
 }
@@ -599,7 +612,10 @@ function renderPractice() {
   const settleFocus = (el) => {
     if (!hadFocus || !el) return;
     if (!el.matches('button, a[href], textarea, input, select')) el.tabIndex = -1;
-    el.focus({ preventScroll: true });
+    // A completed request reenables its controls at the end of this render.
+    queueMicrotask(() => {
+      if (el.isConnected && page === 'practice') el.focus();
+    });
   };
   if (!card) {
     settleFocus(renderSessionEnd(body, mode, done, session));
@@ -611,7 +627,7 @@ function renderPractice() {
   }
   // A Continue that ends the session says so.
   const exercise = renderExercise(card, result, attempt, session?.last ? 'Finish session →' : 'Continue →');
-  const focusExercise = () => settleFocus(exercise.querySelector(result ? 'button.primary' : '.recall input') ?? exercise.querySelector('.prompt'));
+  const focusExercise = () => settleFocus(exercise.querySelector(result ? '.practice-next' : 'input, textarea') ?? exercise.querySelector('.prompt'));
   const beats = card.teaching?.length ? card.teaching : null;
   if (!beats) {
     body.append(exercise);
@@ -631,7 +647,7 @@ function renderPractice() {
       ui.teaching = { id: card.id, shown: beats.length, done: true };
       persist();
       body.append(exercise);
-      const first = exercise.querySelector('.options button, textarea, .recall input');
+      const first = exercise.querySelector('.options button, textarea, input');
       first?.focus({ preventScroll: true });
       exercise.scrollIntoView({ block: 'nearest' });
     },
@@ -671,10 +687,12 @@ function renderLesson(body, card, hadFocus) {
 }
 function renderExercise(card, result, attempt, continueLabel = 'Continue →') {
   const body = node('div', undefined, 'exercise');
-  body.append(node('p', card.prompt, 'prompt'));
+  const formName = { choice: 'Multiple choice', recall: 'Recall', open: 'Conversation' };
+  body.append(node('p', formName[card.kind], 'small card-type'), node('p', card.prompt, 'prompt'));
   if (result) {
-    body.append(attemptContent(attempt, card, result),
-      button(continueLabel, () => submit({ type: 'next', cardId: card.id }), 'primary', true));
+    const next = button(continueLabel, () => submit({ type: 'next', cardId: card.id }), 'primary practice-next', true);
+    next.setAttribute('aria-keyshortcuts', 'Space');
+    body.append(attemptContent(attempt, card, result, next));
     return body;
   }
   function answer(value) {
@@ -684,33 +702,34 @@ function renderExercise(card, result, attempt, continueLabel = 'Continue →') {
     const choices = node('div', undefined, 'options');
     for (const choice of card.choices) choices.append(button(choice, () => answer(choice), '', true));
     body.append(choices);
-  } else if (card.kind === 'recall') {
-    // Typed from memory, like the old flashcards; Enter answers.
-    const form = node('form', undefined, 'recall');
-    const label = node('label', 'Your answer');
-    const field = node('input');
-    field.type = 'text';
+  } else {
+    const recall = card.kind === 'recall';
+    const form = node('form', undefined, 'practice-response');
+    const label = node('label', recall ? 'Your answer' : 'Your reply');
+    const field = node(recall ? 'input' : 'textarea');
     field.lang = 'zh';
     field.required = true;
-    field.maxLength = 80;
-    field.autocomplete = 'off';
-    field.spellcheck = false;
+    field.maxLength = recall ? 80 : 1600;
+    if (recall) {
+      field.type = 'text';
+      field.autocomplete = 'off';
+      field.spellcheck = false;
+    }
     field.value = ui.practiceDraft?.id === card.id ? ui.practiceDraft.text : '';
     field.oninput = () => { ui.practiceDraft = { id: card.id, text: field.value }; persist(); };
+    const send = node('button', recall ? 'Check answer' : 'Send reply', 'primary');
+    if (!recall) {
+      send.setAttribute('aria-keyshortcuts', 'Control+Enter Meta+Enter');
+      send.title = 'Send with Ctrl+Enter or ⌘+Enter';
+      field.onkeydown = (e) => {
+        if (e.key !== 'Enter' || !(e.ctrlKey || e.metaKey) || e.shiftKey || e.altKey ||
+            e.repeat || e.isComposing || e.keyCode === 229 || send.disabled) return;
+        e.preventDefault();
+        form.requestSubmit(send);
+      };
+    }
     label.append(field);
-    form.append(label, node('button', 'Answer', 'primary'));
-    form.onsubmit = (e) => { e.preventDefault(); answer(field.value); };
-    body.append(form);
-  } else {
-    const form = node('form');
-    const label = node('label', 'Your answer');
-    const field = node('textarea');
-    field.required = true;
-    field.maxLength = 1600;
-    field.value = ui.practiceDraft?.id === card.id ? ui.practiceDraft.text : '';
-    field.oninput = () => { ui.practiceDraft = { id: card.id, text: field.value }; persist(); };
-    label.append(field);
-    form.append(label, node('button', 'Answer', 'primary'));
+    form.append(label, send);
     form.onsubmit = (e) => { e.preventDefault(); answer(field.value); };
     body.append(form);
   }
@@ -767,6 +786,7 @@ function focusTarget(el) {
 }
 async function navigate(initial = false) {
   const previous = page;
+  if (get('board-actions').open) get('board-actions').close();
   if (location.hash === '#read/import' || location.hash === '#read/import/') {
     history.replaceState(null, '', '#home/import');
   }
@@ -786,8 +806,7 @@ async function navigate(initial = false) {
   for (const section of document.querySelectorAll('[data-page]')) section.hidden = section.dataset.page !== page;
   document.body.dataset.view = page;
   get('tutor-point').hidden = page !== 'home';
-  if (page === 'practice' && ui.tutorOpen === undefined) setTutor(matchMedia('(min-width: 861px)').matches, false, false);
-  else setTutor(Boolean(ui.tutorOpen), false, false);
+  setTutor(Boolean(ui.tutorOpen), false, false);
   renderTutorContext();
   if (page !== 'home' && page !== 'saved') ui.recent = page;
   if (Object.hasOwn(labels, ui.recent)) {
@@ -825,7 +844,13 @@ async function navigate(initial = false) {
     showError('This annotation could not be found.');
     return;
   }
-  if (page === 'saved') renderSaved();
+  if (page === 'saved') {
+    renderSaved();
+    if (target.kind === 'archive' && !get('board-archive').hidden) {
+      get('board-archive').open = true;
+      focusTarget(get('board-archive').querySelector('summary'));
+    }
+  }
   if (page === 'read') {
     const requested = note ? note.anchor.ownerId + '/' + note.anchor.startId
       : target.kind === 'source' && target.id ? target.id : state.reading.documentId;
@@ -1068,10 +1093,11 @@ function startPractice(mode, more = false) {
   return submit({ type: 'practice', mode, ...(more ? { continue: true } : {}) });
 }
 get('practice-mode').onchange = (e) => startPractice(e.target.value);
-// Space advances teaching from anywhere on the page that is not itself a control or text field.
+// Space turns the practice card when the learner is reading the lesson or feedback.
 document.addEventListener('keydown', (e) => {
-  if (e.key !== ' ' || e.repeat || e.defaultPrevented || page !== 'practice' || e.altKey || e.ctrlKey || e.metaKey) return;
-  const next = get('practice-body').querySelector('.teaching-next');
+  if (e.key !== ' ' || e.repeat || e.isComposing || e.keyCode === 229 || e.defaultPrevented || page !== 'practice' || busy || ui.pending || e.altKey || e.ctrlKey || e.metaKey || e.shiftKey) return;
+  if (get('active-practice').hidden || e.target.closest?.('#tutor')) return;
+  const next = get('practice-body').querySelector('.teaching-next, .practice-next');
   if (!next || e.target.closest?.('input, textarea, select, button, a[href], summary, [contenteditable], dialog')) return;
   e.preventDefault();
   next.click();

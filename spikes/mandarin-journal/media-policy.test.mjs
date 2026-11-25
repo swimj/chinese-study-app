@@ -37,6 +37,16 @@ function item(id, anchorId, { value = 'cultural', referent = 'concrete', ceiling
 }
 const levels = (out) => Object.fromEntries(Object.entries(out).map(([id, r]) => [id, r.level]));
 
+test('deleted pictures and pieces leave their placement budget available to visible pictures', () => {
+  const state = board({ loose: 0, media: [item('first', 'kn'), item('second', 'en', { value: 'memory' })] });
+  assert.equal(compose(state, NOW).second.level, 'latent');
+  state.board = { deletedPieces: [{ kind: 'media', pieceId: 'first' }] };
+  assert.deepEqual(compose(state, NOW).first, { level: 'none', reasons: ['deleted'] });
+  assert.equal(compose(state, NOW).second.level, 'placed');
+  state.board.deletedPieces = [{ kind: 'annotation', pieceId: 'kn' }];
+  assert.deepEqual(compose(state, NOW).first, { level: 'none', reasons: ['no-anchor'] });
+});
+
 test('ceilings pass through when no rule applies; latent is never raised', () => {
   const out = compose(board({ media: [item('a', 'kn'), item('b', 'en', { ceiling: 'latent' })] }), NOW);
   assert.deepEqual(out, { a: { level: 'placed', reasons: [] }, b: { level: 'latent', reasons: [] } });

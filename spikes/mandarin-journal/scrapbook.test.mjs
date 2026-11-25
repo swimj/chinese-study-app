@@ -33,6 +33,23 @@ function journal(overrides = {}) {
 }
 const byKey = (clusters) => Object.fromEntries(clusters.map((c) => [c.key, c]));
 
+test('board edits hide groups and pieces in place while keeping their sources available', () => {
+  const state = journal({ board: {
+    archivedGroups: ['read:kiosk'], deletedGroups: ['chat:library'], deletedPieces: [{ kind: 'annotation', pieceId: 'r1-takeaway-0' }],
+  } });
+  const visible = byKey(buildScrapbook(state, { readingLabel }));
+  assert.deepEqual(Object.keys(visible).sort(), ['chat:birds', 'loose', 'read:encore']);
+  assert.deepEqual(visible['chat:birds'].scraps.map(s => [s.title, s.also]), [['等', []]]);
+  assert.deepEqual(visible.loose.scraps.map(s => s.title), ['报备']);
+  assert.equal(state.saved.length, 3);
+  assert.equal(state.reflections[0].takeaways.length, 1);
+  assert.equal(todayStep(state, { readingLabel }).href, '#chat');
+  state.board.archivedGroups = [];
+  const restored = byKey(buildScrapbook(state, { readingLabel }))['read:kiosk'];
+  assert.equal(restored.scraps[0].id, 'n1');
+  assert.equal(restored.progress.at, 2);
+});
+
 test('material clusters by what it is about, takeaways once, words where they appeared', () => {
   const clusters = buildScrapbook(journal(), { readingLabel });
   const c = byKey(clusters);
@@ -60,6 +77,15 @@ test('a fresh journal still offers its readings and nothing else', () => {
   }), { readingLabel });
   assert.deepEqual(clusters.map((c) => c.key), ['read:kiosk', 'read:encore']);
   assert.ok(clusters.every((c) => !c.scraps.length));
+});
+
+test('an unreflected conversation restored while another thread is open has a board entry', () => {
+  const state = journal();
+  state.threads.push({ id: 'other', title: 'Another topic', hasTurns: true });
+  state.board = { archivedGroups: ['chat:other'] };
+  assert.equal(byKey(buildScrapbook(state, { readingLabel }))['chat:other'], undefined);
+  state.board.archivedGroups = [];
+  assert.deepEqual(byKey(buildScrapbook(state, { readingLabel }))['chat:other'].scraps, []);
 });
 
 test('today offers one step: waiting practice, else the reading underway, else conversation', () => {

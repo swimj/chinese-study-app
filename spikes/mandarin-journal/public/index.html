@@ -9,6 +9,7 @@
     <link rel="stylesheet" href="/reading.css" />
     <link rel="stylesheet" href="/annotations.css" />
     <link rel="stylesheet" href="/scrapbook.css" />
+    <link rel="stylesheet" href="/study.css" />
     <script type="module" src="/app.js"></script>
   </head>
   <body>
@@ -32,6 +33,7 @@
             <div class="scrap-viewport" id="scrap-viewport">
               <div class="scrap-world" id="scrap-world" aria-label="Your scrapbook" role="region"></div>
             </div>
+            <p class="board-empty" hidden>Your scrapbook is empty.</p>
             <div class="dock">
               <details class="dock-menu" id="dock-menu">
                 <summary aria-label="Journal menu"><span class="seal" lang="zh" aria-hidden="true">记</span></summary>
@@ -41,6 +43,7 @@
                   <a href="#chat">Talk</a>
                   <a href="#practice">Practice</a>
                   <a href="#saved">List</a>
+                  <a id="archive-link" href="#saved/archive" hidden>Archive</a>
                   <a href="/operator/activity">Model activity</a>
                   <button type="button" data-zoom="fit">See everything</button>
                   <fieldset class="pictures-setting">
@@ -82,55 +85,60 @@
             </section>
           </section>
           <section data-page="read" hidden class="page article"></section>
-          <section data-page="chat" hidden class="page">
-            <a class="back" href="#home">← Journal</a>
+          <section data-page="chat" hidden class="page study-page">
             <h1>Conversation</h1>
-            <div class="thread-tools">
-              <label for="thread-picker">Topic</label>
-              <select id="thread-picker" data-mutation></select>
-              <button id="new-thread" data-mutation type="button" aria-expanded="false" aria-controls="thread-form">New conversation</button>
-            </div>
-            <form id="thread-form" class="thread-form" hidden>
-              <label for="thread-title">New topic</label>
-              <input id="thread-title" maxlength="100" required placeholder="周末的打算" />
-              <button class="primary">Start</button><button type="button" id="cancel-thread">Cancel</button>
-            </form>
-            <div id="chat-messages" class="chat-messages">
-              <div id="chat-history" class="turn-list" role="log" aria-label="Casual conversation"></div>
-              <div id="chat-turn" class="turn-list" hidden></div>
-            </div>
-            <form id="chat-form">
-              <label class="sr" for="chat-draft">Your message to your conversation partner</label>
-              <textarea name="message" id="chat-draft" rows="2" required maxlength="1600" placeholder="写点什么……"></textarea>
-              <div class="tools">
-                <button class="primary">Send</button><button id="reflect" type="button">Reflect with tutor</button>
+            <div class="conversation-sheet">
+              <div class="thread-tools">
+                <label for="thread-picker">Topic</label>
+                <select id="thread-picker" data-mutation></select>
+                <button id="new-thread" data-mutation type="button" aria-expanded="false" aria-controls="thread-form">New conversation</button>
               </div>
-            </form>
-          </section>
-          <section data-page="practice" hidden class="page">
-            <a class="back" href="#home">← Journal</a>
-            <h1>Practice</h1>
-            <div id="attempt-detail" hidden></div>
-            <div id="active-practice">
-            <label class="mode-label" for="practice-mode"
-              >Session
-              <select id="practice-mode">
-                <option>Daily mix</option>
-                <option>Past mistakes</option>
-              </select></label
-            >
-            <div id="session-progress" class="session-progress" hidden>
-              <span id="session-time"></span>
-              <progress id="session-meter" aria-labelledby="session-time"></progress>
+              <form id="thread-form" class="thread-form" hidden>
+                <label for="thread-title">New topic</label>
+                <input id="thread-title" maxlength="100" required placeholder="周末的打算" />
+                <button class="primary">Start</button><button type="button" id="cancel-thread">Cancel</button>
+              </form>
+              <div id="chat-messages" class="chat-messages">
+                <div id="chat-history" class="turn-list" role="log" aria-label="Casual conversation"></div>
+                <div id="chat-turn" class="turn-list" hidden></div>
+              </div>
+              <form id="chat-form">
+                <label class="sr" for="chat-draft">Your message to your conversation partner</label>
+                <textarea name="message" id="chat-draft" rows="2" required maxlength="1600" placeholder="写点什么……"></textarea>
+                <div class="tools">
+                  <button class="primary">Send</button><button id="reflect" type="button">Reflect with tutor</button>
+                </div>
+              </form>
             </div>
-            <p id="session-notice" class="notice" role="status" hidden></p>
-            <div id="practice-body"></div>
+          </section>
+          <section data-page="practice" hidden class="page study-page">
+            <h1>Practice</h1>
+            <div id="attempt-detail" class="practice-paper" hidden></div>
+            <div id="active-practice">
+              <div class="practice-topline">
+                <label class="mode-label" for="practice-mode">Session
+                  <select id="practice-mode">
+                    <option>Daily mix</option>
+                    <option>Past mistakes</option>
+                  </select>
+                </label>
+                <div id="session-progress" class="session-progress" hidden>
+                  <span id="session-time"></span>
+                  <progress id="session-meter" aria-labelledby="session-time"></progress>
+                </div>
+              </div>
+              <p id="session-notice" class="notice" role="status" hidden></p>
+              <div id="practice-body" class="practice-paper"></div>
             </div>
           </section>
           <section data-page="saved" hidden class="page">
             <a class="back" href="#home">← Journal</a>
             <h1>Scrapbook</h1>
             <div id="saved-items" class="scrap-list"></div>
+            <details id="board-archive" class="board-archive" hidden>
+              <summary>Archived items</summary>
+              <ul></ul>
+            </details>
             <details id="activity-disclosure" class="activity-disclosure">
               <summary>Journal activity</summary>
               <ol id="activity-list"></ol>
@@ -171,5 +179,14 @@
       </footer>
       <p class="sr" id="pending" role="status" aria-live="polite"></p>
     </div>
+    <dialog id="board-actions" class="board-dialog" aria-labelledby="board-action-title" aria-describedby="board-action-description">
+      <h2 id="board-action-title"></h2>
+      <p id="board-action-description"></p>
+      <div class="board-buttons">
+        <button id="board-archive-action" type="button" data-mutation>Archive</button>
+        <button id="board-delete-action" type="button" data-mutation>Delete from scrapbook</button>
+        <button id="board-cancel-action" type="button" autofocus>Cancel</button>
+      </div>
+    </dialog>
   </body>
 </html>

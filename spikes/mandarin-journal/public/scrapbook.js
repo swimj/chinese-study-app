@@ -3,6 +3,16 @@
 
 const hanzi = /[㐀-鿿]/;
 const LOOSE = 'loose';
+const pieceKinds = { note: 'annotation', takeaway: 'annotation', word: 'saved', saved: 'saved', line: 'line', observation: 'observation', media: 'media' };
+const pieceLabels = { note: 'note', takeaway: 'takeaway', word: 'word', saved: 'saved item', line: 'chat line', observation: 'observation', media: 'clipping' };
+
+function pieceTarget(scrap) {
+  return { kind: pieceKinds[scrap.kind], pieceId: scrap.kind === 'media' ? scrap.item.id : scrap.id };
+}
+
+function hiddenGroups(board) {
+  return new Set([...(board?.archivedGroups || []), ...(board?.deletedGroups || [])]);
+}
 
 function hash(text) {
   let h = 2166136261;
@@ -68,7 +78,7 @@ export function buildScrapbook(state, { readingLabel, media }) {
     if (message.kind !== 'observation' || message.reference?.kind === 'reflection') continue;
     const ref = message.reference;
     const home = ref?.kind === 'reading' ? readingCluster(ref.id) : loose();
-    (home || loose()).scraps.push({ kind: 'observation', id: 'obs-' + hash(message.text), text: message.text, quote: ref?.quote, reference: ref });
+    (home || loose()).scraps.push({ kind: 'observation', id: message.id, text: message.text, quote: ref?.quote, reference: ref });
   }
 
   // A conversation underway but not yet reflected on still shows the learner's own latest line.
@@ -122,11 +132,23 @@ export function buildScrapbook(state, { readingLabel, media }) {
 
   // Each reading has a place to open on the table, even before its first save.
   for (const doc of documents) readingCluster(doc.id);
+  // A conversation can return from the archive while a different chat is open.
+  // Its heading remains reachable even when it has no visible notes.
+  for (const thread of state.threads) {
+    if (thread.hasTurns) threadCluster(thread.id);
+  }
 
-  if (media) {
-    for (const c of clusters.values()) {
+  const hidden = hiddenGroups(state.board);
+  const deleted = new Set((state.board?.deletedPieces || []).map(({ kind, pieceId }) => kind + ':' + pieceId));
+  const visible = [...clusters.values()].filter(c => !hidden.has(c.key));
+  for (const c of visible) {
+    c.scraps = c.scraps.filter(scrap => !deleted.has(pieceKinds[scrap.kind] + ':' + scrap.id));
+    for (const scrap of c.scraps) {
+      if (scrap.also) scrap.also = scrap.also.filter(other => !hidden.has(other.key));
+    }
+    if (media) {
       c.scraps = c.scraps.flatMap((scrap) => {
-        const attached = (state.media || []).filter((m) => m.anchor.id === scrap.id && media[m.id]);
+        const attached = (state.media || []).filter((m) => m.anchor.id === scrap.id && media[m.id] && !deleted.has('media:' + m.id));
         const latent = attached.filter((m) => media[m.id].level === 'latent');
         if (latent.length) scrap.latent = latent;
         const placed = attached.filter((m) => media[m.id].level === 'placed').map((item) => ({ kind: 'media', id: 'media-' + item.id, item }));
@@ -135,8 +157,7 @@ export function buildScrapbook(state, { readingLabel, media }) {
     }
   }
 
-  return [...clusters.values()]
-    .filter((c) => c.kind !== 'chat' || c.scraps.length || c.overview)
+  return visible
     .filter((c) => c.kind !== LOOSE || c.scraps.length)
     .sort((a, b) => (a.kind === LOOSE) - (b.kind === LOOSE) || b.recency - a.recency);
 }
@@ -148,12 +169,14 @@ export function todayStep(state, { readingLabel }) {
   if (practice?.card && !practice.done) {
     return { text: queued ? queued.text.replace('Queued practice · ', '') : 'An exercise is waiting where you left off.', label: 'Practice', href: '#practice' };
   }
-  const reading = Object.keys(state.reading?.positions || {}).at(-1) || state.reading?.documentId;
+  const hidden = hiddenGroups(state.board);
+  const reading = [...Object.keys(state.reading?.positions || {}).reverse(), state.reading?.documentId]
+    .find(id => id && !hidden.has('read:' + id));
   if (reading) return { text: readingLabel(state, reading), lang: 'zh', label: 'Keep reading', href: '#read/source/' + encodeURIComponent(reading) };
   return { text: 'Tell your conversation partner about your day.', label: 'Talk', href: '#chat' };
 }
 
-export function createScrapbook({ host, viewport, world, node, link, getState, readingLabel, openThread, ui, persist, compose, react }) {
+export function createScrapbook({ host, viewport, world, node, link, getState, readingLabel, openThread, ui, persist, compose, react, submit }) {
   const view = { x: 0, y: 0, s: 1, ...(ui.scrapView || {}) };
   let positioned = false;
   let drag;
@@ -292,13 +315,56 @@ export function createScrapbook({ host, viewport, world, node, link, getState, r
     b.onclick = action;
     return b;
   }
+  const dialog = document.getElementById('board-actions');
+  const archiveAction = document.getElementById('board-archive-action');
+  const deleteAction = document.getElementById('board-delete-action');
+  document.getElementById('board-cancel-action').onclick = () => dialog.close();
+
+  function moreButton(label, scrap) {
+    const more = node('button', '•••', 'board-more');
+    more.type = 'button';
+    more.dataset.mutation = '';
+    const name = 'Options for ' + (scrap ? pieceLabels[scrap.kind] + ' · ' : '') + label;
+    more.setAttribute('aria-label', name);
+    more.setAttribute('aria-haspopup', 'dialog');
+    more.title = name;
+    more.onclick = () => {
+      const surface = more.closest('.scrap-world, .scrap-list');
+      const parentKey = more.closest('.cluster').dataset.key;
+      const neighbor = more.closest('.cluster').nextElementSibling?.dataset.key;
+      async function applyChange(action) {
+        dialog.close();
+        if (!await submit(action) || !surface.checkVisibility() || document.activeElement !== document.body) return;
+        const clusters = [...surface.querySelectorAll('.cluster')];
+        const next = clusters.find(c => c.dataset.key === parentKey) || clusters.find(c => c.dataset.key === neighbor) || clusters[0];
+        (next?.querySelector('.cluster-title[href], .board-more') ||
+          (surface === world ? menu.querySelector('summary') : document.querySelector('[data-page="saved"] .back'))).focus();
+      }
+      document.getElementById('board-action-title').textContent = label;
+      let description = 'Archive this board item to restore it later, or delete its scrapbook entry permanently. The source and learning history stay in the journal.';
+      if (scrap) {
+        description = pieceKinds[scrap.kind] === 'annotation'
+          ? 'Delete this note from the scrapbook and its margin.'
+          : 'Delete this piece from the scrapbook.';
+        const attached = (getState().media || []).filter(item => item.anchor.id === scrap.id);
+        if (attached.length) description += attached.length === 1
+          ? ' Its attached clipping will also leave the board.' : ' Its attached clippings will also leave the board.';
+        description += scrap.kind === 'word' ? ' The journal keeps the word and its practice history.' : ' Its learning history stays in the journal.';
+      }
+      document.getElementById('board-action-description').textContent = description;
+      archiveAction.hidden = Boolean(scrap);
+      archiveAction.onclick = () => applyChange({ type: 'boardGroup', key: parentKey, disposition: 'archived' });
+      deleteAction.onclick = () => applyChange(scrap ? { type: 'deletePiece', ...pieceTarget(scrap) }
+        : { type: 'boardGroup', key: parentKey, disposition: 'deleted' });
+      dialog.showModal();
+    };
+    return more;
+  }
   // A latent picture: nothing shows until the learner focuses or hovers its piece.
-  function latentCue(scrap, el) {
-    const holder = node('div', undefined, 'scrap-holder holder-' + scrap.kind);
-    holder.append(el);
+  function latentCue(scrap, holder, list) {
     for (const item of scrap.latent) {
       const pop = node('div', undefined, 'picture-pop');
-      pop.id = 'picture-' + item.id;
+      pop.id = (list ? 'list-picture-' : 'picture-') + item.id;
       pop.popover = 'auto';
       pop.setAttribute('role', 'dialog');
       pop.setAttribute('aria-label', 'Picture of ' + item.caption);
@@ -314,10 +380,10 @@ export function createScrapbook({ host, viewport, world, node, link, getState, r
       cue.setAttribute('aria-label', (item.kind === 'link' ? 'Link for ' : 'Picture of ') + item.caption);
       holder.append(cue, pop);
     }
-    return holder;
   }
 
   function scrapNode(scrap, state, list = false) {
+    const holder = node('div', undefined, 'scrap-holder holder-' + scrap.kind);
     if (scrap.kind === 'media') {
       const el = node('article', undefined, 'scrap scrap-media scrap-media-' + scrap.item.kind);
       el.tabIndex = 0;
@@ -329,10 +395,13 @@ export function createScrapbook({ host, viewport, world, node, link, getState, r
         actions.append(control('Not for me', () => react(scrap.item.id, 'notForMe')));
         el.append(actions);
       }
-      return el;
+      holder.append(el);
+    } else {
+      holder.append(scrapElement(scrap, state, list));
+      if (scrap.latent) latentCue(scrap, holder, list);
     }
-    const el = scrapElement(scrap, state, list);
-    return scrap.latent ? latentCue(scrap, el) : el;
+    holder.append(moreButton(scrap.title || scrap.quote || scrap.text || scrap.item?.caption || 'Tutor note', scrap));
+    return holder;
   }
   function scrapElement(scrap, state, list) {
     const tag = scrap.href ? 'a' : 'article';
@@ -397,6 +466,7 @@ export function createScrapbook({ host, viewport, world, node, link, getState, r
     const h = node('h2');
     h.append(title);
     head.append(h);
+    if (c.kind !== LOOSE) head.append(moreButton(c.title));
     if (c.kind === 'read') {
       const lead = c.doc.paragraphs[0]?.text || '';
       if (!c.scraps.length) head.append(Object.assign(node('p', lead.slice(0, 70) + (lead.length > 70 ? '…' : ''), 'excerpt'), { lang: 'zh' }));
@@ -444,7 +514,8 @@ export function createScrapbook({ host, viewport, world, node, link, getState, r
     const cluster = piece.closest('.cluster');
     const title = cluster?.querySelector('.cluster-title')?.textContent || '';
     const lead = (piece.querySelector('q, mark, strong, .cluster-title') || piece).textContent.trim();
-    const text = piece.innerText.replace(/\s+/g, ' ').trim();
+    const text = [...piece.children].filter(child => child.checkVisibility() && !child.matches('.board-more'))
+      .map(child => child.innerText).join(' ').replace(/\s+/g, ' ').trim();
     return { label: lead.length > 24 ? lead.slice(0, 23) + '…' : lead, source: [title, text].filter(Boolean).join('\n') };
   }
   function stopPicking() {
@@ -495,7 +566,7 @@ export function createScrapbook({ host, viewport, world, node, link, getState, r
         ? focused.closest('.cluster').dataset.key : undefined;
       const clusters = buildScrapbook(state, { readingLabel, media: compose(state, Date.now()) });
       world.replaceChildren(...clusters.map((c) => clusterNode(c, state, false)));
-      host.classList.toggle('empty', !clusters.some((c) => c.scraps.length));
+      host.querySelector('.board-empty').hidden = Boolean(clusters.length);
       if (restoreTitle) {
         layout();
         const cluster = [...world.children].find(el => el.dataset.key === restoreTitle);
@@ -523,8 +594,27 @@ export function createScrapbook({ host, viewport, world, node, link, getState, r
     renderList(container) {
       const state = getState();
       if (!state) return;
-      const clusters = buildScrapbook(state, { readingLabel, media: compose(state, Date.now()) }).filter((c) => c.scraps.length);
+      const clusters = buildScrapbook(state, { readingLabel, media: compose(state, Date.now()) });
       container.replaceChildren(...clusters.map((c) => clusterNode(c, state, true)));
+      const archive = document.getElementById('board-archive');
+      const archived = state.board?.archivedGroups || [];
+      document.getElementById('archive-link').hidden = archive.hidden = !archived.length;
+      archive.querySelector('ul').replaceChildren(...archived.map(key => {
+        const chat = key.startsWith('chat:');
+        const source = (chat ? state.threads : state.reading.documents).find(item => item.id === key.slice(5));
+        const row = node('li');
+        const label = node('span', source.title);
+        if (hanzi.test(source.title)) label.lang = 'zh';
+        const restore = control('Restore', async () => {
+          if (await submit({ type: 'boardGroup', key, disposition: 'visible' }) && document.activeElement === document.body && container.checkVisibility()) {
+            const restored = [...container.children].find(group => group.dataset.key === key);
+            (restored?.querySelector('.cluster-title') || document.querySelector('[data-page="saved"] .back')).focus();
+          }
+        });
+        restore.setAttribute('aria-label', 'Restore ' + source.title);
+        row.append(label, restore);
+        return row;
+      }));
     },
     fit,
     pick(onPick, done) {
