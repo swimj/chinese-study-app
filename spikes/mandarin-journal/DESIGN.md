@@ -19,7 +19,8 @@ rather than restating them.
 and Talk with projects.** These are the most stable parts of the product, and
 using them will tell us how everything else should behave. The rest of the
 vision waits in [Later](#later) until there is a solid base to attach it to.
-Built too early, it would dangle.
+Built too early, it would dangle. The [delivery slices](design/delivery.md) record
+the first wall release and the work that can follow it.
 
 ## The vision: a town you come back to (settled)
 

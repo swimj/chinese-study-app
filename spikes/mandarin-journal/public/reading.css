@@ -140,6 +140,23 @@ body:is([data-view='read'], [data-view='chat'], [data-view='practice']) .layout:
   text-align: start;
 }
 
+/* Keep the room controls out of the scrolling passage on narrow screens. */
+@media (max-width: 860px) {
+  .reader-return {
+    position: relative;
+    inset: auto;
+    align-self: flex-start;
+    margin: max(.4rem, env(safe-area-inset-top)) .7rem;
+    min-height: 3rem;
+    display: flex;
+  }
+  body[data-view='read'] .layout:not(.with-tutor) #tutor {
+    inset: max(.4rem, env(safe-area-inset-top)) max(.7rem, env(safe-area-inset-right)) auto auto;
+    width: min(7.7rem, 48vw);
+  }
+  .reader-sheet { padding-top: 1rem; }
+  .reader-paragraph .reader-prose { scroll-margin-block-start: .75rem; }
+}
 @media (max-width: 680px) {
   .reader-resume,
   .reader-tools button {

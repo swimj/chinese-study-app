@@ -10,6 +10,7 @@
     <link rel="stylesheet" href="/annotations.css" />
     <link rel="stylesheet" href="/scrapbook.css" />
     <link rel="stylesheet" href="/study.css" />
+    <link rel="stylesheet" href="/wall.css" />
     <script type="module" src="/app.js"></script>
   </head>
   <body>
@@ -28,8 +29,56 @@
       </div>
       <div id="layout" class="layout">
         <main id="content">
-          <section data-page="home" class="scrapbook" id="scrapbook">
-            <h1 class="sr">Your journal</h1>
+          <section data-page="home" class="wall" aria-labelledby="wall-title">
+            <header class="wall-header">
+              <h1 id="wall-title">My wall</h1>
+              <time id="wall-date"></time>
+              <button type="button" class="tutor-seal" data-tutor-toggle aria-label="Tutor" aria-controls="tutor-body" aria-expanded="false">师</button>
+            </header>
+            <div class="wall-objects">
+              <a class="pinned ticket" id="wall-practice" href="#practice">
+                <span class="object-label"><span aria-hidden="true">Admit one · </span>Practice</span>
+                <strong class="offer">Open practice</strong>
+              </a>
+              <a class="pinned book-page" id="wall-read" href="#read">
+                <span class="sr">Read</span>
+                <strong class="offer">Open the reader</strong>
+              </a>
+              <article class="pinned postcard">
+                <a id="wall-talk" href="#chat"><span class="object-label">Talk</span>
+                  <strong class="offer">Just talk</strong></a>
+              </article>
+              <article class="pinned shoebox">
+                <a href="#scrapbook" class="box-label"><span class="sr">Scrapbook</span>
+                  <strong class="offer">the shoebox</strong></a>
+              </article>
+              <span class="wall-sticker" aria-hidden="true" lang="zh">加油</span>
+              <section class="capture" aria-labelledby="word-heading">
+                <h2 id="word-heading">Jot something down</h2>
+                <p id="word-refresh-error" class="sub" hidden></p>
+                <form id="word-form">
+                  <div class="intake-line">
+                    <label for="word-text" class="sr">A word, a link, or a sentence</label>
+                    <input id="word-text" maxlength="2048" required placeholder="A word, a link, a sentence…" autocomplete="off" />
+                    <button class="primary" id="capture-submit" data-mutation>Send</button>
+                  </div>
+                  <details id="word-context-toggle" class="word-context">
+                    <summary>Where you met it</summary>
+                    <label for="word-context" class="sr">Where you saw or heard it</label>
+                    <textarea id="word-context" maxlength="2000" rows="2" placeholder="A sentence, a place, a person…"></textarea>
+                  </details>
+                </form>
+              </section>
+            </div>
+            <dialog class="home-import-panel" id="home-import" aria-labelledby="home-import-title">
+              <div class="home-import-head">
+                <h2 id="home-import-title">Import reading</h2>
+                <button class="home-import-close" id="close-import" type="button" aria-label="Close import">×</button>
+              </div>
+            </dialog>
+          </section>
+          <section data-page="scrapbook" hidden class="scrapbook" id="scrapbook">
+            <h1 class="sr">Your scrapbook</h1>
             <div class="scrap-viewport" id="scrap-viewport">
               <div class="scrap-world" id="scrap-world" aria-label="Your scrapbook" role="region"></div>
             </div>
@@ -37,7 +86,7 @@
             <div class="dock">
               <details class="dock-menu" id="dock-menu">
                 <summary aria-label="Journal menu"><span class="seal" lang="zh" aria-hidden="true">记</span></summary>
-                <nav class="dock-panel places" aria-label="Journal">
+                <nav class="dock-panel" aria-label="Journal">
                   <a href="#read">Read</a>
                   <a href="#home/import">Import reading</a>
                   <a href="#chat">Talk</a>
@@ -54,39 +103,14 @@
                   </fieldset>
                 </nav>
               </details>
-              <p class="today-line">
-                <button type="button" id="dock-tutor" class="today-seal" aria-label="Tutor" aria-controls="tutor-body" aria-expanded="false"><span lang="zh" aria-hidden="true">师</span></button><span id="today-text"></span>
-                <a id="today-action" class="today-go" href="#practice"></a>
-              </p>
-              <p class="dateline" id="today" hidden></p>
-              <div id="recent" class="recent" hidden><a id="recent-link" href="#read"></a></div>
+              <a class="room-home" href="#home">← Home</a>
+              <button type="button" class="tutor-seal" data-tutor-toggle aria-label="Tutor" aria-controls="tutor-body" aria-expanded="false">师</button>
             </div>
-            <dialog class="home-import-panel" id="home-import" aria-labelledby="home-import-title">
-              <div class="home-import-head">
-                <h2 id="home-import-title">Import reading</h2>
-                <button class="home-import-close" id="close-import" type="button" aria-label="Close import">×</button>
-              </div>
-            </dialog>
-            <section class="capture" aria-labelledby="word-heading">
-              <h2 id="word-heading" class="sr">Drop something</h2>
-              <p id="word-refresh-error" class="sub" hidden></p>
-              <form id="word-form">
-                <div class="intake-line">
-                  <label for="word-text" class="sr">A word, a link, or a sentence</label>
-                  <input id="word-text" maxlength="2048" required placeholder="A word, a link, a sentence…" autocomplete="off" />
-                  <button class="primary" id="capture-submit" data-mutation>Send</button>
-                </div>
-                <details id="word-context-toggle" class="word-context">
-                  <summary>Where you met it</summary>
-                  <label for="word-context" class="sr">Where you saw or heard it</label>
-                  <textarea id="word-context" maxlength="2000" rows="2" placeholder="A sentence, a place, a person…"></textarea>
-                </details>
-              </form>
-            </section>
           </section>
           <section data-page="read" hidden class="page article"></section>
           <section data-page="chat" hidden class="page study-page">
-            <h1>Conversation</h1>
+            <a class="room-home" href="#home">← Home</a>
+            <h1>Talk</h1>
             <div class="conversation-sheet">
               <div class="thread-tools">
                 <label for="thread-picker">Topic</label>
@@ -112,6 +136,7 @@
             </div>
           </section>
           <section data-page="practice" hidden class="page study-page">
+            <a class="room-home" href="#home">← Home</a>
             <h1>Practice</h1>
             <div id="attempt-detail" class="practice-paper" hidden></div>
             <div id="active-practice">
@@ -132,7 +157,7 @@
             </div>
           </section>
           <section data-page="saved" hidden class="page">
-            <a class="back" href="#home">← Journal</a>
+            <a class="back" href="#scrapbook">← Scrapbook</a>
             <h1>Scrapbook</h1>
             <div id="saved-items" class="scrap-list"></div>
             <details id="board-archive" class="board-archive" hidden>
