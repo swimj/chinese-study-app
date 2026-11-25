@@ -15,7 +15,8 @@ practices, how it records learner activity, how it teaches, or how the hosted
 app's learners and data will move into it. It explains where the product is
 going, the principles that rule ideas in or out, and what remains open. The
 [README](README.md#the-record-and-priority) explains the current mechanisms;
-[Media on the board](MEDIA.md) covers pictures.
+[Media on the board](MEDIA.md) covers pictures. [The journal's interface](DESIGN.md)
+covers how the learner sees all of this.
 
 ## Where this is going
 
@@ -97,6 +98,11 @@ annotations: a margin note is a piece and also produces record entries.
    through its reflection, after the reflection completes, and only for points
    the takeaways addressed, so practice follows what the learner was shown.
    *Rules out:* drilling a point the learner was never taught.
+   What the conversation partner shows also counts as shown: a term it
+   explained, or its recast of what the learner meant when it checked its
+   understanding. Practice gathers asynchronously, so the judgment can parse
+   these sources without changing the live conversation
+   ([interface](DESIGN.md#two-characters-where-structure-lives)).
 6. **Targets are hazy and agent-managed.** The agent creates and merges targets;
    near-duplicates and messy data are expected. Identity is the exact form for
    now.

@@ -2,7 +2,7 @@
 
 A local, single-learner app for trying a reading, a casual Mandarin conversation, and short practice with one continuous tutor. It has its own package, server, and SQLite journal. Readings, actions, and study records stay separate from the hosted study app.
 
-The journal is planned to replace the hosted app. [The journal's learning model](MODEL.md) explains that direction and the principles behind practice, priority, teaching and the record; read it before changing them.
+The journal is planned to replace the hosted app. [The journal's learning model](MODEL.md) explains that direction and the principles behind practice, priority, teaching and the record; read it before changing them. [The journal's interface](DESIGN.md) records the design direction, current observations and open questions for what the learner sees.
 
 ## Run
 
@@ -21,7 +21,7 @@ Which journal opens is separate from the tutor mode. `npm start` opens this chec
 
 ## Home
 
-Home is a scrapbook of what the learner has brought into the journal, grouped by what it is about: each conversation topic and each reading is a cluster. Reflection takeaways show the learner's own words with the tutor's note, margin notes keep their highlighted passage, and saved words sit wherever they appeared; a word that appears in several places links to the others. Anything without a home collects under Loose ends. Nothing on the page is generated for it: every piece comes from the journal state.
+Home is a scrapbook of what the learner has brought into the journal, grouped by where it came from: each conversation topic and each reading is a cluster. The [interface direction](DESIGN.md) describes where Home is heading. Reflection takeaways show the learner's own words with the tutor's note, margin notes keep their highlighted passage, and saved words sit wherever they appeared; a word that appears in several places links to the others. Anything without a home collects under Loose ends. Nothing on the page is generated for it: every piece comes from the journal state.
 
 On a wide screen the scrapbook is an open table: drag or scroll to move around, pinch or Ctrl/⌘-scroll to zoom, and zoom far out to see clusters folded to their names. **See everything** fits the whole table. On a phone the same clusters read top to bottom with pieces in a sideways row. A small card offers one next step from state alone (practice waiting, else the reading underway, else a conversation), and the bar at the bottom accepts whatever the learner wants to bring in.
 
