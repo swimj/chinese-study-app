@@ -296,9 +296,9 @@ These describe the prototype now, not lasting rules.
     traction.
   - **The material** (cork, warmth) works. **The sticker** is cheesy but
     cute, and it is the one decoration.
-  - **One small real gesture in V1** keeps the ownership feeling honest:
-    for example, the learner can drag a pinned thing to re-pin it, and it
-    stays where they put it.
+  - **A small real gesture would be welcome but isn't essential:** for
+    example, the learner can drag a pinned thing to re-pin it, and it stays
+    where they put it. It makes the ownership feeling honest.
 
 ## Decision log
 
@@ -325,4 +325,4 @@ These describe the prototype now, not lasting rules.
 | 2026-11-25 | Purpose before tidiness: a crowded Home is acceptable for now; rotation over time is an option later | Justin, design conversation |
 | 2026-11-25 | What the partner explains or recasts counts as shown; practice parses it asynchronously | Justin, design conversation |
 | 2026-11-25 | Desktop V1 direction: the wall (urban plan C), with the small interaction ideas | Justin, canvas review |
-| 2026-11-25 | The wall is Home's surface; the town is the metaphor for drilling into rooms. V1 includes one small real personalization gesture | Justin, canvas review |
+| 2026-11-25 | The wall is Home's surface; the town is the metaphor for drilling into rooms. a small personalization gesture (such as re-pinning) is welcome but not essential | Justin, canvas review |
