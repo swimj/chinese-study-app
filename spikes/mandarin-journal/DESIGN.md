@@ -64,6 +64,20 @@ Rules for the landing page:
   If crowding becomes a problem, the time dimension can help: rotating what
   is shown rather than showing everything at once.
 
+**The look: the wall** (chosen Nov 25). Home's surface is a board of
+physical things pinned up slightly crooked: a ticket for Practice, a
+dog-eared page for Read, a postcard for a project, a shoebox for the
+Scrapbook, and a notepad slip for capture. The town remains the metaphor for
+stepping inward from the board into rooms.
+
+![Desktop V1 sketch: the wall](design/urban-plan-wall.png)
+
+The alternatives that were sketched are
+[the desk](design/urban-plan-desk.png), [the town](design/urban-plan-town.png)
+and [one invitation](design/urban-plan-invitation.png). The originals, with
+notes and interaction ideas, are on Justin's private design canvas
+(page "Urban plans"). The images here are the copy agents can rely on.
+
 ### Rooms
 
 The learner steps from Home into a room. Rooms can be shaped very
