@@ -295,6 +295,45 @@ These describe the prototype now, not lasting rules.
   - *Open for the urban plan:* on desktop V1, does today's scrapbook table
     stay behind the landmarks, or recede into a shopfront? It is the one
     current surface whose pieces don't all lead somewhere.
+- *(Nov 25)* **Justin on projects and the urban plan.**
+  - **The tutor owns the arc and the partner plays the scenes,** tentatively.
+    Many of Justin's project ideas were direct tutoring, so the tutor would
+    have a foot in both worlds. The risk is tone: one voice as both teacher
+    and immersive guide. It may need building to find out.
+  - **A daily episode?** Entering a project could open a short episode the
+    tutor has framed. That might be content or slides to interact with (an
+    interactive presentation) with room for open chat, always ending with
+    space for free production. This adds structure, which is the app's
+    standing tension: when do we want structure, and when not?
+  - **Projects can emerge.** A **root chat** bootstraps them: a
+    get-to-know-you conversation ("you learn here by being yourself; tell me
+    what you're into, why Chinese, what you'd talk about"). It stays free
+    and long-running. Suggested projects come out of it, periodically or
+    right away. This also answers onboarding: one clear opening that leads
+    to individual paths.
+  - **The scrapbook shrinks into a shopfront** on desktop V1. Later, as the
+    town matures, smarter features can surface scrapbook highlights on the
+    main canvas.
+- *(Nov 25)* **Claude's response.**
+  - *The character split can be the structure split.* Structure lives in the
+    tutor's voice (framing, beats, debrief); openness lives in the partner's
+    (scenes, the root chat). The learner can tell which mode they're in by who
+    is speaking. The tone risk then becomes a rule: the tutor never plays a
+    scene, and the partner never teaches.
+  - *An episode is structure offered, not required.* It has a shape (frame →
+    scene → free production), but the learner can skip the frame or stay in
+    the scene. Free production is always the last beat.
+  - *Prototype cheaply.* The episode's frame can reuse the existing
+    lesson-card beats. Risk: daily episodes turn into a course, with an
+    obligation and a content-quality burden. Start with episodes the learner
+    opens, not a daily schedule.
+  - *The root chat fits the partner.* It is a curious friend getting to know
+    the learner, which is naturally inside the bubble. Project suggestions
+    come from the tutor, outside it.
+  - *Count the landmarks.* Practice, Read, the root chat, projects and the
+    Scrapbook shopfront make five, plus the capture bar. That is more than
+    "a few and one special". Should projects sit inside the root chat's
+    landmark at first?
 
 
 ## Decision log
@@ -315,3 +354,6 @@ These describe the prototype now, not lasting rules.
 | 2026-11-24 | Typeform is a reference for the practice session only | Justin, design conversation |
 | 2026-11-24 | Focus: the desktop urban plan, landmarks and projects. Defer what's alive, the growth arc, gathering, the busy item and the tutor refinements | Justin, design conversation |
 | 2026-11-24 | V1 Home holds nothing that doesn't lead somewhere, except perhaps one decorative touch | Justin, design conversation |
+| 2026-11-25 | Projects can emerge; a long-running get-to-know-you root chat bootstraps them and is the onboarding | Justin, design conversation |
+| 2026-11-25 | Desktop V1: the scrapbook shrinks into a shopfront; highlights on the main canvas come later | Justin, design conversation |
+| 2026-11-25 | Tentative: the tutor owns a project's arc and the partner plays its scenes | Justin, design conversation |
