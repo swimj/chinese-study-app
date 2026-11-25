@@ -122,7 +122,9 @@ openness, so the learner can tell which mode they're in by who is speaking.
     ("you mean …?") naturally recasts the idea in a more natural way. If the
     guess is wrong, asking for clarification is what a friend would do.
   
-  Grammar patterns and natural expression belong to the tutor.
+  Grammar patterns and natural expression belong to the tutor. What the
+  partner explains or recasts counts as shown, so practice can follow it
+  ([MODEL principle 5](MODEL.md#principles)).
 
 ### Who shapes the page
 
@@ -255,11 +257,6 @@ This was observed on the fixture and on a copy of Justin's dogfooded journal.
 4. **A project's first episode.** What do the frame, scene and free
    production look like? How does the tutor plan, and how does a project
    feed practice? Can the frame reuse the lesson-card beats?
-5. **The partner's teaching and the record.** If the partner explains a term
-   or recasts the learner's sentence, does that count as "shown" for
-   practice? [MODEL principle 5](MODEL.md#principles) currently only lets
-   practice follow what the tutor taught.
-
 **Later:** see [Later](#later). Desktop Home's eventual composition with the
 Scrapbook's highlights also waits there.
 
@@ -302,3 +299,4 @@ These describe the prototype now, not lasting rules.
 | 2026-11-25 | Structure lives in the tutor's voice; the partner may explain terms and check its understanding as a friend would; grammar and natural expression go to the tutor | Justin, design conversation |
 | 2026-11-25 | V1 landmarks: Practice, Read, Talk (root chat and projects), Scrapbook, plus the capture bar | Justin, design conversation |
 | 2026-11-25 | Purpose before tidiness: a crowded Home is acceptable for now; rotation over time is an option later | Justin, design conversation |
+| 2026-11-25 | What the partner explains or recasts counts as shown; practice parses it asynchronously | Justin, design conversation |
