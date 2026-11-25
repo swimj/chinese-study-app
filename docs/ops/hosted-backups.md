@@ -169,9 +169,18 @@ alongside the database backup and its matching image.
 
 `hosted:verify-restore` checks database content and operational sentinels; it does
 not resolve prompt references or prove that historical requests and improvement
-checkpoint inputs can be reconstructed. For that investigation, use the
-[offline evidence readers](../server-db.md#model-invocation-ledger) with the
-restored database opened read-only and the Git archive supplied separately.
+checkpoint inputs can be reconstructed. Choose the check for the evidence you need:
+
+- To locate only the authored system prompt, use the
+  [archive lookup](../prompt-development.md#look-up-a-system-prompt) from the
+  repository checkout. It takes a recorded digest or a cataloged prompt name and
+  its exact version, and does not need a restored database. A name and version
+  can locate multiple variants; use the recorded digest to identify the bytes
+  for a particular call.
+- To reconstruct a historical request or improvement checkpoint input, use the
+  [offline evidence readers](../server-db.md#model-invocation-ledger) with the
+  restored database opened read-only and the Git archive supplied separately.
+
 The [0080 rehearsal](migration-notes.md#invocation-prompt-retention-rehearsal-0080)
 describes the exact reconstruction comparisons. Record archive revision and
 reconstruction results separately from the database validator's result, without
