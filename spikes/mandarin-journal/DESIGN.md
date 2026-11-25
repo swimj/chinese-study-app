@@ -189,12 +189,16 @@ These are ordered roughly by how much else depends on them.
    pattern"? Constructions are already
    [first-class targets](MODEL.md#vocabulary).
 
-## Review conventions
+## Prototype-stage tradeoffs
 
-- **Judge the design on content the current code makes.** Fixes apply going
-  forward. Older journal content isn't rewritten to match, because that
-  costs velocity and helps no one. The exception is when old cruft builds up
-  enough to cloud product judgment.
+These describe the prototype as it is now, not lasting rules. They may get
+stricter once the journal is deployed.
+
+- **Old content is fixed going forward, not backfilled.** Older journal
+  content isn't rewritten to match a new fix. Much interactive content goes
+  stale by nature: learners keep going forward rather than trawling old
+  chats. So when keeping historical data up to date would block an otherwise
+  clear solution, accepting the stale data is usually the right trade.
 
 ## Feedback awaiting the rewrite
 
@@ -205,7 +209,8 @@ can still go straight into the text.
 
 - *(Nov 24)* First quick pass from Justin. The factual corrections were
   applied inline: legacy reader notes, neglect of Practice and Conversation,
-  the partner settled as a separate character, and the review convention.
+  the partner settled as a separate character, and a prototype-stage tradeoff
+  on stale content (not a lasting rule).
 
 ## Decision log
 
@@ -216,4 +221,3 @@ can still go straight into the text.
 | 2026-11-23 | Media: per-case ceilings under a demote-only composition policy | [MEDIA.md](MEDIA.md) |
 | 2026-11-23 | Desktop proves the model first; phone soon; shared philosophy | Consultation follow-up |
 | 2026-11-24 | The conversation partner is a separate character inside the bubble, mostly unaware of the learning system | Justin, review of this document |
-| 2026-11-24 | Design is judged on newly generated content; legacy content is not backfilled unless cruft clouds judgment | Justin, review of this document |
