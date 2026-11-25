@@ -3,7 +3,7 @@ import { createTurnProgress } from './turn-progress.js';
 import { createCapture, replyTarget, wordForTurn } from './capture.js';
 import { createAnnotations } from './annotations.js';
 import { createReading, readingLabel, referenceForSource } from './reading.js';
-import { createScrapbook, todayStep } from './scrapbook.js';
+import { createScrapbook, wallOffers } from './scrapbook.js';
 import { compose } from './media-policy.js';
 import { createTeaching } from './teaching.js';
 
@@ -145,8 +145,7 @@ const capture = createCapture({
     renderTutor();
     capture.watch(state.wordIntakes);
     if (page === 'saved') renderSaved();
-    renderToday();
-    scrapbook.render();
+    renderWall(scrapbook.render());
   },
 });
 const reader = createReading({
@@ -191,13 +190,41 @@ pointButton.onclick = () => {
   setPointing(true);
   scrapbook.pick((piece) => primeTutor({ label: piece.label, surface: 'home', source: piece.source }), () => setPointing(false));
 };
-function renderToday() {
-  const step = todayStep(state, { readingLabel });
-  if (step.href === '#practice') get('wall-practice').querySelector('.offer').textContent = step.text;
-  if (step.label === 'Keep reading') {
-    get('wall-read').href = step.href;
-    get('wall-read').querySelector('.offer').textContent = step.text;
+function renderWall(clusters) {
+  const { practice, practiceTime, reading, conversation, piece, pieceCount } = wallOffers(state, clusters);
+  const ticket = get('wall-practice');
+  ticket.querySelector('.offer').textContent = practiceTime || practice;
+  ticket.querySelector('.offer-detail').textContent = practiceTime ? practice : '';
+  const book = get('wall-read');
+  book.href = reading?.href || '#home/import';
+  book.querySelector('.offer').textContent = reading?.title || 'Bring a reading';
+  book.querySelector('.offer-detail').textContent = reading?.excerpt || '';
+  book.querySelector('.bookmark-note').textContent = reading?.bookmark || '';
+  const talk = get('wall-talk');
+  talk.href = conversation ? href('chat', 'thread', conversation.id) : '#chat';
+  talk.onclick = !conversation && state.chat.length ? event => { event.preventDefault(); justTalk(); } : null;
+  const turns = conversation?.id === state.activeThreadId ? state.chat : [];
+  const lastLearnerLine = turns.findLast(turn => turn.role === 'user');
+  const quoteAsTitle = conversation?.title === 'Conversation' && lastLearnerLine;
+  talk.querySelector('.offer').textContent = quoteAsTitle ? lastLearnerLine.text : conversation?.title || 'Just talk';
+  const caption = quoteAsTitle ? turns.at(-1) : lastLearnerLine;
+  const postscript = get('wall-talk-line');
+  postscript.textContent = caption && !(quoteAsTitle && caption === lastLearnerLine) ? caption.text : '';
+  postscript.hidden = !postscript.textContent;
+  get('wall-just-talk').hidden = !conversation;
+  const revisit = get('wall-piece');
+  revisit.hidden = !piece;
+  if (piece) {
+    revisit.textContent = pieceCount + (pieceCount === 1 ? ' piece' : ' pieces') + ' · Revisit ' + piece.title;
+    revisit.href = piece.href;
   }
+}
+get('wall-just-talk').onclick = justTalk;
+async function justTalk() {
+  const origin = location.hash;
+  const empty = state.threads.find(t => !t.hasTurns && !t.source && t.title === 'Conversation');
+  const action = empty ? { type: 'selectThread', threadId: empty.id } : { type: 'newThread', title: 'Conversation' };
+  if (await submit(action) && location.hash === origin) location.hash = 'chat';
 }
 get('wall-date').textContent = new Intl.DateTimeFormat(undefined, {
   weekday: 'long', month: 'short', day: 'numeric',
@@ -774,8 +801,7 @@ function renderState() {
   renderSaved();
   capture.watch(state.wordIntakes);
   reader.render(state);
-  renderToday();
-  scrapbook.render();
+  renderWall(scrapbook.render());
   markBusy(busy);
 }
 function focusTarget(el) {
@@ -817,6 +843,14 @@ async function navigate(initial = false) {
     if (heading) { heading.tabIndex = -1; heading.focus({ preventScroll: true }); }
   }
   if (!state) return;
+  if (page === 'scrapbook' && target.kind === 'piece' && !scrapbook.showPiece(target.id)) {
+    focusTarget(document.querySelector('#scrapbook h1'));
+    showError('This piece is no longer in the scrapbook.');
+  }
+  if (page === 'chat' && target.kind === 'thread' && target.id !== state.activeThreadId) {
+    if (!state.threads.some(t => t.id === target.id)) { showError('This conversation could not be found.'); return; }
+    if (!await submit({ type: 'selectThread', threadId: target.id }) || location.hash !== href('chat', 'thread', target.id)) return;
+  }
   if (page === 'scrapbook' && previous === 'read' && !target.kind) {
     scrapbook.showReading(reader.documentId());
   }
@@ -845,6 +879,7 @@ async function navigate(initial = false) {
       focusTarget(get('board-archive').querySelector('summary'));
     }
   }
+  if (page === 'chat' && target.kind === 'thread') chatDraft.focus({ preventScroll: true });
   if (page === 'read') {
     const requested = note ? note.anchor.ownerId + '/' + note.anchor.startId
       : target.kind === 'source' && target.id ? target.id : state.reading.documentId;

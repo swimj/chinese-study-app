@@ -44,7 +44,7 @@ export type WordContent = Omit<z.infer<typeof wordSchema>, 'title' | 'reuseId'>;
  * always admits it. Intakes from before this distinction are saves.
  */
 export type IntakeIntent = 'ask' | 'save';
-type Saved = { id: string; kind: string; title: string; detail: string; source: string; word?: WordContent };
+type Saved = { savedAt?: string; id: string; kind: string; title: string; detail: string; source: string; word?: WordContent };
 type Exchange = { question: string; suggestions: string[]; reply: string };
 export type WordIntake = {
   id: string;
@@ -197,6 +197,7 @@ export function finishWord(intake: WordIntake, saved: Saved[], decision: WordDec
       const item = {
         id: randomUUID(),
         kind: 'Word',
+        savedAt: new Date().toISOString(),
         title,
         detail,
         source: intake.context || intake.text,
