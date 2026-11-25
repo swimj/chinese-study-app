@@ -37,7 +37,7 @@ export type VocabularyCaseQueueItem = {
   reusedSharedCue?:{axisNote?:string|null;contentId:string;prompt:string|null;acceptedAnswers:string[];teachingNote:string|null;rationale:string;version:number|null;expectedVersion:number|null;availability:string|null};
   notes?:{noteId:string;text:string;createdAt:string;actorId:string}[];
   /** Most recent 20 action commentaries, distinct from standalone case notes. */
-  activity?:{activityId:string;action:'done'|'dismiss'|'approve'|'reassess'|'second_opinion';text:string;createdAt:string;actorId:string;secondOpinionRequestId?:string}[];
+  activity?:{activityId:string;action:'done'|'dismiss'|'approve'|'reassess'|'second_opinion';text:string;createdAt:string;actorId:string;secondOpinionRequestId?:string;priorProposal?:VocabularyReassessmentEditorial['priorProposal']}[];
   activityHasMore?:boolean;
   served:VocabularyServedReview[];
   proposal:{proposalId:string;version:number;status:VocabularyContentProposal['status'];authorKind:'operator'|'service';

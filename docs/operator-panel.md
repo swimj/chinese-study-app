@@ -322,8 +322,9 @@ remains evidence without an authored answer identity. A reassessment that pauses
 keeps any earlier proposal locked until the new assessment completes or is abandoned. Opening
 Reassess on an existing case also presents its ambiguous response candidates. A
 previous operator choice is selected again when its exact candidate snapshot is
-unchanged; the operator can choose another entry. Any editorial direction and
-attached opinion from a paused assessment carry into its continuation.
+unchanged; the operator can choose another entry. The paused assessment retains
+its editorial direction, selected opinion, and selected proposal revision for
+its continuation.
 Historical saved
 assessments with unresolved shared answers remain in their review case. Open
 the full review workspace for **Resolve candidate identities**. Select the intended entry for
@@ -414,7 +415,11 @@ proposal**, and **Approve and apply** retain their direct action paths. **More**
 offers their optional note/reason dialogs, proposal editing, and second opinions.
 Each dialog submits only its own text; Cancel discards it, and a failed request
 retains it for retry. **Reassess** opens its model/target dialog with optional
-editorial direction. **Reassess with this opinion**, beside a completed second
+editorial direction. To critique a saved change, select **Include displayed
+proposal** and enter your direction. The checkbox identifies the saved version
+of the proposal you are viewing, including when you have selected an alternative.
+The assessment compares that revision with the current exercise. Review and
+approve any resulting change before it takes effect. **Reassess with this opinion**, beside a completed second
 opinion, opens the same dialog with that opinion attached and space for optional
 operator direction. The attachment identifies the opinion, discloses its rationale,
 and can be removed before submission. Ordinary **Reassess** starts without an
