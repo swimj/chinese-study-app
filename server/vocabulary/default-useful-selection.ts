@@ -15,23 +15,60 @@ import { validateJsonSchema } from '../llm/json-schema-validator.ts';
 import { invalidateServiceInvocation } from '../llm/invocation-ledger.ts';
 import { isOutputTruncationFinishReason,type ProviderAdapter } from '../llm/types.ts';
 import type { JsonSchema } from '../../src/domain/reflection-result-schema.ts';
-import { VocabularySenseReadinessPending,VocabularySenseSelectionRequired,VOCABULARY_SENSE_SERVICE,VOCABULARY_SENSE_MODEL } from './sense-readiness.ts';
+import { VocabularySenseReadinessPending,VocabularySenseSelectionRequired,VOCABULARY_SENSE_SERVICE } from './sense-readiness.ts';
 import { recordPreparationAttempt,linkPreparationInvocation,completePreparationAttempt,failPreparationAttempt } from './preparation-retry.ts';
 const actor={kind:'service' as const,id:VOCABULARY_SENSE_SERVICE};
-const prompt=readFileSync(new URL('./reflection-prompts/default-useful-selection.md',import.meta.url),'utf8');
+const livePrompt = { version: '1', text: readFileSync(new URL('./reflection-prompts/default-useful-decisions.md',import.meta.url),'utf8') };
 const timeoutMs=180_000;
-export type UsefulSelectionProvider={isConfigured():boolean;select(input:{word:NonNullable<ReturnType<typeof getSharedIntroductionLexicalWord>>;senses:VocabularySense[]},context:{workflowId:string;attemptNumber:number;onInvocation:(id:string|null|undefined)=>void}):Promise<unknown>};
-export function createUsefulSelectionProvider(options:{environment?:NodeJS.ProcessEnv;adapter?:ProviderAdapter}={}):UsefulSelectionProvider {
+type SelectionInput = { word: NonNullable<ReturnType<typeof getSharedIntroductionLexicalWord>>; senses: VocabularySense[] };
+export type UsefulSelectionProvider={isConfigured():boolean;select(input:SelectionInput,context:{workflowId:string;attemptNumber:number;onInvocation:(id:string|null|undefined)=>void}):Promise<unknown>};
+
+export function defaultUsefulSelectorInput(input: SelectionInput) {
+  const references = vocabularySenseReferences(input.senses.map(sense => sense.senseId));
+  const wire = { word: modelLexicalWord(input.word), senses: input.senses.map(({ wordId: _wordId, ...sense }) => ({
+    ...sense, senseId: references.alias(sense.senseId),
+  })) };
+  return { references, wire };
+}
+
+export function createUsefulSelectionProvider(options:{environment?:NodeJS.ProcessEnv;adapter?:ProviderAdapter}={}, prompt = livePrompt):UsefulSelectionProvider {
   const environment=options.environment??process.env;
   const adapter=options.adapter??createOpenAiCompatibleAdapter({id:'openai',defaultBaseUrl:'https://api.openai.com/v1',apiKeyEnvironmentVariable:'OPENAI_API_KEY',structuredOutputMode:'json_schema',maxTokensField:'max_completion_tokens',fetchImplementation:fetchImplementationForProvider('openai',timeoutMs)});
   return {isConfigured:()=>Boolean(environment.OPENAI_API_KEY?.trim()),async select(input,context){
-    const references=vocabularySenseReferences(input.senses.map(sense=>sense.senseId));
-    const wire={word:modelLexicalWord(input.word),senses:input.senses.map(({wordId: _wordId,...sense})=>({...sense,senseId:references.alias(sense.senseId)}))};
-    const schema:JsonSchema={type:'object',additionalProperties:false,required:['senseIds'],properties:{senseIds:{type:'array',items:{type:'string',enum:input.senses.map(sense=>references.alias(sense.senseId))}}}};
-    const result=await adapter.run({model:VOCABULARY_SENSE_MODEL,reasoningEffort:'high',systemPrompt:prompt,userPrompt:JSON.stringify(wire),outputSchemaName:'vocabulary_default_useful_selection_v1',outputSchema:schema,maxOutputTokens:4000,temperature:null,timeoutMs,cachePrompt:true,invocationActor:{kind:'service',serviceId:VOCABULARY_SENSE_SERVICE},provenance:{workflowId:context.workflowId,attemptNumber:context.attemptNumber,stepName:'default_useful_selection',promptName:'vocabulary-default-useful-selection',promptVersion:'7',schemaVersion:'1',inputProjectionVersion:'canonical-inventory-local-senses-v3'}},{apiKey:environment.OPENAI_API_KEY?.trim()??'',baseUrl:environment.OPENAI_BASE_URL?.trim()||null});
-    context.onInvocation(result.invocationId);
-    try{if(isOutputTruncationFinishReason(result.finishReason))throw new Error('truncated');const value:unknown=JSON.parse(result.rawText);if(validateJsonSchema(value,schema).length)throw new Error('schema');const selected=(value as {senseIds:string[]}).senseIds;if(new Set(selected).size!==selected.length)throw new Error('duplicate');return {senseIds:selected.map(id=>references.canonical(id))};}
-    catch{invalidateServiceInvocation(result.invocationId,VOCABULARY_SENSE_SERVICE);throw new Error('Default useful selection output is invalid');}
+    const { references, wire } = defaultUsefulSelectorInput(input);
+    const ids = wire.senses.map(sense => sense.senseId);
+    const schema: JsonSchema = { type: 'array', items: { type: 'string', enum: ids } };
+    const questions = ids.map(name => ({
+      type: 'predicate' as const, name,
+      instructions: `Should ${name} be in the DEFAULT USEFUL subset for this target under the supplied editorial guidance?`,
+    }));
+    let startedId: string | null | undefined;
+    const result = await adapter.run({
+      model: 'gpt-6-luna', systemPrompt: prompt.text, userPrompt: JSON.stringify(wire),
+      decisions: { questions, threshold: 0.8 },
+      outputSchemaName: 'vocabulary_default_useful_selection_v2', outputSchema: schema,
+      reasoningEffort: null, maxOutputTokens: 0, temperature: null, timeoutMs, cachePrompt: true,
+      invocationActor: { kind: 'service', serviceId: VOCABULARY_SENSE_SERVICE },
+      provenance: { workflowId: context.workflowId, attemptNumber: context.attemptNumber,
+        stepName: 'default_useful_selection', promptName: 'vocabulary-default-useful-decisions',
+        promptVersion: prompt.version, schemaVersion: '2', inputProjectionVersion: 'canonical-inventory-local-senses-v3' },
+    }, {
+      apiKey: environment.OPENAI_API_KEY?.trim() ?? '', baseUrl: environment.OPENAI_BASE_URL?.trim() || null,
+      onInvocationStarted(id) { startedId = id; context.onInvocation(id); },
+    });
+    // Offline replay imports its invocation when the retained response is consumed.
+    if (result.invocationId !== startedId) context.onInvocation(result.invocationId);
+    try {
+      const selected: unknown = JSON.parse(result.rawText);
+      if (isOutputTruncationFinishReason(result.finishReason) || validateJsonSchema(selected, schema).length
+        || !Array.isArray(selected) || new Set(selected).size !== selected.length) {
+        throw new Error('Invalid selection');
+      }
+      return { senseIds: selected.map(id => references.canonical(id)) };
+    } catch {
+      invalidateServiceInvocation(result.invocationId, VOCABULARY_SENSE_SERVICE);
+      throw new Error('Default useful selection output is invalid');
+    }
   }};
 }
 function atomic<T>(work:()=>T):T {const db=getDb(),point=`selection_${randomUUID().replaceAll('-','')}`;db.exec(`SAVEPOINT ${point}`);try{const result=work();db.exec(`RELEASE ${point}`);return result;}catch(error){db.exec(`ROLLBACK TO ${point}; RELEASE ${point}`);throw error;}}
@@ -43,7 +80,8 @@ export function defaultUsefulInitializationPlan(wordId:string):{kind:'known'|'em
   if(!senses.length)return {kind:'empty',senseIds:[]};
   return {kind:'selector',senseIds:senses.map(sense=>sense.senseId).sort()};
 }
-export function recordEmptyUsefulRecommendation(wordId:string,workflowId:string,invocationId:string|null|undefined,source:'inventory'|'selector'):void {
+function recordEmptyUsefulRecommendation(wordId:string,workflowId:string,invocationId:string|null|undefined):void {
+  const source='selector';
   const at=new Date().toISOString();
   getDb().prepare(`INSERT INTO vocabulary_default_selection_readiness(word_id,status,expected_catalog_version,workflow_id,invocation_id,recommendation_json,last_error,created_at,updated_at) VALUES (?,'failed',?,?,?,?,?,?,?)
     ON CONFLICT(word_id) DO UPDATE SET status='failed',active_token=NULL,expires_at=NULL,invocation_id=excluded.invocation_id,recommendation_json=excluded.recommendation_json,last_error=excluded.last_error,updated_at=excluded.updated_at`).run(wordId,getVocabularySenseCatalog(wordId).version,workflowId,invocationId??null,JSON.stringify({senseIds:[],source}),'The model selected no useful senses; operator selection is required.',at,at);
@@ -86,7 +124,7 @@ export async function ensureVocabularyDefaultUsefulSelection(wordId:string,optio
       const current=getVocabularyWordSenseCoverage(wordId);
       const recommendation={senseIds:ids,invocationId:invocationId??null,workflowId:options.workflowId,attemptNumber:attempt};
       emitBackendEvent({name:'vocabulary.default_selection.recommended',entityKind:'word',entityId:wordId,actorKind:'service',actorId:VOCABULARY_SENSE_SERVICE,data:{...recommendation,applied:current.defaultUsefulSenseIds===null&&ids.length>0}});
-      if(current.defaultUsefulSenseIds===null){if(!ids.length){recordEmptyUsefulRecommendation(wordId,options.workflowId,invocationId,'selector');needsOperator=true;}else writeVocabularyDefaultUsefulSenses(wordId,current.version,ids,{...actor,reason:recommendation});}
+      if(current.defaultUsefulSenseIds===null){if(!ids.length){recordEmptyUsefulRecommendation(wordId,options.workflowId,invocationId);needsOperator=true;}else writeVocabularyDefaultUsefulSenses(wordId,current.version,ids,{...actor,reason:recommendation});}
       if(!needsOperator)db.prepare("UPDATE vocabulary_default_selection_readiness SET status='ready',active_token=NULL,expires_at=NULL,recommendation_json=?,last_error=NULL,updated_at=? WHERE word_id=? AND active_token=?").run(JSON.stringify(recommendation),now(),wordId,token);
       if(needsOperator)db.prepare("UPDATE vocabulary_preparation_attempts SET finished_at=?,outcome='failed',diagnostic='No useful senses recommended; operator review required' WHERE attempt_id=? AND outcome IS NULL").run(now(),token);else completePreparationAttempt(token,now());return getVocabularyWordSenseCoverage(wordId);
     });

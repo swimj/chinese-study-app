@@ -1,11 +1,13 @@
-import type { ProviderRawResult } from './types.ts';
+import { priceInvocationUsage } from './invocation-pricing.ts';
+import type { ProviderRawResult, ProviderRunRequest } from './types.ts';
 
 export type BulkPricing = { model: string; asOf: string; source: string; serviceTier: 'standard'; context: 'at-most-272000-input-tokens';
   inputPerMillionUsd: number; cachedInputPerMillionUsd: number; cacheWriteInputPerMillionUsd: number; outputPerMillionUsd: number };
 const prices: Record<string, readonly [number, number, number, number]> = {
   'gpt-6-sol': [2, 0.2, 2.5, 10], 'gpt-6-astra': [10, 1, 12.5, 50], 'gpt-6.1-terra': [1, 0.05, 1.25, 5],
 };
-export function costForBulkResult(result: ProviderRawResult): { spendUsd: number | null; spendSource: 'reported' | 'estimated' | 'unknown'; pricing: BulkPricing | null } {
+export function costForBulkResult(result: ProviderRawResult, request?: ProviderRunRequest): { spendUsd: number | null; spendSource: 'reported' | 'estimated' | 'unknown'; pricing: BulkPricing | null } {
+  if (request?.decisions) return costForBulkResponse(request, result.rawResponse);
   if (result.reportedCostUsd !== undefined && Number.isFinite(result.reportedCostUsd) && result.reportedCostUsd >= 0) return { spendUsd: result.reportedCostUsd, spendSource: 'reported', pricing: null };
   const unknown = { spendUsd: null, spendSource: 'unknown' as const, pricing: null };
   const model = Object.keys(prices).find(key => result.model === key || new RegExp(`^${key}-\\d{4}-\\d{2}-\\d{2}$`).test(result.model));
@@ -31,9 +33,20 @@ export function costForBulkResult(result: ProviderRawResult): { spendUsd: number
 }
 
 /** Accounting does not depend on valid choices, content, or a successful schema parse. */
-export function costForBulkResponse(requestedModel: string, body: unknown): ReturnType<typeof costForBulkResult> {
+export function costForBulkResponse(request: string | ProviderRunRequest, body: unknown): ReturnType<typeof costForBulkResult> {
   const record = (value: unknown): Record<string, unknown> => value !== null && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : {};
   const raw = record(body), usage = record(raw.usage), promptDetails = record(usage.prompt_tokens_details), completionDetails = record(usage.completion_tokens_details);
+  const requestedModel = typeof request === 'string' ? request : request.model;
+  if (typeof request !== 'string' && request.decisions) {
+    const spend = priceInvocationUsage({ provider: 'openai', model: requestedModel,
+      api: 'decisions', usage, reportedAt: new Date().toISOString() });
+    const p = spend.pricing;
+    return { spendSource: spend.spendSource, spendUsd: spend.spendUsd, pricing: p && 'inputPerMillionUsd' in p
+      ? { model: p.providerModel, asOf: p.pricingAsOf, source: 'https://developers.openai.com/api/docs/guides/decisions',
+        serviceTier: 'standard', context: 'at-most-272000-input-tokens', inputPerMillionUsd: p.inputPerMillionUsd,
+        cachedInputPerMillionUsd: p.cachedInputPerMillionUsd, cacheWriteInputPerMillionUsd: p.cacheWriteInputPerMillionUsd,
+        outputPerMillionUsd: p.outputPerMillionUsd } : null };
+  }
   if (typeof usage.cost === 'number' && Number.isFinite(usage.cost) && usage.cost >= 0)
     return { spendUsd: usage.cost, spendSource: 'reported', pricing: null };
   const unknown = { spendUsd: null, spendSource: 'unknown' as const, pricing: null };

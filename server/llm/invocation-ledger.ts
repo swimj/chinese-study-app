@@ -32,6 +32,7 @@ export function recordInvocationResponse(id: string | null, input: Invocation, r
   const recordSpend = (input: Parameters<typeof recordModelInvocationSpend>[1]) => serviceId === undefined
     ? recordModelInvocationSpend(id, input) : recordServiceModelInvocationSpend(id, serviceId, input);
   recordSpend(priceInvocationUsage({ provider: input.provider, model: input.model,
+    api: object(input.provenance?.settings).api === 'decisions' ? 'decisions' : undefined,
     usage: object(response).usage, reportedAt: new Date().toISOString() }));
 }
 export function concludeInvocation(id: string | null, status: Exclude<ModelInvocationRow['status'], 'running'>, latencyMs: number): void {

@@ -12,6 +12,7 @@ import { setDb } from '../server/db/connection.ts';
 import { runWithLearnerId } from '../server/db/learner-context.ts';
 import { createSharedWordPreparation } from '../server/word-content/shared-preparation.ts';
 import type { WordIntroductionProvider } from '../server/word-content/provider.ts';
+import { ensureVocabularyDefaultUsefulSelection } from '../server/vocabulary/default-useful-selection.ts';
 import { ensureVocabularySenses,VocabularySenseReadinessPending } from '../server/vocabulary/sense-readiness.ts';
 import { getVocabularySenses,updateVocabularySense } from '../server/db/vocabulary-content.ts';
 import { resolveVocabularySenseCoverage,writeVocabularyDefaultUsefulSenses } from '../server/db/vocabulary-sense-coverage.ts';
@@ -21,9 +22,17 @@ import { enqueueWordPreparation,getWordPreparationWork } from '../server/db/prep
 import { createWordPreparationWorker } from '../server/word-content/preparation-worker.ts';
 let root:string,baseline:string,db:DatabaseSync;
 const actor={kind:'service' as const,id:'fixture'};
-const inventory={senses:[{label:'formal correspondence',notes:['A letter in formal communication.'],defaultUseful:true},{label:'literary case or box',notes:['Peripheral literary use.'],defaultUseful:false}]};
+const inventory={senses:[{label:'formal correspondence',notes:['A letter in formal communication.']},{label:'literary case or box',notes:['Peripheral literary use.']}]};
 const senseProvider={isConfigured:()=>true,generate:async()=>inventory};
 const ensure:typeof ensureVocabularySenses=(wordId,options)=>ensureVocabularySenses(wordId,{...options,provider:senseProvider});
+let selectionCalls:number;
+const ensureDefaults: typeof ensureVocabularyDefaultUsefulSelection = (wordId, options) =>
+  ensureVocabularyDefaultUsefulSelection(wordId, { ...options, provider: {
+    isConfigured: () => true, async select({ senses }) {
+      selectionCalls++;
+      return { senseIds: senses.filter(sense => (sense.description as {label:string}).label === 'formal correspondence').map(sense => sense.senseId) };
+    },
+  } });
 let calls:number;
 function provider(onBootstrap?:()=>void):WordIntroductionProvider {
   return {model:'fake',isConfigured:()=>true,generationKey:async()=> 'key',async generateBootstrap(input){calls++;onBootstrap?.();return {uses:input.canonicalSenses!.map(sense=>({id:sense.senseId,exampleIds:['e1']})),examples:[{id:'e1',text:'请来函联系。',translation:'Please contact us by letter.',pronunciation:null}]};},
@@ -32,14 +41,16 @@ function provider(onBootstrap?:()=>void):WordIntroductionProvider {
 before(()=>{root=fs.mkdtempSync(path.join(os.tmpdir(),'unified-bootstrap-'));const directory=path.join(root,'baseline');createBaselineFixture(directory);baseline=path.join(directory,'app.db');});
 after(()=>fs.rmSync(root,{recursive:true,force:true}));
 beforeEach(()=>{fs.copyFileSync(baseline,path.join(root,'current.db'));db=new DatabaseSync(path.join(root,'current.db'));db.exec('PRAGMA foreign_keys=ON');db.function('current_learner_id',()=> 'learner');migrateDatabase(db);setDb(db);
-  db.exec("INSERT INTO learners(learner_id,display_name,created_at) VALUES ('learner','Learner','2026-10-29'); INSERT INTO lexical_words(id,hanzi,traditional,pinyin,meaning,meanings_json,examples_json,priority,created_at) VALUES ('word','函',NULL,'hán','letter; case','[\"letter\",\"case\"]','[]',1,'2026-10-29')");calls=0;
+  db.exec("INSERT INTO learners(learner_id,display_name,created_at) VALUES ('learner','Learner','2026-10-29'); INSERT INTO lexical_words(id,hanzi,traditional,pinyin,meaning,meanings_json,examples_json,priority,created_at) VALUES ('word','函',NULL,'hán','letter; case','[\"letter\",\"case\"]','[]',1,'2026-10-29')");calls=0;selectionCalls=0;
 });
 afterEach(()=>{setDb(null);db.close();});
 function claim(){const now=new Date().toISOString();assert.equal(claimSharedWordIntroductionStage('word','bootstrap','claim',now,new Date(Date.now()+300_000).toISOString()),'claimed');}
 for(const order of ['teaching-first','reflection-first'])test(`${order} shares canonical identity and enriches only persisted useful senses`,async()=>{
   let first:Awaited<ReturnType<typeof ensure>>|undefined;
   if(order==='reflection-first')first=await ensure('word',{workflowId:'reflection'});
-  const shared=createSharedWordPreparation(provider(),{ensureSenses:ensure});claim();await shared.generate('word','bootstrap','claim');
+  assert.equal(selectionCalls,0);assert.equal(resolveVocabularySenseCoverage('word').selectionEstablished,false);
+  const shared=createSharedWordPreparation(provider(),{ensureSenses:ensure,ensureDefaults});claim();await shared.generate('word','bootstrap','claim');
+  assert.equal(selectionCalls,1);
   const source=getSharedWordIntroductionContent('word')!,senses=getVocabularySenses('word'),selection=resolveVocabularySenseCoverage('word');
   assert.equal(senses.length,2);assert.equal(source.uses.length,1);assert.deepEqual(source.uses.map(use=>use.id),selection.includedSenseIds);
   assert.equal(source.uses[0].label,'formal correspondence');assert.equal(calls,1);
@@ -52,12 +63,12 @@ for(const order of ['teaching-first','reflection-first'])test(`${order} shares c
   assert.deepEqual(db.prepare('PRAGMA foreign_key_check').all(),[]);
 });
 test('explicit empty selection preserves inventory and makes no enrichment call',async()=>{
-  await ensure('word',{workflowId:'first'});writeVocabularyDefaultUsefulSenses('word',1,[],actor);
-  const shared=createSharedWordPreparation(provider(),{ensureSenses:ensure});claim();
+  await ensure('word',{workflowId:'first'});writeVocabularyDefaultUsefulSenses('word',0,[],actor);
+  const shared=createSharedWordPreparation(provider(),{ensureSenses:ensure,ensureDefaults});claim();
   await assert.rejects(shared.generate('word','bootstrap','claim'),/No useful senses/);assert.equal(calls,0);assert.equal(getVocabularySenses('word').length,2);
 });
 test('selection changes during enrichment preserve the captured document scope and mappings',async()=>{
-  const shared=createSharedWordPreparation(provider(()=>writeVocabularyDefaultUsefulSenses('word',1,[],actor)),{ensureSenses:ensure});claim();
+  const shared=createSharedWordPreparation(provider(()=>writeVocabularyDefaultUsefulSenses('word',1,[],actor)),{ensureSenses:ensure,ensureDefaults});claim();
   await shared.generate('word','bootstrap','claim');
   assert.equal(db.prepare('SELECT count(*) n FROM word_content_documents').get()!.n,1);assert.equal(db.prepare('SELECT count(*) n FROM legacy_sense_imports').get()!.n,1);
   assert.equal(getSharedWordIntroductionContent('word')!.uses[0]!.label,'formal correspondence');
@@ -87,7 +98,7 @@ test('enrichment invocation consumes canonical versions without claiming sense a
   const id=startServiceModelInvocation({serviceId,provider:'fake',model:'fake',invocationType:'bootstrap'});
   finishServiceModelInvocation(id,serviceId,'completed',1);
   const original=provider(),withLedger={...original,async generateBootstrap(input:Parameters<WordIntroductionProvider['generateBootstrap']>[0],options?:Parameters<WordIntroductionProvider['generateBootstrap']>[1]){options?.onInvocation?.(id);return original.generateBootstrap(input,options);}};
-  claim();await createSharedWordPreparation(withLedger,{ensureSenses:ensure}).generate('word','bootstrap','claim');
+  claim();await createSharedWordPreparation(withLedger,{ensureSenses:ensure,ensureDefaults}).generate('word','bootstrap','claim');
   assert.equal(db.prepare("SELECT count(*) n FROM invocation_sense_links WHERE invocation_id=? AND role='input'").get(id)!.n,1);
   assert.equal(db.prepare("SELECT count(*) n FROM invocation_sense_links WHERE invocation_id=? AND role='output'").get(id)!.n,0);
 });
@@ -103,7 +114,7 @@ test('an existing prepared legacy package stays available while defaults remain 
 
 
 test('new teaching generation pauses when immutable source sense versions no longer match',async()=>{
-  const shared=createSharedWordPreparation(provider(),{ensureSenses:ensure});claim();await shared.generate('word','bootstrap','claim');
+  const shared=createSharedWordPreparation(provider(),{ensureSenses:ensure,ensureDefaults});claim();await shared.generate('word','bootstrap','claim');
   const sense=getVocabularySenses('word').find(sense=>resolveVocabularySenseCoverage('word').includedSenseIds.includes(sense.senseId))!;
   updateVocabularySense(sense.senseId,sense.version,{description:{label:'Updated correspondence',notes:[]},status:'active'},actor);
   assert.throws(()=>shared.validatePreparedSource('word'),/source sense versions changed/);assert.equal(calls,1);
@@ -114,7 +125,7 @@ for(const stage of ['teaching','review'] as const)test(`${stage} publication fen
   const service=createSharedWordPreparation({...original,
     async generateTeaching(){change();return {beats:[{id:'beat',parts:[{kind:'text',text:'A formal letter.'}]}]};},
     async generateReview(){change();return {exercises:[{id:'review',cueType:'circumstance',stimulus:{kind:'direct_text',text:'A formal letter.'},supplement:null}]};},
-  },{ensureSenses:ensure});
+  },{ensureSenses:ensure,ensureDefaults});
   claim();await service.generate('word','bootstrap','claim');
   const now=new Date().toISOString();assert.equal(service.claim('word',stage,'later',now,new Date(Date.now()+300_000).toISOString()),'claimed');
   await assert.rejects(service.generate('word',stage,'later'),/catalog changed/);
@@ -127,14 +138,14 @@ for(const stage of ['teaching','review'] as const)test(`${stage} publication ret
     async generateTeaching(){change();return {beats:[{id:'beat',parts:[{kind:'text',text:'A formal letter.'}]}]};},
     async generatePractice(){return {rehearsals:[{id:'exercise',stimulus:{kind:'direct_text',text:'A formal letter.'}}]};},
     async generateReview(){change();return {exercises:[{id:'review',cueType:'circumstance',stimulus:{kind:'direct_text',text:'A formal letter.'},supplement:null}]};},
-  },{ensureSenses:ensure});
+  },{ensureSenses:ensure,ensureDefaults});
   claim();await service.generate('word','bootstrap','claim');
   const now=new Date().toISOString();assert.equal(service.claim('word',stage,'later',now,new Date(Date.now()+300_000).toISOString()),'claimed');
   await service.generate('word',stage,'later');assert.deepEqual(resolveVocabularySenseCoverage('word').includedSenseIds,[]);
   assert.equal(db.prepare('SELECT count(*) n FROM word_teaching_packages').get()!.n,stage==='teaching'?1:0);
 });
 test('canonical edits during enrichment still reject immutable document publication',async()=>{
-  const service=createSharedWordPreparation(provider(()=>{const sense=getVocabularySenses('word')[0]!;updateVocabularySense(sense.senseId,sense.version,{description:sense.description,status:'active'},actor);}),{ensureSenses:ensure});claim();
+  const service=createSharedWordPreparation(provider(()=>{const sense=getVocabularySenses('word')[0]!;updateVocabularySense(sense.senseId,sense.version,{description:sense.description,status:'active'},actor);}),{ensureSenses:ensure,ensureDefaults});claim();
   await assert.rejects(service.generate('word','bootstrap','claim'),/source or catalog changed/);
   assert.equal(db.prepare('SELECT count(*) n FROM word_content_documents').get()!.n,0);
 });

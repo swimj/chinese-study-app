@@ -1,3 +1,5 @@
+import { installModelInvocationLedger } from '../server/llm/invocation-ledger.ts';
+import { readInvocationPromptEvidence } from '../server/db/invocation-prompt-archive.ts';
 import { createOpenAiCompatibleAdapter } from '../server/llm/openai-compatible.ts';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
@@ -42,8 +44,11 @@ test('selector uses existing IDs without editing inventory and reuses establishe
   assert.equal(db.prepare("SELECT work_id FROM vocabulary_preparation_attempts WHERE preparation_kind='sense'").get()!.work_id,'default-selection:word');
 });
 for(const selected of [[],['letter']])test(`model zero recommendation retains inventory and operator choice resolves attention (${selected.length})`,async()=>{
-  const ready=await ensureVocabularySenses('word',{workflowId:'fresh',provider:{isConfigured:()=>true,generate:async()=>({senses:[{label:'formal correspondence',notes:[],defaultUseful:false},{label:'literary case',notes:[],defaultUseful:false}]})}});
+  const ready=await ensureVocabularySenses('word',{workflowId:'fresh',provider:{isConfigured:()=>true,generate:async()=>({senses:[{label:'formal correspondence',notes:[]},{label:'literary case',notes:[]}]})}});
   assert.equal(ready.senses.length,2);assert.equal(getVocabularyWordSenseCoverage('word').defaultUsefulSenseIds,null);
+  assert.equal(defaultUsefulInitializationPlan('word').kind,'selector');
+  await assert.rejects(ensureVocabularyDefaultUsefulSelection('word',{workflowId:'empty-selection',
+    provider:{isConfigured:()=>true,select:async()=>({senseIds:[]})}}),VocabularySenseSelectionRequired);
   assert.equal(db.prepare("SELECT status FROM vocabulary_default_selection_readiness WHERE word_id='word'").get()!.status,'failed');
   await assert.rejects(ensureVocabularyDefaultUsefulSelection('word',{workflowId:'wait',provider:{isConfigured:()=>true,select:async()=>assert.fail('Must wait for operator')}}),VocabularySenseSelectionRequired);
   const ids=selected.length?[ready.senses[0]!.senseId]:[];writeVocabularyDefaultUsefulSenses('word',0,ids,actor);
@@ -67,12 +72,11 @@ test('publication maintenance defers selector without losing inventory or perman
   assert.equal(getVocabularyWordSenseCoverage('word').defaultUsefulSenseIds,null);assert.equal(getVocabularySenses('word').length,2);
   assert.equal(db.prepare('SELECT status,attempt_count FROM vocabulary_default_selection_readiness').get()!.status,'queued');
 });
-test('an explicit operator none decision is preserved while a fresh inventory recommendation is audited',async()=>{
+test('an explicit operator none decision survives fresh inventory publication without recommendation',async()=>{
   writeVocabularyDefaultUsefulSenses('word',0,[],actor);
-  await ensureVocabularySenses('word',{workflowId:'manual-first',provider:{isConfigured:()=>true,generate:async()=>({senses:[{label:'letter',notes:[],defaultUseful:true}]})}});
+  await ensureVocabularySenses('word',{workflowId:'manual-first',provider:{isConfigured:()=>true,generate:async()=>({senses:[{label:'letter',notes:[]}]})}});
   assert.deepEqual(getVocabularyWordSenseCoverage('word').defaultUsefulSenseIds,[]);
-  const event=db.prepare("SELECT data_json FROM backend_events WHERE name='vocabulary.default_selection.recommended'").get()!;
-  assert.equal(JSON.parse(String(event.data_json)).applied,false);assert.equal(JSON.parse(String(event.data_json)).senseIds.length,1);
+  assert.equal(db.prepare("SELECT count(*) n FROM backend_events WHERE name='vocabulary.default_selection.recommended'").get()!.n,0);
 });
 
 for(const discrepancy of ['stale','missing'])test(`${discrepancy} teaching import links do not block canonical default selection`,async()=>{
@@ -101,29 +105,126 @@ test('an unestablished partial inventory cannot be assigned defaults implicitly'
 });
 
 
-test('selector uses call-local IDs on the wire and persists only decoded canonical IDs',async()=>{
-  inventory();let wireIds:string[]=[],enumIds:string[]=[];
-  const adapter=createOpenAiCompatibleAdapter({id:'openai',defaultBaseUrl:'https://example.invalid',apiKeyEnvironmentVariable:'KEY',structuredOutputMode:'json_schema',maxTokensField:'max_completion_tokens',fetchImplementation:async(_url,init)=>{
-    const request=JSON.parse(String(init?.body));const input=JSON.parse(request.messages[1].content);
-    assert.deepEqual(input.word,{hanzi:'函',pinyin:'hán',meanings:['letter; case']});
-    assert.ok(input.senses.every((sense:Record<string,unknown>)=>!Object.hasOwn(sense,'wordId')));
-    wireIds=input.senses.map((sense:{senseId:string})=>sense.senseId);enumIds=request.response_format.json_schema.schema.properties.senseIds.items.enum;
-    return new Response(JSON.stringify({choices:[{message:{content:JSON.stringify({senseIds:['s2']})},finish_reason:'stop'}],usage:{prompt_tokens:10,completion_tokens:10}}),{status:200});
-  }});
-  const provider=createUsefulSelectionProvider({environment:{OPENAI_API_KEY:'fake'},adapter});
-  const result=await ensureVocabularyDefaultUsefulSelection('word',{workflowId:'local-references',provider});
-  assert.deepEqual(wireIds,['s1','s2']);assert.deepEqual(enumIds,wireIds);
-  // The canonical inventory order is stable, but its persisted identities are never model IDs.
-  assert.deepEqual(result.defaultUsefulSenseIds,[getVocabularySenses('word')[1]!.senseId]);
-  assert.ok(result.defaultUsefulSenseIds!.every(id=>!/^s\d+$/.test(id)));
-});
-for(const bad of [['letter'],['s99'],['s1','s1']])test(`selector rejects foreign/canonical/duplicate wire references (${bad.join(',')})`,async()=>{
-  inventory();const adapter=createOpenAiCompatibleAdapter({id:'openai',defaultBaseUrl:'https://example.invalid',apiKeyEnvironmentVariable:'KEY',structuredOutputMode:'json_schema',maxTokensField:'max_completion_tokens',fetchImplementation:async()=>new Response(JSON.stringify({choices:[{message:{content:JSON.stringify({senseIds:bad})},finish_reason:'stop'}]}),{status:200})});
-  const provider=createUsefulSelectionProvider({environment:{OPENAI_API_KEY:'fake'},adapter});
-  await assert.rejects(provider.select({word:{wordId:'word',hanzi:'函',traditional:null,pinyin:'hán',meanings:['letter']},senses:getVocabularySenses('word')},{workflowId:'invalid-wire',attemptNumber:1,onInvocation:()=>{}}),/invalid/);
-  assert.equal(getVocabularyWordSenseCoverage('word').defaultUsefulSenseIds,null);
+function decisionProvider(fetchImplementation: typeof globalThis.fetch) {
+  const adapter = createOpenAiCompatibleAdapter({ id: 'openai', defaultBaseUrl: 'https://example.invalid/v1',
+    apiKeyEnvironmentVariable: 'OPENAI_API_KEY', structuredOutputMode: 'json_schema',
+    maxTokensField: 'max_completion_tokens', fetchImplementation });
+  return createUsefulSelectionProvider({ environment: { OPENAI_API_KEY: 'fake' }, adapter });
+}
+const predicate = (name: string, probability: number) => ({ type: 'predicate', name, probability });
+const decisionUsage = { input_tokens: 1000, output_tokens: 7, total_tokens: 1007,
+  input_tokens_details: { cached_tokens: 200, cache_write_tokens: 300 } };
+
+test('Decisions sends the shared inventory and one predicate per alias and applies the inclusive cutoff', async () => {
+  inventory();
+  installModelInvocationLedger();
+  const response = { model: 'gpt-6-luna', answers: [predicate('s1', 0.7999), predicate('s2', 0.8)], usage: decisionUsage };
+  let wireBody: string | undefined;
+  const provider = decisionProvider(async (url, init) => {
+    assert.equal(url, 'https://example.invalid/v1/decisions');
+    wireBody = String(init?.body);
+    const request = JSON.parse(wireBody);
+    assert.deepEqual(Object.keys(request).sort(), ['input', 'model', 'questions']);
+    assert.equal(request.model, 'gpt-6-luna');
+    assert.equal(request.input[0].role, 'developer');
+    assert.equal(request.input[1].role, 'user');
+    const part = request.input[1].content[0];
+    assert.equal(part.type, 'input_json');
+    assert.deepEqual(part.data.word, { hanzi: '函', pinyin: 'hán', meanings: ['letter; case'] });
+    const aliases = part.data.senses.map((sense: {senseId: string}) => sense.senseId);
+    assert.deepEqual(aliases, ['s1', 's2']);
+    assert.ok(part.data.senses.every((sense: Record<string,unknown>) => !Object.hasOwn(sense,'wordId')));
+    assert.deepEqual(request.questions.map((q: {name: string; type: string}) => [q.name, q.type]),
+      [['s1','predicate'], ['s2','predicate']]);
+    return Response.json(response);
+  });
+  const result = await ensureVocabularyDefaultUsefulSelection('word', { workflowId: 'decision-run', provider });
+  assert.deepEqual(result.defaultUsefulSenseIds, [getVocabularySenses('word')[1]!.senseId]);
+
+  const row = db.prepare('SELECT * FROM model_invocations').get()!;
+  assert.equal(row.status, 'completed');
+  assert.equal(row.invocation_type, 'vocabulary_default_useful_selection_v2');
+  assert.equal(row.prompt_name, 'vocabulary-default-useful-decisions');
+  assert.equal(row.prompt_version, '1');
+  assert.equal(row.workflow_id, 'decision-run');
+  assert.equal(readInvocationPromptEvidence(db, String(row.id)).requestJson, wireBody);
+  assert.deepEqual(JSON.parse(String(row.response_snapshot_json)), response);
+  assert.deepEqual(JSON.parse(String(row.settings_json)), { api: 'decisions', threshold: 0.8, timeoutMs: 180000 });
+  assert.equal(row.spend_usd, 0.0000895);
+  assert.equal(JSON.parse(String(row.pricing_json)).outputPerMillionUsd, 0);
+  assert.equal(db.prepare('SELECT invocation_id FROM vocabulary_preparation_attempts').get()!.invocation_id, row.id);
+  assert.equal(db.prepare("SELECT count(*) n FROM invocation_sense_links WHERE invocation_id=? AND role='input'").get(row.id)!.n, 2);
 });
 
+for (const [label, answers] of Object.entries({
+  missing: [predicate('s1', 1)],
+  extra: [predicate('s1', 1), predicate('s2', 0), predicate('s3', 1)],
+  duplicate: [predicate('s1', 1), predicate('s1', 0)],
+  canonical: [predicate('s1', 1), predicate('letter', 0)],
+  unknown: [predicate('s1', 1), predicate('s99', 0)],
+  misordered: [predicate('s2', 1), predicate('s1', 0)],
+  refused: [predicate('s1', 1), { type: 'refusal', name: 's2' }],
+  malformed: [predicate('s1', 1), { type: 'predicate', name: 's2', probability: '0.8' }],
+  outsideRange: [predicate('s1', 1), predicate('s2', -0.5)],
+})) test(`invalid Decisions answers (${label}) retain the billed attempt and retry the whole selection`, async () => {
+  inventory();
+  installModelInvocationLedger();
+  const provider = decisionProvider(async () => Response.json({ answers, usage: decisionUsage }));
+  await assert.rejects(ensureVocabularyDefaultUsefulSelection('word', { workflowId: 'invalid', provider }), VocabularySenseReadinessPending);
+  assert.equal(getVocabularyWordSenseCoverage('word').defaultUsefulSenseIds, null);
+  const row = db.prepare('SELECT * FROM model_invocations').get()!;
+  assert.equal(row.status, 'invalid_response');
+  assert.deepEqual(JSON.parse(String(row.response_snapshot_json)).answers, answers);
+  assert.equal(row.spend_usd, 0.0000895);
+  assert.equal(db.prepare('SELECT invocation_id FROM vocabulary_preparation_attempts').get()!.invocation_id, row.id);
+  assert.equal(db.prepare('SELECT status FROM vocabulary_default_selection_readiness').get()!.status, 'queued');
+});
+
+test('a Decisions retry reuses the newly authored inventory and only repeats selection', async () => {
+  installModelInvocationLedger();
+  let inventoryCalls = 0;
+  let selectionCalls = 0;
+  let clock = Date.now();
+  const now = () => new Date(clock).toISOString();
+  const workflowId = 'new-word';
+  const senseProvider = {
+    isConfigured: () => true,
+    async generate() {
+      inventoryCalls++;
+      return { senses: [{ label: 'formal correspondence', notes: [] }, { label: 'literary case', notes: [] }] };
+    },
+  };
+  const provider = decisionProvider(async () => {
+    selectionCalls++;
+    const answers = [predicate('s1', 0.8)];
+    if (selectionCalls === 2) answers.push(predicate('s2', 0.7));
+    return Response.json({ answers });
+  });
+  const first = await ensureVocabularySenses('word', { workflowId, now, provider: senseProvider });
+  await assert.rejects(ensureVocabularyDefaultUsefulSelection('word', { workflowId, now, provider }), VocabularySenseReadinessPending);
+  assert.equal(getVocabularyWordSenseCoverage('word').defaultUsefulSenseIds, null);
+  clock += 31_000;
+  const retry = await ensureVocabularySenses('word', { workflowId, now, provider: senseProvider });
+  assert.deepEqual(retry.senses, first.senses);
+  const selection = await ensureVocabularyDefaultUsefulSelection('word', { workflowId, now, provider });
+  assert.deepEqual(selection.defaultUsefulSenseIds, [first.senses[0]!.senseId]);
+  assert.equal(inventoryCalls, 1);
+  assert.equal(selectionCalls, 2);
+  const attempts = db.prepare('SELECT attempt_number,status FROM model_invocations ORDER BY attempt_number').all();
+  assert.deepEqual(attempts.map(row => [row.attempt_number,row.status]), [[1,'invalid_response'],[2,'completed']]);
+});
+
+test('all-negative Decisions answers retain the empty recommendation for the operator', async () => {
+  inventory();
+  installModelInvocationLedger();
+  const provider = decisionProvider(async () => Response.json({ answers: [predicate('s1', 0), predicate('s2', 0.79)] }));
+  await assert.rejects(ensureVocabularyDefaultUsefulSelection('word', { workflowId: 'none', provider }), VocabularySenseSelectionRequired);
+  assert.equal(getVocabularyWordSenseCoverage('word').defaultUsefulSenseIds, null);
+  assert.equal(db.prepare('SELECT status FROM model_invocations').get()!.status, 'completed');
+  const row = db.prepare('SELECT status, recommendation_json FROM vocabulary_default_selection_readiness').get()!;
+  assert.equal(row.status, 'failed');
+  assert.deepEqual(JSON.parse(String(row.recommendation_json)).senseIds, []);
+});
 
 test('established empty catalog initializes empty defaults without a selector call',async()=>{
   establishVocabularySenseCatalog('word',getVocabularySenseCatalog('word').version,actor);

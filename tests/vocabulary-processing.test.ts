@@ -4,7 +4,8 @@ import { mergeWordSchedulerState } from '../server/db/vocabulary-schedule-column
 import { applyVocabularyDueColumns } from './helpers/vocabulary-due-columns.ts';
 import { installCaseReviewSchema } from './helpers/case-review-schema.ts';
 import { InvalidAssessmentOutput } from '../server/vocabulary/assessment-output-validation.ts';
-import { ensureVocabularySenses } from '../server/vocabulary/sense-readiness.ts';
+import { ensureVocabularyDefaultUsefulSelection } from '../server/vocabulary/default-useful-selection.ts';
+import { VocabularySenseSelectionRequired,ensureVocabularySenses } from '../server/vocabulary/sense-readiness.ts';
 import { recoverVocabularySenseDependencies } from '../server/db/vocabulary-reflection.ts';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
@@ -778,7 +779,7 @@ test('an expired mapping lease cannot consume retry budget or revive unknown wor
   } finally {await processing.stop();}
 });
 
-test('model-empty inventory attention does not revoke a live mapped single-sense repair',async()=>{
+test('an empty default recommendation does not revoke a live mapped single-sense repair',async()=>{
   sql.exec(`CREATE TABLE lexical_word_meanings(id TEXT PRIMARY KEY,word_id TEXT,text TEXT,position INTEGER);
     CREATE TABLE word_introduction_preparation(teaching_set_key TEXT NOT NULL DEFAULT 'default',word_id TEXT PRIMARY KEY,content_id TEXT,package_id TEXT,preparation_epoch INTEGER,active_stage TEXT,lease_token TEXT,lease_expires_at TEXT);`);
   pending();let release!:()=>void,entered!:(job:VocabularyReflectionJob)=>void;
@@ -786,7 +787,9 @@ test('model-empty inventory attention does not revoke a live mapped single-sense
   const started=new Promise<VocabularyReflectionJob>(resolve=>{entered=resolve;});
   const processing=worker({isConfigured:()=>true,run:async job=>{
     if(job.kind==='learner_feedback')return result(job);
-    const ready=await ensureVocabularySenses('a',{workflowId:job.jobId,now:()=>new Date(clock).toISOString(),provider:{isConfigured:()=>true,generate:async()=>({senses:[{label:'written character',notes:[],defaultUseful:false}]})}});
+    const ready=await ensureVocabularySenses('a',{workflowId:job.jobId,now:()=>new Date(clock).toISOString(),provider:{isConfigured:()=>true,generate:async()=>({senses:[{label:'written character',notes:[]}]})}});
+    await assert.rejects(ensureVocabularyDefaultUsefulSelection('a',{workflowId:job.jobId,now:()=>new Date(clock).toISOString(),
+      provider:{isConfigured:()=>true,select:async()=>({senseIds:[]})}}),VocabularySenseSelectionRequired);
     const sense=ready.senses[0]!,mappingAt=new Date(clock).toISOString();
     mapVocabularyContentSense({contentId:'one',wordId:'a',expectedContentVersion:1,expectedMapping:{senseId:null,establishedAt:null},senseId:sense.senseId,establishedAt:mappingAt},{kind:'service',id:'test'});
     entered(job);await held;

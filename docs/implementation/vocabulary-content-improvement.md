@@ -102,8 +102,7 @@ ends that replacement gate rather than permanently freezing future default edits
 ## Reading the flow
 
 - **Sense readiness** reuses canonical inventory. Establishment can request the
-  shared inventory/default-useful selection call. Readiness creates senses,
-  not teaching or practice content; unresolved legacy state requires operator work.
+  inventory generation call. Mapping can use those senses immediately; unresolved legacy state requires operator work.
 - **Routing** identifies dictionary fallback sources deterministically. Current
   active authored general production exercises accepting the word, including
   pure cues, count as practice only within the source's publication scope and
@@ -391,7 +390,7 @@ publication. Existing saved proposals and second opinions retain their original
 versions; a contract upgrade does not regenerate them.
 
 Sense establishment reuses an existing canonical inventory before requesting
-the shared inventory/default-selection call. It does not regenerate teaching or
+a fresh inventory. It does not regenerate teaching or
 practice content as a side effect. Mapping and generation retain evaluated source
 versions and invocation provenance; publication is fenced against changed sources
 and maintenance controls. A mapped sense explains authorial intent, not what the
@@ -559,20 +558,28 @@ and proposal actions until saved or discarded.
 ## Shared inventory, useful selection and teaching enrichment
 
 `ensureVocabularySenses` owns the canonical inventory. Fresh lexical words receive
-one inventory/default recommendation call using `sense-inventory.md`. Inventory and
-nonempty initial useful selection publish atomically. Both prompts select at least
-one eligible use, including a specialized word's only use, so a zero-usefulness
-finding indicates a suspect inventory. It retains the inventory, stores its recommendation/invocation and leaves
-usefulness unknown for operator review. Mapping can still improve a single use.
+one inventory generation call using `sense-inventory.md`. It records the supported
+uses of the exact target, including peripheral and specialized uses. Each new sense
+has a label and notes. A nonempty inventory is ready for mapping immediately.
+A later request for defaults uses the saved inventory, so a selector retry can
+reuse the completed generation.
 
 `ensureVocabularyDefaultUsefulSelection` conditionally initializes unknown defaults.
-Every established nonempty inventory uses `default-useful-selection.md`, including
-teaching-imported senses. The prompt adapts the inventory brief's full editorial
-reasoning and only returns existing sense IDs. Teaching source mappings remain
-preparation prerequisites; their absence or staleness does not block default
+For an established nonempty inventory, including teaching-imported senses, the
+standalone selector sends the complete inventory and shared editorial guidance to
+OpenAI Decisions. A named predicate asks about each call-local sense ID, using
+the [selection prompt](../../server/vocabulary/reflection-prompts/default-useful-decisions.md).
+The selector validates the complete response and maps IDs with a probability of
+at least 0.80 back to their canonical identities. A refusal or missing answer
+fails the attempt. Teaching source mappings remain preparation prerequisites;
+their absence or staleness does not block default
 selection over an established canonical inventory. The selector cannot rewrite labels, notes, sense versions or
 inventory membership. An operator's concurrent selection wins; the recommendation
 remains auditable. Explicit `[]` is preserved and suppresses unknown-selection findings.
+
+The [Decisions trial](../evaluation/trials/2026-11-20-default-sense-decisions.md)
+records the prompt and threshold comparisons, representative selections and
+remaining editorial disagreements.
 
 `vocabulary_default_selection_readiness` gives the selector its own lease and
 bounded retry cycle. Inventory and selector attempts share the attempt journal,

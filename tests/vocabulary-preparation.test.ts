@@ -3,6 +3,7 @@ import { generalExerciseContent } from '../server/vocabulary/general-exercise-co
 import { repertoireCoverageGap, scanProactiveRepertoire } from '../server/db/proactive-repertoire.ts';
 import { resolveVocabularyLearnerSenseScope, writeVocabularyLearnerSenseScope } from '../server/db/vocabulary-learner-senses.ts';
 import { canServeVocabularyReviewProduction, isVocabularyProductionProxied } from '../server/vocabulary/production-coverage.ts';
+import { ensureVocabularyDefaultUsefulSelection } from '../server/vocabulary/default-useful-selection.ts';
 import { ensureVocabularySenses } from '../server/vocabulary/sense-readiness.ts';
 import { startVocabularyStudy } from '../server/vocabulary/study.ts';
 import { isVocabularyDefinitionFallback } from '../src/domain/vocabulary-production-coverage.ts';
@@ -686,8 +687,13 @@ test('proactive scan deduplicates due words, prioritizes missing pools, and uses
     controls:()=>({maintenanceMode:false,providerWorkEnabled:true}),
     providerWork:async <T>(work:()=>Promise<T>)=>work(),
     onError:(error:unknown)=>{ throw error; },
+    ensureDefaults: (wordId:string, options: Parameters<typeof ensureVocabularyDefaultUsefulSelection>[1]) =>
+      ensureVocabularyDefaultUsefulSelection(wordId,{ ...options, provider:{ isConfigured:()=>true, async select({senses}) {
+        assert.equal(wordId,'cold');
+        return {senseIds:senses.map(sense=>sense.senseId)};
+      } } }),
     ensureSenses: (wordId:string, options: Parameters<typeof ensureVocabularySenses>[1]) => ensureVocabularySenses(wordId,{
-      ...options,provider:{isConfigured:()=>true,generate:async()=>({senses:[{label:'say goodbye',notes:[],defaultUseful:true}]})},
+      ...options,provider:{isConfigured:()=>true,generate:async()=>({senses:[{label:'say goodbye',notes:[]}]})},
     }),
   };
   const startColdPool = (learner: string) => runWithLearnerId(learner,()=>{

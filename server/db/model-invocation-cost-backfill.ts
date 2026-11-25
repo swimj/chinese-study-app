@@ -5,7 +5,7 @@ import type { ReflectionRunPricingBasis } from '../reflection/run-pricing.ts';
 
 type PendingInvocation = {
   id: string; timestamp: string; status: string;
-  usage_json: string | null; request_snapshot_json: string | null;
+  usage_json: string | null; request_snapshot_json: string | null; settings_json: string | null;
 };
 type Candidate = { id: string; timestamp: string; status: string; spendUsd: number; pricing: ReflectionRunPricingBasis };
 type Skipped = { id: string; reason: 'missing_usage' | 'unsupported_request' | 'unpriceable_usage' };
@@ -22,7 +22,7 @@ function supportedRequest(encoded: string | null): boolean {
 
 /** Explicit operator repair: only unknown terminal direct-OpenAI GPT-6 Luna costs. */
 export function previewLunaInvocationCostBackfill(database: DatabaseSync) {
-  const rows = database.prepare(`SELECT id, timestamp, status, usage_json, request_snapshot_json
+  const rows = database.prepare(`SELECT id, timestamp, status, usage_json, request_snapshot_json, settings_json
     FROM model_invocations WHERE provider = 'openai' AND model = 'gpt-6-luna'
       AND status != 'running' AND spend_source = 'unknown' AND spend_usd IS NULL AND pricing_json IS NULL
     ORDER BY id`).all() as PendingInvocation[];
@@ -34,6 +34,7 @@ export function previewLunaInvocationCostBackfill(database: DatabaseSync) {
       skipped.push({ id: row.id, reason: 'unsupported_request' }); continue;
     }
     const spend = priceInvocationUsage({ provider: 'openai', model: 'gpt-6-luna',
+      api: row.settings_json && JSON.parse(row.settings_json)?.api === 'decisions' ? 'decisions' : undefined,
       usage: JSON.parse(row.usage_json), reportedAt: row.timestamp });
     if (spend.spendSource !== 'estimated' || spend.spendUsd === null || spend.pricing === null) {
       skipped.push({ id: row.id, reason: 'unpriceable_usage' }); continue;
