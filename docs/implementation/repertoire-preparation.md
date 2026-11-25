@@ -100,11 +100,17 @@ explains preparation and proposal authority.
 ### Proactive review preparation
 
 The practice worker scans every six hours for studied Solidify and Practice
-words with potential production demand through the next twelve hours. It uses
-the due, recency, and production eligibility rules before session selection and
-counts a word once across learners. Timed session budgets can reduce what is
-actually served. The scan still prepares for those eligible words, without
-predicting which timed session will reach them.
+words with potential production demand through the next twelve hours. With timed
+sessions enabled, a Practice word must both have production due and fall in
+at least one learner’s projected review slice at the horizon. The worker uses
+the same urgency ranking, content checks, and five-items-per-minute bound as
+timed Start. Already-prepared words, Maintain words, and fragile cues compete
+for those slots. The forecast uses the learner’s full configured daily minutes
+(default 20) because the lookahead can cross into a fresh study day.
+For example, a Practice word ranked 51st waits for a learner with a 10-minute
+target, but can qualify through another learner. Due Solidify words have their
+own stream. With timed sessions disabled, the due-time policy applies to both
+modes. Qualifying words are counted once across learners.
 
 Each pass admits at most 24 words, including any queued or running proactive
 work carried from previous passes. Words without usable shared targeted

@@ -102,7 +102,9 @@ and approval. Advisory second opinions cannot authorize or apply changes.
 
 Proactive review preparation can establish ordinary sense readiness and add
 shared production exercises for missing selected senses ahead of anticipated
-study. It checks that the selection and source are still current, preserves
+study. For timed study, a due Practice word qualifies for lookahead when it falls
+within a learner’s projected review candidates for their configured daily time target.
+It checks that the selection and source are still current, preserves
 pure-cue proxy decisions and conflicting editorial work, and does not retire
 content or alter retained sessions and learner progress. See
 [proactive review preparation](../docs/implementation/repertoire-preparation.md#proactive-review-preparation).

@@ -1,4 +1,4 @@
-import { isVocabularySessionWordEligible } from '../db/vocabulary-sense-eligibility.ts';
+import { contrastEligible, isContrast, reviewContentUsable } from './review-content.ts';
 import { isSenseContentReconciliationPending } from '../db/sense-content-reconciliation-state.ts';
 import { DEFAULT_TEACHING_SET } from '../db/teaching-sense-sets.ts';
 import type { VocabularySessionPayload } from '../../src/domain/vocabulary-session-payload.ts';
@@ -87,20 +87,6 @@ function solidifyPriming(wordId:string):VocabularyContent|null {
     return intro?.kind==='introduction' && eligible(intro) && intro.words.some(word=>word.wordId===wordId&&word.relation==='target') ? intro : null;
   }
   return teaching(wordId,undefined,DEFAULT_TEACHING_SET)?.intro ?? introductions(wordId,false,DEFAULT_TEACHING_SET)[0] ?? null;
-}
-function isContrast(content:VocabularyContent):boolean {
-  return content.kind==='exercise'&&(content.exerciseType==='contrast'||content.skill==='contextual_selection'||object(content.assessment).responseMode==='word_choice');
-}
-function contrastEligible(content:VocabularyContent,wordId:string):boolean {
-  if(!isContrast(content)||!skillEnabled(wordId,'contextual_selection'))return false;
-  const state=getDb().prepare("SELECT 1 FROM learner_owned_word_skill_state WHERE learner_id=? AND word_id=? AND skill_id='contextual_selection' AND enabled=1 AND (next_due_at IS NULL OR next_due_at<=?)")
-    .get(requireLearnerId(),wordId,new Date().toISOString());
-  if(!state)return false;
-  const choices=object(content.body).choices;
-  return Array.isArray(choices)&&choices.length>=2&&choices.every((choice)=>{
-    const id=object(choice).wordId;if(typeof id!=='string'||!isVocabularySessionWordEligible(id)||isSenseContentReconciliationPending(id))return false;
-    const member=getVocabularyLearnerWord(id);return member!==null&&member.dismissedAt===null&&member.mode!=='unstudied';
-  });
 }
 function availableGeneral(wordId:string,mode:'solidify'|'practice'|'maintain'):VocabularyContent[] {
   const allowProduction=mode==='solidify'||!hasExplicitlyEmptyProductionScope(wordId);
@@ -248,15 +234,9 @@ export function getVocabularyStudy(sessionId:string):VocabularyStudy {
 }
 /** Content checks shared by both admission paths; teaching readiness retains what it resolves. */
 function studyGates(resolved:Map<string,ResolvedVocabularyTeaching>) {
-  const contentUsable = (wordId:string,skill:'recognition'|'production'|'contextual_selection'):boolean => {
-    if(isSenseContentReconciliationPending(wordId))return false;
-    if(skill!=='contextual_selection')return true;
-    const mode=getVocabularyLearnerWord(wordId)?.mode;
-    return mode!==undefined&&mode!=='unstudied'&&listVocabularyExercises({wordId,mode}).some((entry)=>eligible(entry)&&contrastEligible(entry,wordId));
-  };
   return {teachingReady:(wordId:string)=>{const material=resolveVocabularyTeaching(wordId);if(material)resolved.set(wordId,material);return material!==null;},
     isLearningContentUsable:(wordId:string)=>!isSenseContentReconciliationPending(wordId),
-    isReviewContentUsable:contentUsable};
+    isReviewContentUsable:reviewContentUsable};
 }
 function composeCurrentStudy(resolved:Map<string,ResolvedVocabularyTeaching>, timeZone?:string):VocabularyComposition {
   return composeVocabularyStudy({...studyGates(resolved),timeZone});

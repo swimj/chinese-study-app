@@ -46,18 +46,34 @@ export function admitTimedVocabularyStudy(input: {
   const fresh = composeVocabularyNewWords({ now, timeZone: input.timeZone, teachingReady: input.teachingReady });
   const learningWordIds = readVocabularyLearningWordIds(now, input.isLearningContentUsable);
 
+  const streams = readVocabularyPureCueStreams(now);
+  const cueUsable = vocabularyPureCueUsability();
+  const { admitted, reviewWords, pressingKeys } = admitTimedReview(now, input.reviewBound, input.isReviewContentUsable, streams, cueUsable);
+  const strongRechecks = streams.rechecks.filter((cue) => cue.strongSince !== null);
+  const rechecks = strongRechecks.filter((cue) => cueUsable(cue.id)).map((cue) => cue.id);
+  const strong = selectPureCuesForSession({ learnerId: requireLearnerId(), cues: streams.strong.filter((cue) => cueUsable(cue.id)),
+    ordinaryReviewCount: admitted.length, now, random: vocabularyPureCueRandom(sessionSeed) }).selected.map((cue) => cue.id);
+  const sequence = [...admitted];
+  for (const id of strong) sequence.splice(splice(sessionSeed, id, sequence.length), 0, { kind: 'pure_cue', id });
+  return { newWordIds: fresh.newWordIds, learningWordIds, reviewWords,
+    reviewOrder: [...rechecks.map((id) => ({ kind: 'pure_cue' as const, id })), ...sequence], pressingKeys,
+    preparationPending: fresh.preparationPending };
+}
+
+/** The bounded word and fragile-cue stream shared by Start and the read-only preparation forecast. */
+export function admitTimedReview(now: string, reviewBound: number,
+  isReviewContentUsable: (wordId: string, skillId: VocabularyReviewSkill) => boolean,
+  streams = readVocabularyPureCueStreams(now), cueUsable = vocabularyPureCueUsability()) {
   // One ranking: each review word at its most urgent due objective, each fragile cue by its own urgency.
   const objectives = new Map<string, VocabularyDueReviewObjective[]>();
   for (const objective of readVocabularyDueReviewObjectives(now)) {
     const list = objectives.get(objective.wordId); if (list) list.push(objective); else objectives.set(objective.wordId, [objective]);
   }
-  const streams = readVocabularyPureCueStreams(now);
   type Ranked = TimedReviewEntry & { urgency: number; pressing: boolean };
   const words: Ranked[] = [...objectives].map(([id, list]) => ({ kind: 'word', id, urgency: list[0]!.urgency,
     pressing: list.some((objective) => isOverduePressing(objective.urgency)) }));
   // A strong cue's recheck keeps its slot ahead of the bound (its routine maintenance is a random
   // roll); a fragile cue's recheck only marks its earliest check, so once due it competes like any fragile cue.
-  const strongRechecks = streams.rechecks.filter((cue) => cue.strongSince !== null);
   const fragile = [...streams.fragile, ...streams.rechecks.filter((cue) => cue.strongSince === null)];
   const cues: Ranked[] = fragile.map((cue): Ranked => {
     const urgency = pureCueUrgency(cue, now);
@@ -69,26 +85,18 @@ export function admitTimedVocabularyStudy(input: {
     order.push(c >= cues.length || (w < words.length && words[w]!.urgency >= cues[c]!.urgency) ? words[w++]! : cues[c++]!);
   }
 
-  const cueUsable = vocabularyPureCueUsability();
   const admitted: TimedReviewEntry[] = []; const reviewWords: TimedAdmission['reviewWords'] = []; const pressingKeys: string[] = [];
   for (const entry of order) {
-    if (admitted.length >= input.reviewBound) break;
+    if (admitted.length >= reviewBound) break;
     if (entry.kind === 'word') {
-      const objective = objectives.get(entry.id)!.find((candidate) => canUseVocabularyReviewObjective(candidate, input.isReviewContentUsable));
+      const objective = objectives.get(entry.id)!.find((candidate) => canUseVocabularyReviewObjective(candidate, isReviewContentUsable));
       if (!objective) continue;
       reviewWords.push({ wordId: objective.wordId, mode: objective.mode, selectedSkill: objective.skillId });
     } else if (!cueUsable(entry.id)) continue;
     admitted.push({ kind: entry.kind, id: entry.id });
     if (entry.pressing) pressingKeys.push(timedTargetKey(entry.kind, entry.id));
   }
-  const rechecks = strongRechecks.filter((cue) => cueUsable(cue.id)).map((cue) => cue.id);
-  const strong = selectPureCuesForSession({ learnerId: requireLearnerId(), cues: streams.strong.filter((cue) => cueUsable(cue.id)),
-    ordinaryReviewCount: admitted.length, now, random: vocabularyPureCueRandom(sessionSeed) }).selected.map((cue) => cue.id);
-  const sequence = [...admitted];
-  for (const id of strong) sequence.splice(splice(sessionSeed, id, sequence.length), 0, { kind: 'pure_cue', id });
-  return { newWordIds: fresh.newWordIds, learningWordIds, reviewWords,
-    reviewOrder: [...rechecks.map((id) => ({ kind: 'pure_cue' as const, id })), ...sequence], pressingKeys,
-    preparationPending: fresh.preparationPending };
+  return { admitted, reviewWords, pressingKeys };
 }
 
 /**
