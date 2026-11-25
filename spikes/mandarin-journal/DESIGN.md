@@ -53,6 +53,10 @@ These came from the design consultation of Nov 19–23, 2026.
   as a side sheet, not a floating window. Asking about a piece uses a picker
   mode, not controls on every piece. When the tutor leaves its own pieces on
   the board is a deferred policy.
+- **The conversation partner is a separate character, inside the bubble with
+  the learner.** It is mostly unaware that it is part of a learning system.
+  The tutor is a different character, with its own place. Making the
+  division clearer on screen is design work still to do.
 - **Phone and desktop.** They may differ in layout and use patterns, but the
   feel, philosophy and rules are shared.
 
@@ -112,12 +116,15 @@ These came from the design consultation of Nov 19–23, 2026.
    taught, settling, used or missed, but no piece shows it. A word saved a
    minute ago looks the same as one the learner later used unprompted.
 5. **A reading grows into a tower.** Margin notes stack into one tall column
-   per reading, about 16 in the dogfooded journal. With raw English questions,
-   notes that only say "save", and "1 reply" counts, a busy reading looks like
-   a tracker rather than a scrapbook. Some notes are the learner using the
-   margin to ask for something the app lacks, such as "I'd like to practice
-   this sentence structure". Those notes are product signals.
-6. **Two houses.** Home and Read are the new house. Practice and Conversation
+   per reading, about 16 in the dogfooded journal. With raw English questions
+   and "1 reply" counts, a busy reading looks like a tracker rather than a
+   scrapbook. Many of those notes were written with an earlier, much simpler
+   reader, such as notes that only say "save" or that ask to practice a
+   structure; the reader has since been built out to cover those needs (quick
+   save, **Save with note**). The layout question remains: what a cluster
+   shows once it holds many pieces.
+6. **Two houses.** Home and Read are the new house; they were unified on
+   purpose. Practice and Conversation
    are still the old one:
    - a "Mandarin journal" masthead and "← Journal";
    - a large H1;
@@ -125,13 +132,13 @@ These came from the design consultation of Nov 19–23, 2026.
 
    "Daily mix" offers a mode, though
    [modes are dropped](MODEL.md#what-the-hosted-app-contributes) as a
-   learner-facing concept.
+   learner-facing concept. Practice and Conversation haven't had design
+   attention yet; this is neglect, not a decision.
 7. **The tutor sheet reads like a receipt.** It is one long transcript across
-   every surface. It mixes teaching with system lines such as "I'll prepare
-   X for vocabulary practice" and "Ready for vocabulary practice: X". In
-   dogfooding, the learner had to ask for the explanation after the save
-   confirmation (#634 since puts the explanation first). The sentence "I'll
-   also bring X into practice" is the workshop voice. The evidence that a word
+   every surface, and it mixes teaching with system lines. Older lines such
+   as "Ready for vocabulary practice: X" predate #634, which now explains a
+   word first. The current line "I'll also bring X into practice" is still
+   the workshop voice. The evidence that a word
    is in practice should be the word turning up in practice.
 8. **The tutor's language switches by surface.** It writes in Chinese on
    conversation takeaways and in English on loose ends and in the sheet. That
@@ -166,10 +173,10 @@ These are ordered roughly by how much else depends on them.
    cheap. Themes need a judgment, likely agent-made and rerunnable like other
    judgments. What is the smallest step: a shared label across two clusters,
    a link line, or a theme lens the learner turns on?
-5. **The conversation partner and the tutor.** Is the partner visibly a
-   second character? Right now Conversation shows the partner's turns and a
-   Tutor button on one screen. Should the tutor stay offstage until the
-   conversation pauses?
+5. **Making the partner and the tutor read as two characters.** The
+   partner is settled as a separate character inside the bubble. How does
+   the screen show that? Today the partner's turns and a Tutor button share
+   one screen.
 6. **The tutor sheet's shape.** Is it one continuous transcript across
    surfaces, or does it show the thread relevant to the current room, with
    the rest one step away? Where do system confirmations go, if anywhere?
@@ -182,6 +189,24 @@ These are ordered roughly by how much else depends on them.
    pattern"? Constructions are already
    [first-class targets](MODEL.md#vocabulary).
 
+## Review conventions
+
+- **Judge the design on content the current code makes.** Fixes apply going
+  forward. Older journal content isn't rewritten to match, because that
+  costs velocity and helps no one. The exception is when old cruft builds up
+  enough to cloud product judgment.
+
+## Feedback awaiting the rewrite
+
+This section collects feedback and new thinking until there is enough for
+one holistic rewrite of the document, instead of many small edits. Either
+Justin or Claude can decide it is time. Add entries here; small factual fixes
+can still go straight into the text.
+
+- *(Nov 24)* First quick pass from Justin. The factual corrections were
+  applied inline: legacy reader notes, neglect of Practice and Conversation,
+  the partner settled as a separate character, and the review convention.
+
 ## Decision log
 
 | Date | Decision | Where it came from |
@@ -190,3 +215,5 @@ These are ordered roughly by how much else depends on them.
 | 2026-11-23 | Home layering: open table, controls on selection, tutor as side sheet, picker mode | Consultation follow-up |
 | 2026-11-23 | Media: per-case ceilings under a demote-only composition policy | [MEDIA.md](MEDIA.md) |
 | 2026-11-23 | Desktop proves the model first; phone soon; shared philosophy | Consultation follow-up |
+| 2026-11-24 | The conversation partner is a separate character inside the bubble, mostly unaware of the learning system | Justin, review of this document |
+| 2026-11-24 | Design is judged on newly generated content; legacy content is not backfilled unless cruft clouds judgment | Justin, review of this document |
