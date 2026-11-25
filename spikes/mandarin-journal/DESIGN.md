@@ -44,7 +44,7 @@ crafted; the flair changes.
    set stays small, a few landmarks and perhaps one special, so the landing
    doesn't turn into a menu. Later, landmarks can come and go by day, or the
    learner can choose them.
-2. **What's alive.** This is a handful of post-its (not twenty) for recent
+2. *(Deferred.)* **What's alive.** This is a handful of post-its (not twenty) for recent
    points that are still solidifying, perhaps cycling through. Think of a
    leveled-up lock-screen word app: ambient and low-intent, decoration with a
    hint of study. Each post-it **leads with its tie to the past**, the
@@ -208,7 +208,9 @@ Observed on the fixture and on a copy of Justin's dogfooded journal.
 
 ## Open questions
 
-These are ordered roughly by how much depends on them.
+These are ordered roughly by how much depends on them. **Focus now (Nov 24):**
+questions 1, 4 and 5, the desktop's urban plan with its landmarks and
+projects. The others are deferred until the interactive base is solid.
 
 1. **The desktop composition.** Is desktop Home a town square with the
    collection laid out around the landmarks, or is the scrapbook one more
@@ -216,24 +218,24 @@ These are ordered roughly by how much depends on them.
 2. **What's alive.** How are post-its chosen, and how many? Do they cycle,
    and how fast? What does tapping one do: open its memory, open its room,
    or start a quick rep?
-3. **How a piece shows its growth arc.** What does a trace look like (taught,
+3. *(Deferred.)* **How a piece shows its growth arc.** What does a trace look like (taught,
    settling, used unprompted) without turning into a progress bar?
 4. **Landmark offers.** Which offer does each landmark carry, and who chooses
    it? When does a special appear?
 5. **Projects.** What do a project's landing and its first three days look
    like? How does the tutor plan the journey, and how does it feed practice?
-6. **Gathering.** What is the gesture? How does the pile look, and how does a
+6. *(Deferred.)* **Gathering.** What is the gesture? How does the pile look, and how does a
    session use it?
 7. **Context.** How does capture invite context without nagging? When does a
    bare piece get an interest anchor or a labeled synthetic scene?
-8. **A busy item on Home.** For a conversation or a reading with many
+8. *(Deferred.)* **A busy item on Home.** For a conversation or a reading with many
    notes, what surfaces and what folds into its room?
-9. **Partner and tutor on one screen.** How does Conversation show that the
+9. *(Deferred.)* **Partner and tutor on one screen.** How does Conversation show that the
    partner is a separate character inside the bubble?
-10. **The tutor sheet.** Should it be one continuous transcript, or the
+10. *(Deferred.)* **The tutor sheet.** Should it be one continuous transcript, or the
     current room's thread with the rest one step away? Where do system
     confirmations go, if anywhere?
-11. **The tutor's language.** When does it write in Chinese, when in English,
+11. *(Deferred.)* **The tutor's language.** When does it write in Chinese, when in English,
     and should the learner set it?
 
 ## Prototype-stage tradeoffs
@@ -249,7 +251,51 @@ These describe the prototype now, not lasting rules.
 
 ## Feedback awaiting the rewrite
 
-*(Empty since the Nov 24 rewrite.)*
+- *(Nov 24)* **Justin narrows the focus.**
+  - **Build the interactive base first.** Focus on the desktop's urban plan
+    and its landmarks, the most stable parts of the app. Elevate projects to
+    a landmark. In this early stage, **nothing goes on Home that doesn't lead
+    somewhere**, except perhaps one small decorative touch. A dangling
+    feature without an interactive story around it is clutter. Incremental
+    building risks a local optimum, but the vision is solid enough that
+    foundational work pays off.
+  - **Deferred:** what's alive, the growth arc, gathering, the busy item,
+    partner and tutor on screen, the tutor sheet, and the tutor's language.
+    These are valuable in a mature app; built too early, they dangle. The
+    deferred refinements can limp along as they are.
+  - **Busy items (an idea to keep).** Never show a busy item's contents on
+    the landing page by default. Instead, its styling shows that a lot is
+    attached, which invites interaction. Interacting gives a peek, a partial
+    expansion. Clicking blows it out fully into the item's room.
+  - **Projects may become what chat is.** A conversation by itself is not
+    exciting (there are endless chatbots); what it's about is. Many
+    conversations are projects without a deliverable: shared understanding
+    built by talking. Idle chat stays as a fallback, perhaps as a degenerate
+    project. It doesn't need perfect modeling, since people use this as a
+    means to study. Projects mostly failed in general chat apps because
+    people's threads are random. Here, every thread shares one goal,
+    getting better at the language, so projects may feel natural, much as
+    coding tools put the project in front of the chat.
+  - The phone follows: a small set of components that deliver interactive
+    value.
+- *(Nov 24)* **Claude's response.**
+  - *"Nothing on Home that doesn't lead somewhere" is the V1 rule.* It is
+    "affordances must match capability" applied to the landing page.
+  - *Who runs a project?* The partner is in the bubble and unaware of the
+    learning system; a project is a learning journey the tutor plans. One
+    resolution: the tutor owns the project's arc (plan, debrief, practice),
+    and the partner plays its scenes (an investor hearing the pitch, a
+    friend at the climbing gym). Open chat is a project with no arc, just
+    the partner.
+  - *Projects failed elsewhere partly because of creation cost:* a blank
+    "new project" asks the learner to organize up front. Here a project can
+    also be proposed from behavior. After a second conversation about
+    climbing, the tutor offers to make it a project. That mirrors themes:
+    projects are declared or emerge.
+  - *Open for the urban plan:* on desktop V1, does today's scrapbook table
+    stay behind the landmarks, or recede into a shopfront? It is the one
+    current surface whose pieces don't all lead somewhere.
+
 
 ## Decision log
 
@@ -267,3 +313,5 @@ These describe the prototype now, not lasting rules.
 | 2026-11-24 | Projects are a new room type | Justin, design conversation |
 | 2026-11-24 | Aim for "we craft the frame, the learner makes the surface", later; we control both for now | Justin, design conversation |
 | 2026-11-24 | Typeform is a reference for the practice session only | Justin, design conversation |
+| 2026-11-24 | Focus: the desktop urban plan, landmarks and projects. Defer what's alive, the growth arc, gathering, the busy item and the tutor refinements | Justin, design conversation |
+| 2026-11-24 | V1 Home holds nothing that doesn't lead somewhere, except perhaps one decorative touch | Justin, design conversation |
