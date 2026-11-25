@@ -261,6 +261,49 @@ can still go straight into the text.
   - *Open:* what does tapping a post-it do: open its memory, open its room,
     or start a quick rep? How many post-its, and how fast do they cycle?
     What does the town look like on a phone, perhaps as a street?
+- *(Nov 24)* **Justin's second round.**
+  - **Trinkets first, richer later.** Once the browse mode holds, trinkets can
+    gain depth, such as a study session built around a theme.
+  - **More landmarks and room types.** Not every landmark appears every day,
+    or the learner customizes them. A new room type, a **project**: the
+    learner names something they want to do (cook a few Chinese dishes, pitch
+    their software app, talk about climbing movement at the gym). The tutor
+    uses what it knows about them to lay out a journey toward it, teaching
+    the relevant Chinese along the way. A project gives a landmark a clear
+    daily hook.
+  - **Synthetic context for solitary pieces** is an option, depending on how
+    interested the learner is in language itself. Another option: borrow the
+    hosted app's session-debrief interests to anchor a bare piece. Neither
+    is forced; there is a lot of room for creativity here.
+  - **Post-its are visual flair with a hint of study,** not a core feature.
+    Serious study happens in a session. One bridge: while browsing, the
+    learner **gathers** pieces into a small pile on screen. The pile seeds
+    today's session or jumps the queue, like Spotify's "Up next".
+  - **The 2000s MySpace aesthetic as inspiration:** a personal use of the
+    internet rather than life inside one company's clean design system.
+  - **Phone:** probably no bulletins on the landing page. The scrapbook may
+    be one shopfront among the others. Desktop-first bias is acknowledged;
+    the phone deserves real weight.
+- *(Nov 24)* **Claude's response, for the rewrite.**
+  - *Projects are the journey loop made concrete,* and the most concrete
+    answer yet to "themes can't be forced": a project is a theme the learner
+    declares rather than one the system infers. Its landmark carries an offer
+    every day.
+  - *Gathering fits the model.* It's an explicit learner signal, and
+    [priority comes from everything the learner does](MODEL.md#principles).
+    Keep it a gesture, not a second queue the learner has to manage.
+  - *Synthetic context must say it's synthetic.* The memory is what separates
+    a post-it from a lock-screen widget. An invented scene presented as the
+    learner's own moment breaks the truthfulness principle
+    ([MEDIA](MEDIA.md)). Distinguish "your moment" from "a scene for you".
+  - *MySpace raises an authorship question.* Today the system places every
+    piece. MySpace means the learner's hand shows: arranging, pinning,
+    choosing landmarks, decorating. One frame: *we craft the frame, and the
+    learner makes the surface.* This sits in tension with Justin's clean
+    anchors (Typeform, software.inc), and resolving it is a real decision.
+  - *Phone as a street of shopfronts,* with the scrapbook as one shop, fits
+    "same philosophy, different layout". The desktop town square shows the
+    board; the phone keeps the landing calm.
 
 ## Decision log
 
