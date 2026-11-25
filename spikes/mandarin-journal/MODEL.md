@@ -15,7 +15,8 @@ practices, how it records learner activity, how it teaches, or how the hosted
 app's learners and data will move into it. It explains where the product is
 going, the principles that rule ideas in or out, and what remains open. The
 [README](README.md#the-record-and-priority) explains the current mechanisms;
-[Media on the board](MEDIA.md) covers pictures.
+[Media on the board](MEDIA.md) covers pictures. [The journal's interface](DESIGN.md)
+covers how the learner sees all of this.
 
 ## Where this is going
 

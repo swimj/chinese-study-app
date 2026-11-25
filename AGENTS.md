@@ -4,7 +4,9 @@ This repository contains the [hosted Mandarin study app](README.md) and its
 intended successor, the scrapbook journal in `spikes/mandarin-journal/`.
 For hosted work, start with the [documentation index](docs/README.md).
 The [journal learning model](spikes/mandarin-journal/MODEL.md) explains its
-product direction and which hosted ideas carry forward. To run or test the
+product direction and which hosted ideas carry forward; the
+[journal interface](spikes/mandarin-journal/DESIGN.md) records its design
+direction and open questions. To run or test the
 journal, follow the [journal runbook](spikes/mandarin-journal/RUNBOOK.md) and
 use the checkout's fixture by default. Never open Justin's live journal from
 an agent worktree.
