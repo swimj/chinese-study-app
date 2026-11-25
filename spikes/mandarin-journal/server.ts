@@ -13,6 +13,7 @@ import { ZodError, type z } from 'zod';
 import { actionSchema, engine, JournalConflict, openJournal } from './journal.ts';
 import { buildFixture } from './fixture.ts';
 import { resolveStorage } from './storage.ts';
+import { journalRequestOrigins } from './tailnet-access.ts';
 import { createLookupService } from './reader-lookup-service.ts';
 import { dictionaryPage } from './reader-catalog-report.ts';
 import { openReaderCatalog } from './reader-catalog.ts';
@@ -39,6 +40,7 @@ const ledger = readerLedger(storage);
 const reader = readerWorkflow(ledger, lookups, journal.readingParagraphs, startReaderGrowth(ledger, catalog, activity), activity);
 const defaultPorts = { live: 4317, copy: 4319, fixture: 4320, custom: 4320 } as const;
 const port = Number(process.env.JOURNAL_PORT || defaultPorts[resolved.profile]);
+const requestOrigins = await journalRequestOrigins(resolved.profile, port);
 const files = new Map([
   ['/', ['index.html', 'text/html']],
   ['/operator/activity', ['model-activity.html', 'text/html']],
@@ -142,10 +144,9 @@ const server = createServer(async (req, res) => {
     } else json(status, payload);
   };
   try {
-    const host = req.headers.host;
-    if (host !== 'localhost:' + port && host !== '127.0.0.1:' + port)
-      throw new RequestError(403, 'Local access only.');
-    if (req.headers.origin && req.headers.origin !== 'http://' + host)
+    const origin = requestOrigins.get(req.headers.host ?? '');
+    if (!origin) throw new RequestError(403, 'Unexpected request host.');
+    if (req.headers.origin !== undefined && req.headers.origin !== origin)
       throw new RequestError(403, 'Unexpected request origin.');
     if (req.method === 'GET' && req.url?.split('?')[0] === '/operator/dictionary') {
       const params = new URL(req.url, 'http://localhost').searchParams;

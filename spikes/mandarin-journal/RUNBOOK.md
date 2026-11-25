@@ -1,7 +1,8 @@
 # Journal runbook
 
 How to keep one real journal growing across updates while agents work on
-branches. This covers local use only. Deploying to Fly will need its own guide.
+branches. The Mac mini can serve the live journal locally and to authorized
+devices on its tailnet. Deploying to Fly will need its own guide.
 
 ## Where journals live
 
@@ -42,6 +43,29 @@ opened.
 
 The live journal refuses to open from a worktree. `JOURNAL_ALLOW_LIVE=1`
 overrides that refusal. Use it only on purpose, and never from an agent.
+
+## Open the live journal over Tailscale
+
+On the Mac mini, configure private HTTPS forwarding once and bookmark the URL
+Tailscale prints on your laptop.
+
+```sh
+tailscale serve --bg http://127.0.0.1:4317
+```
+
+`npm run start:live` automatically discovers the Mac mini's full MagicDNS name
+at startup. The journal listens on loopback and accepts the discovered HTTPS
+origin alongside loopback HTTP. The app has no separate login, so use your
+tailnet access policy to limit the Serve endpoint to authorized devices or
+users. Use private [Tailscale Serve](https://tailscale.com/docs/reference/tailscale-cli/serve)
+for the journal.
+
+If `tailscale` is outside your startup PATH, put an absolute
+`JOURNAL_TAILSCALE_BIN` path in the spike's ignored `.env` file. On this Mac
+with Homebrew, that can be `JOURNAL_TAILSCALE_BIN=/opt/homebrew/bin/tailscale`.
+If discovery fails, startup reports loopback-only access. Check Tailscale and
+restart the journal to discover its name again. Copy and fixture profiles use
+loopback only.
 
 ## Agents and branches
 
