@@ -279,8 +279,26 @@ These describe the prototype now, not lasting rules.
   interaction ideas. **Justin chose C, the wall,** and supports all the small
   ideas: doors not links, peek on focus, time-of-day light, capture showing
   where it went, visible characters, fresh and stale offers, a keyboard town,
-  and rotation instead of a carousel. Why the wall wins is still to be
-  recorded.
+  and rotation instead of a carousel.
+- *(Nov 25)* **Why the wall wins (Justin).**
+  - **Physical things are the core.** Each landmark is a distinct object, and
+    the input itself becomes an object on the board (the notepad slip).
+    It has the town's visual variety but fits this app better.
+  - **The metaphors split.** The open board is Home's surface. The town
+    stays the metaphor for drilling in, from the main page into specific
+    worlds. "Doors, not links" fits this split.
+  - **Crookedness and handwriting are fine for now.** Crookedness could get
+    old. The handwriting font could be better but isn't a problem.
+  - **It suggests personalization without supporting it yet.** The board
+    and the crookedness read as personalizable even though they're not
+    "my wall" today. That is language running ahead of capability, which is
+    allowed. Real personalization, such as learner stickers, can come with
+    traction.
+  - **The material** (cork, warmth) works. **The sticker** is cheesy but
+    cute, and it is the one decoration.
+  - **One small real gesture in V1** keeps the ownership feeling honest:
+    for example, the learner can drag a pinned thing to re-pin it, and it
+    stays where they put it.
 
 ## Decision log
 
@@ -307,3 +325,4 @@ These describe the prototype now, not lasting rules.
 | 2026-11-25 | Purpose before tidiness: a crowded Home is acceptable for now; rotation over time is an option later | Justin, design conversation |
 | 2026-11-25 | What the partner explains or recasts counts as shown; practice parses it asynchronously | Justin, design conversation |
 | 2026-11-25 | Desktop V1 direction: the wall (urban plan C), with the small interaction ideas | Justin, canvas review |
+| 2026-11-25 | The wall is Home's surface; the town is the metaphor for drilling into rooms. V1 includes one small real personalization gesture | Justin, canvas review |
