@@ -1,9 +1,10 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { buildScrapbook, wallOffers } from './public/scrapbook.js';
+import { isReadingFinished } from './public/reading.js';
 
 const readingLabel = (state, id) => state.reading.documents.find((d) => d.id === id)?.title || id;
-const kiosk = { id: 'kiosk', title: '河边的报刊亭', paragraphs: [{ id: 'p1', text: '每次路过，我总觉得亭子在等什么人。' }, { id: 'p2', text: '窗台上搁着半杯茶。' }] };
+const kiosk = { id: 'kiosk', title: '河边的报刊亭', paragraphs: [{ id: 'p1', text: '每次路过，我总觉得亭子在等什么人。' }, { id: 'p2', text: '窗台上搁着半杯茶。' }, { id: 'p3', text: '窗子还开着。' }] };
 const encore = { id: 'encore', title: '散场以后', paragraphs: [{ id: 'e1', text: '演唱会散场了。' }] };
 
 function journal(overrides = {}) {
@@ -59,7 +60,7 @@ test('material clusters by what it is about, takeaways once, words where they ap
   assert.equal(c['read:encore'].title, '散场以后', 'unopened stories stay reachable from the table');
   const note = c['read:kiosk'].scraps.find((s) => s.kind === 'note');
   assert.deepEqual([note.quote, note.voice, note.replies], ['等什么人', 'yours', 1]);
-  assert.deepEqual(c['read:kiosk'].progress, { at: 2, of: 2 });
+  assert.deepEqual(c['read:kiosk'].progress, { at: 2, of: 3 });
   assert.equal(c['chat:library'].scraps.find((s) => s.title === '透透气')?.context, '图书馆太闷了');
   assert.deepEqual(c.loose.scraps.map((s) => s.title), ['报备']);
   // 等 shows up in a conversation takeaway and in the reading: one home, one link.
@@ -102,13 +103,40 @@ test('wall offers point to the current session, exact paragraph, conversation an
   assert.equal(wall.practiceTime, '≈ 8 min');
   assert.equal(wall.reading.href, '#read/source/kiosk%2Fp2');
   assert.equal(wall.reading.excerpt, kiosk.paragraphs[1].text);
-  assert.equal(wall.reading.bookmark, '← left off at ¶ 2 of 2');
+  assert.equal(wall.reading.bookmark, '← left off at ¶ 2 of 3');
   assert.equal(wall.conversation.id, 'library');
   assert.equal(wall.piece.href, '#scrapbook/piece/annotation%3An1');
   state.saved.at(-1).savedAt = '2026-11-25T01:23:00Z';
   assert.equal(offers(state).piece.href, '#scrapbook/piece/saved%3Aw3');
   state.practice.result = { feedback: 'Try again' };
   assert.equal(offers(state).practice, 'Continue after feedback');
+});
+
+test('only a saved last paragraph finishes a reading, including a one-paragraph piece', () => {
+  assert.equal(isReadingFinished(kiosk, 'p3'), true);
+  assert.equal(isReadingFinished(kiosk, 'p2'), false);
+  assert.equal(isReadingFinished(kiosk, 'missing'), false);
+  assert.equal(isReadingFinished(encore, undefined), false);
+  assert.equal(isReadingFinished(encore, 'e1'), true);
+});
+
+test('the wall passes over a recently finished reading and follows an earlier bookmark on reread', () => {
+  const state = journal();
+  state.reading.documentId = 'encore';
+  state.reading.positions.encore = 'e1';
+  assert.equal(offers(state).reading.title, kiosk.title);
+
+  state.reading.positions.kiosk = 'p3';
+  const finished = byKey(buildScrapbook(state, { readingLabel }))['read:kiosk'];
+  assert.equal(finished.finished, true);
+  assert.equal(finished.progress, undefined);
+  assert.equal(offers(state).reading, undefined);
+
+  state.reading.positions.kiosk = 'p1';
+  const reread = byKey(buildScrapbook(state, { readingLabel }))['read:kiosk'];
+  assert.ok(!reread.finished);
+  assert.deepEqual(reread.progress, { at: 1, of: 3 });
+  assert.equal(offers(state).reading.href, '#read/source/kiosk%2Fp1');
 });
 
 test('wall skips hidden pieces and invalid bookmarks and can open on a fresh journal', () => {

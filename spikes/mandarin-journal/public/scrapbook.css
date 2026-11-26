@@ -102,6 +102,10 @@ a.cluster-title:hover { text-decoration: underline; text-decoration-thickness: 1
   font: 1.02rem/1.75 var(--han);
   color: var(--ink);
 }
+.reading-finished {
+  color: var(--solid);
+  font: 1.1rem/1.4 var(--serif);
+}
 .progress {
   height: 4px;
   width: 9rem;

@@ -1,6 +1,8 @@
 // Home as a scrapbook: the learner's material, clustered by what it is about.
 // Everything here is derived from journal state; nothing is invented or stored.
 
+import { isReadingFinished } from './reading.js';
+
 const hanzi = /[㐀-鿿]/;
 const LOOSE = 'loose';
 const pieceKinds = { note: 'annotation', takeaway: 'annotation', word: 'saved', saved: 'saved', line: 'line', observation: 'observation', media: 'media' };
@@ -71,8 +73,12 @@ export function buildScrapbook(state, { readingLabel, media }) {
   for (const [id, paragraphId] of Object.entries(state.reading?.positions || {})) {
     const home = readingCluster(id);
     if (!home) continue;
+    if (isReadingFinished(home.doc, paragraphId)) {
+      home.finished = true;
+      continue;
+    }
     const index = home.doc.paragraphs.findIndex((p) => p.id === paragraphId);
-    home.progress = { at: index + 1, of: home.doc.paragraphs.length };
+    if (index >= 0) home.progress = { at: index + 1, of: home.doc.paragraphs.length };
   }
   for (const message of state.tutor || []) {
     if (message.kind !== 'observation' || message.reference?.kind === 'reflection') continue;
@@ -172,21 +178,20 @@ export function wallOffers(state, clusters) {
   const remaining = session && !done && session.budgetMinutes - session.spentMinutes;
   const practiceTime = remaining > 0 ? '≈ ' + remaining + ' min' : '';
 
-  const visible = new Set(clusters.map(group => group.key));
-  const { positions, documents, documentId } = state.reading;
+  const visible = new Map(clusters.map(group => [group.key, group]));
+  const { positions, documentId } = state.reading;
   let reading;
   for (const id of new Set([documentId, ...Object.keys(positions).reverse()])) {
-    if (!visible.has('read:' + id)) continue;
-    const doc = documents.find(d => d.id === id);
-    const paragraph = doc?.paragraphs.find(p => p.id === positions[id]);
-    if (paragraph) {
-      reading = {
-        title: doc.title, excerpt: paragraph.text,
-        bookmark: '← left off at ¶ ' + (doc.paragraphs.indexOf(paragraph) + 1) + ' of ' + doc.paragraphs.length,
-        href: '#read/source/' + encodeURIComponent(id + '/' + paragraph.id),
-      };
-      break;
-    }
+    const group = visible.get('read:' + id);
+    if (!group?.progress) continue;
+    const { at, of } = group.progress;
+    const paragraph = group.doc.paragraphs[at - 1];
+    reading = {
+      title: group.title, excerpt: paragraph.text,
+      bookmark: '← left off at ¶ ' + at + ' of ' + of,
+      href: '#read/source/' + encodeURIComponent(id + '/' + paragraph.id),
+    };
+    break;
   }
 
   const conversation = state.threads.find(t => t.id === state.activeThreadId && visible.has('chat:' + t.id)
@@ -505,7 +510,12 @@ export function createScrapbook({ host, viewport, world, node, link, getState, r
     if (c.kind === 'read') {
       const lead = c.doc.paragraphs[0]?.text || '';
       if (!c.scraps.length) head.append(Object.assign(node('p', lead.slice(0, 70) + (lead.length > 70 ? '…' : ''), 'excerpt'), { lang: 'zh' }));
-      if (c.progress) {
+      if (c.finished) {
+        const mark = node('span', '✓', 'reading-finished');
+        mark.setAttribute('role', 'img');
+        mark.setAttribute('aria-label', 'Finished');
+        head.append(mark);
+      } else if (c.progress) {
         const bar = node('div', undefined, 'progress');
         bar.style.setProperty('--done', (c.progress.at / c.progress.of * 100).toFixed(0) + '%');
         bar.setAttribute('role', 'img');
