@@ -32,6 +32,10 @@ export function readingLabel(state, referenceId) {
   return lookup(state, referenceId)?.document.title || '';
 }
 
+export function isReadingFinished(document, paragraphId) {
+  return paragraphId !== undefined && document.paragraphs.at(-1)?.id === paragraphId;
+}
+
 export function referenceForSource(state, source) {
   if (!source) return '';
   if (lookup(state, source)) return source;
@@ -314,7 +318,7 @@ export function createReading({
   function update() {
     if (!state?.reading || !documentView) return;
     const position = state.reading.positions[documentView.id];
-    resume.hidden = !position || position === documentView.paragraphs[0].id;
+    resume.hidden = !position || position === documentView.paragraphs[0].id || isReadingFinished(documentView, position);
     const saved = state.saved.some(item => item.kind === 'Reading' && (
       item.source === documentView.id || (!importedDocument(documentView) && item.title === documentView.title && !lookup(state, item.source))
     ));
@@ -375,6 +379,9 @@ export function createReading({
   function flushPosition() {
     if (!canSubmit()) return;
     for (const [documentId, paragraphId] of pendingPositions) {
+      // Opening a one-paragraph piece already places the reader at its end.
+      // Keep that bookmark pending until they leave the piece.
+      if (active && documentView.id === documentId && documentView.paragraphs.length === 1) continue;
       pendingPositions.delete(documentId);
       if (state.reading.documentId === documentId && state.reading.positions[documentId] === paragraphId) continue;
       submit({ type: 'readingPosition', documentId, paragraphId });

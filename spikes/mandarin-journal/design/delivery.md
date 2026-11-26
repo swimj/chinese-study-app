@@ -10,7 +10,7 @@ Agreed November 25, 2026. The [interface direction](../DESIGN.md) owns the desig
 | Wall and rooms | 2. Open the shoebox | Reach the existing scrapbook table, Loose ends, sources, pictures, list and archive. |
 | Wall and rooms | 9. Find the way home | Return from every room in one action. The tutor remains within reach. Following a source and going back preserves orientation. |
 | Landmark offers | 3. Choose from today's offers | Each object offers something its destination can deliver, including on a fresh journal. Start with rules over current journal state. |
-| Landmark offers | 4. Resume a passage | Read shows the bookmarked passage and opens there. A learner can also bring a new reading. |
+| Landmark offers | 4. Resume a passage | Read offers an unfinished bookmarked passage and opens there. With no such passage, it invites the learner to bring a reading. Finished pieces remain available in the Scrapbook. |
 | Landmark offers | 5. Choose practice | The ticket reflects the current session. Only show a time or count that the session supports. |
 | Landmark offers | 6. Pick up a conversation | Talk shows a recognizable conversation and offers a way to just talk. Existing threads suffice. |
 | Landmark offers | 7. Revisit a recent piece | Enter the full scrapbook or go straight to the named piece. Archiving and deletion change what can be offered. |
