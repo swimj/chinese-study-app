@@ -7,10 +7,12 @@ context to judge outcomes without implementation history.
 
 ## Preview
 
-- URL:
-- Scenario / fixture archetype (or custom setup):
+- Exact URL or standard disposable fixture launch command and working directory:
+- Expected starting view and scenario / fixture archetype:
+- Browser host and access, including the expected tool and fallback:
+- Authentication or other host constraints:
 - Real behavior versus simulation:
-- Reset mechanism and environmental limits:
+- Exact reset command or action:
 
 ## Tasks and consequential expectations
 
@@ -20,6 +22,6 @@ suspected defects unless an exact label is itself what must be evaluated.
 
 ## Evidence and return
 
-Return attempted tasks, observations, impact, reproduction, classification,
-uncertainty, and limits to the coordinator. Include local screenshot destination
-if needed. Add case-specific conversational context here; this is not a schema.
+Return the browser used, attempted and unverified tasks, observations, impact,
+reproduction, classification, and limits to the coordinator. Include a local
+screenshot destination if needed. Add context specific to the case as needed.

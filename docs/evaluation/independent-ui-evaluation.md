@@ -8,10 +8,10 @@ dependency. Deterministic tests and human product judgment remain separate.
 
 ## Prepare and invoke
 
-The coordinator operates the preview and writes a concise
-[brief](brief-template.md): URL, role/purpose, starting situation, tasks and
-consequential expectations, real/simulated boundary, reset, limits, and evidence
-return destination. Describe outcomes without teaching navigation. Copying an
+The coordinator chooses the preview and writes a concise
+[brief](brief-template.md) with the starting situation, tasks and consequential
+expectations, preview setup, real and simulated behavior, and evidence
+destination. Describe outcomes without teaching navigation. Copying an
 implementation plan into the brief defeats its purpose.
 
 Supply the [evaluator assignment](ui-evaluator-prompt.md) and completed brief as
@@ -33,20 +33,42 @@ Inspect the actual invocation behavior in the current host. Fresh context does
 not guarantee absence of injected AGENTS.md, project context, memory, or other
 tools. Record which instructions are visibly supplied and what the evaluator
 reports receiving. Audit its tool activity for repository/source/API reads and
-implementation-specific coaching. A request to stay browser-only is a practical
-role constraint, not enforced isolation. If the activity trace is unavailable,
-say that independence is unverified; self-report alone is weaker evidence.
+implementation-specific coaching. Browser-only evidence is a practical role
+constraint, not enforced isolation. If the activity trace is unavailable,
+report that independence is unverified.
 
-In the Codex desktop host used by the [pilot](trials/2026-11-06.md), subagents
-cannot explicitly request browser visibility. Let them open background tabs
-without a visibility option; record browser availability failures separately
-from preview-server failures.
+## Preview and browser
+
+1. **Run the preview on the browser host by default.** The evaluator may run
+   the exact launch and reset commands in the brief for a standard disposable
+   fixture. The coordinator supplies a frozen revision and isolated data and
+   ports, and starts custom previews or previews whose setup would reveal
+   implementation details. Use the printed URL including its hostname and port.
+   If the browser must run on a different host, the coordinator supplies a URL
+   reachable from that browser. A loopback URL points to the browser's own host.
+2. **Try the Codex in-app browser first.** Open the exact preview URL and
+   verify that the expected starting state renders before attempting a task.
+   If the in-app browser is unavailable and a clean browser session is
+   sufficient, switch promptly to isolated headless Playwright or Chrome on
+   the preview host, where permitted. Use an available runner with a fresh
+   profile. For example, an installed Playwright CLI can run
+   `playwright-cli open "<preview-url>" --browser=chrome` and
+   `playwright-cli snapshot`. Its terminal commands count as browser
+   interaction when used to operate the browser or capture browser-visible
+   evidence.
+3. **Report the blocker to the coordinator if the fallback is unavailable.**
+   Give the URL, browser or runner, observed error, and blocked task. Report a
+   missing browser tool or runner separately from a browser that opened but
+   could not load the preview. The coordinator diagnoses the preview or runner
+   and restores the setup. If a remotely controlled check needs Justin's
+   signed-in browser or interaction, the coordinator asks Justin to
+   screen-share into the host and gives him the exact page and blocked step.
 
 Let the evaluator finish first-pass findings before explaining implementation.
-For an environment blockage, repair the preview as coordinator and distinguish
-blocked attempts from a new run. Preserve the original findings if a later
-explanation changes their interpretation. A rerun after coaching is not a fresh
-blind result. Do not instruct the evaluator to fix the code or file issues.
+Distinguish blocked attempts from a new run after an environment repair.
+Preserve the original findings if a later explanation changes their
+interpretation. A rerun after coaching is not a fresh blind result. Do not
+instruct the evaluator to fix the code or file issues.
 
 ## Interpret the result
 
@@ -56,8 +78,8 @@ Fix ordinary defects within scope; ask Justin about consequential product
 choices. Do not treat every suggestion as a redesign request or summarize all
 findings as a quality score. Match the reported claim to its fixture level.
 
-At delivery, report tasks attempted and completed, findings and resolution,
-remaining uncertainty, actual context/access limitations, and any contamination.
+At delivery, report the browser used, tasks attempted and completed, findings
+and resolution, unverified scenarios, and any access limits or contamination.
 A few successful runs establish feasibility, not a reliability estimate.
 
 ## Evaluate the evaluator
