@@ -44,13 +44,17 @@ full matrix. The actual entry path and container matter. Include a meaningful
 failure or adjacent regression risk when warranted, plus important long/empty
 states, keyboard access, or narrow/enlarged-text views.
 
-Fill the shared brief with role/purpose, starting situation, outcomes, exploratory
-scope, URL, reset, evidence destination, and real/simulated limits. Avoid button
-locations and prescribed click paths. Keep suspected defects and implementation
-explanations out of the first-pass brief.
+Fill the [shared brief](brief-template.md) with the starting situation,
+outcomes, exploratory scope, evidence destination, and real and simulated
+behavior. Follow the [setup steps](independent-ui-evaluation.md#preview-and-browser)
+for the URL or launch command, browser access, and reset. Avoid button
+locations, prescribed click paths, suspected defects, and implementation
+explanations in the first-pass brief.
 
 Before handoff, check that the preview loads and the tasks are possible with its
-starting data. Record the source revision (and any uncommitted fixture changes).
+starting data. If the evaluator will launch a fresh fixture, do this in a
+separate disposable run and stop it before handoff. Record the source revision
+and any uncommitted fixture changes.
 Freeze the served files during an evaluator pass: Vite hot reload can reset state
 and invalidate observations. If implementation must continue, use an independently
 served frozen snapshot with its own ports/data, or defer source edits until the

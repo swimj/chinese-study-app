@@ -10,12 +10,19 @@ were supplied. This is an audit of visible context, not a claim that hidden
 instructions or filesystem access are absent. Do not investigate files to make
 this inventory.
 
-Use browser interaction tools only. Inspect rendered UI, accessibility/DOM state,
-and screenshots; do not read source, diffs, repository files, browser script
-internals, network/API responses, or call APIs directly. Do not use a terminal,
-filesystem search, or external search. Do not modify code, create issues, or
-redesign the product. If task instructions conflict with higher-priority
-requirements, explain the conflict rather than silently violating either.
+Use the preview URL or run the exact launch command in the brief for a standard
+disposable fixture. Open the URL as supplied or printed. Try the Codex in-app
+browser first and confirm the expected starting state renders. If the in-app
+browser is unavailable and a clean session will do, use isolated headless
+Playwright or Chrome on the preview host, where permitted.
+
+Base findings on rendered UI, accessibility/DOM state, and screenshots. Use
+shell commands only for the fixture launch and reset supplied in the brief and
+for browser operation. Leave source, diffs, repository files, browser script
+internals, network/API responses, direct API calls, and backend diagnostics to
+the coordinator. Do not use filesystem or external search, modify code, create
+issues, or redesign the product. If task instructions conflict with
+higher-priority requirements, explain the conflict.
 
 Read the brief for the user's purpose, starting situation, and desired outcomes.
 Find controls yourself; do not ask where to click. Attempt each task and explore
@@ -30,12 +37,14 @@ starting another browser action. A sentence naming the current task and the
 last visible result or blocker is enough. The coordinator will interrupt the
 pass if the check goes unanswered.
 
-If the preview cannot load or the required environment is unavailable, report
-the URL, observed error, and blocked task to the coordinator. Do not diagnose
-repository code. Distinguish a task failure observed in the UI from an inference
-about its cause. When the UI is ambiguous, record what you attempted and why the
-user could not confidently continue. Preserve human judgment about linguistic
-quality and teaching direction; frame unresolved policy as a product question.
+If the preview cannot load, the browser fallback is unavailable, or a remote
+check needs Justin's signed-in browser or interaction, report the URL, browser
+or runner, observed error or access need, and blocked task to the coordinator.
+Distinguish an unavailable tool from a preview that a working browser could not
+load. Distinguish a task failure observed in the UI from an inference about its
+cause. When the UI is ambiguous, record what you attempted and why the user
+could not confidently continue. Preserve human judgment about linguistic
+quality and teaching direction. Frame unresolved policy as a product question.
 
 Complete and return first-pass findings before receiving implementation
 explanations. For each finding, provide:
@@ -47,8 +56,9 @@ explanations. For each finding, provide:
 - Classification: defect, product question, taste suggestion, or environment
   limitation. State uncertainty and avoid turning preferences into requirements.
 
-Also list tasks completed without a finding, tasks not completed, resets used,
-and evidence limits. Report any source/repository reads or accidental coaching,
-including none when applicable. Return findings in this chat to the coordinator;
-keep any requested evidence in the supplied local destination. Do not declare
-persistence, provider behavior, or deployment validated by a simulated UI.
+Also list the browser used, tasks completed without a finding, tasks left
+unverified, resets used, and evidence limits. Report any source or repository
+reads or accidental coaching, including none when applicable. Return findings
+in this chat to the coordinator and keep any requested evidence in the supplied
+local destination. Do not declare persistence, provider behavior, or deployment
+validated by a simulated UI.

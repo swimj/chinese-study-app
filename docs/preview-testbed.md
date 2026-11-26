@@ -20,6 +20,12 @@ The command prints a browsable `/testbed` catalog, a preview URL, and a local
 rather than connecting to another worktree. Each command starts one scenario;
 use another command for a concurrent scenario.
 
+For a standard disposable evaluation, the brief can give the evaluator the
+exact start command and its working directory. Keep the command running during
+the pass and open the printed URL in the browser on that host. The
+[evaluator guide](evaluation/independent-ui-evaluation.md#preview-and-browser)
+covers browser selection and recovery.
+
 | Archetype | Use it for | What runs | What it cannot establish |
 | --- | --- | --- | --- |
 | `presentation` | Compact layout and component exploration | Production review page, injected in-memory API | App entry, routing, HTTP or persistence |
