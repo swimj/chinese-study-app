@@ -194,15 +194,17 @@
             <button id="clear-context" type="button" aria-label="Remove source from question">×</button>
           </div>
           <form id="tutor-form" class="composer">
-            <label for="tutor-draft" class="sr">Message tutor</label
-            ><input
+            <label id="tutor-draft-label" for="tutor-draft" class="sr">Message tutor</label>
+            <input
               id="tutor-draft"
               name="message"
               placeholder="Message tutor…"
               required
               maxlength="1600"
               autocomplete="off"
-            /><button aria-label="Send message to tutor">↑</button>
+            />
+            <button id="clear-reply" class="clear-reply" type="button" hidden>×</button>
+            <button type="submit" aria-label="Send message to tutor">↑</button>
           </form>
           </div></div>
         </aside>

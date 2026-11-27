@@ -429,6 +429,13 @@ textarea {
   color: var(--on);
   font-size: 20px;
 }
+.composer .clear-reply {
+  width: 2rem;
+  margin-inline: .15rem;
+  background: transparent;
+  color: var(--quiet);
+}
+#tutor-draft:placeholder-shown { text-overflow: ellipsis; }
 footer {
   justify-content: space-between;
   gap: 12px;
