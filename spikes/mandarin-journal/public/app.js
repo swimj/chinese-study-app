@@ -3,12 +3,12 @@ import { createTurnProgress } from './turn-progress.js';
 import { createCapture, replyTarget, wordForTurn } from './capture.js';
 import { createAnnotations } from './annotations.js';
 import { createReading, readingLabel, referenceForSource } from './reading.js';
-import { createScrapbook, wallOffers } from './scrapbook.js';
+import { createScrapbook, libraryReadings, wallOffers } from './scrapbook.js';
 import { compose } from './media-policy.js';
 import { createTeaching } from './teaching.js';
 
 const get = (id) => document.getElementById(id);
-const labels = { home: 'Journal', scrapbook: 'Scrapbook', read: 'Reading', chat: 'Conversation', practice: 'Practice', saved: 'List' };
+const labels = { home: 'Journal', library: 'Library', scrapbook: 'Scrapbook', read: 'Reading', chat: 'Conversation', practice: 'Practice', saved: 'List' };
 const uiKey = 'mandarin-journal.ui.v1';
 function readUi() {
   try {
@@ -156,15 +156,15 @@ const reader = createReading({
   importPanel: get('home-import'),
   canSubmit: () => Boolean(state && !busy && !ui.pending),
   submit, discussInChinese,
-  navigate: (dest, ref) => { location.hash = href(dest, ref ? 'source' : '', ref); },
+  openImported: id => { location.hash = href('read', page === 'library' ? 'library' : 'source', id); },
 });
 let importUrl = '';
 let importReturnFocus;
 const importDialog = get('home-import');
 const notice = get('notice');
 function dismissImport() {
-  const repairId = route().id;
-  location.hash = repairId ? href('read', 'source', repairId) : '#home';
+  const { page, id } = route();
+  location.hash = id ? href('read', 'source', id) : href(page);
 }
 get('close-import').onclick = dismissImport;
 importDialog.oncancel = event => { event.preventDefault(); dismissImport(); };
@@ -190,6 +190,26 @@ pointButton.onclick = () => {
   setPointing(true);
   scrapbook.pick((piece) => primeTutor({ label: piece.label, surface: 'home', source: piece.source }), () => setPointing(false));
 };
+function renderLibrary() {
+  const list = get('library-readings');
+  const focused = list.contains(document.activeElement) && document.activeElement.id;
+  const readings = libraryReadings(state);
+  list.hidden = !readings.length;
+  get('library-empty').hidden = Boolean(readings.length);
+  list.replaceChildren(...readings.map(({ id, title, progress, finished }) => {
+    const row = node('li');
+    const entry = link(undefined, href('read', 'library', id));
+    entry.id = 'library-reading-' + id;
+    const name = node('span', title, 'library-name');
+    if (/\p{Script=Han}/u.test(title)) name.lang = 'zh';
+    const place = progress ? 'In progress · paragraph ' + progress.at + ' of ' + progress.of
+      : finished ? 'Finished' : 'Not started';
+    entry.append(name, node('span', place, 'library-place'));
+    row.append(entry);
+    return row;
+  }));
+  if (focused) get(focused)?.focus({ preventScroll: true });
+}
 function renderWall(clusters) {
   const { practice, practiceTime, reading, conversation, piece, pieceCount } = wallOffers(state, clusters);
   const ticket = get('wall-practice');
@@ -804,6 +824,7 @@ function renderState() {
   capture.watch(state.wordIntakes);
   reader.render(state);
   renderWall(scrapbook.render());
+  if (page === 'library') renderLibrary();
   markBusy(busy);
 }
 function focusTarget(el) {
@@ -819,10 +840,11 @@ async function navigate(initial = false) {
     history.replaceState(null, '', '#home/import');
   }
   const target = route();
-  if (importDialog.open && !(target.page === 'home' && target.kind === 'import')) {
+  const importing = (target.page === 'home' || target.page === 'library') && target.kind === 'import';
+  if (importDialog.open && !importing) {
     reader.closeImport();
     get('layout').before(notice);
-    if (target.page === 'home' && !target.kind) importReturnFocus?.focus({ preventScroll: true });
+    if (target.page === previous && !target.kind) importReturnFocus?.focus({ preventScroll: true });
   }
   annotations.close();
   page = target.page;
@@ -856,9 +878,13 @@ async function navigate(initial = false) {
   if (page === 'scrapbook' && previous === 'read' && !target.kind) {
     scrapbook.showReading(reader.documentId());
   }
-  if (page === 'home' && target.kind === 'import') {
+  if (page === 'library') {
+    renderLibrary();
+    if (previous === 'read' && !target.kind) get('library-reading-' + reader.documentId())?.focus();
+  }
+  if (importing) {
     if (!importDialog.open) {
-      importReturnFocus = importUrl ? get('word-text') : get('wall-read');
+      importReturnFocus = page === 'library' ? get('library-import') : importUrl ? get('word-text') : get('wall-read');
       importDialog.append(notice);
       reader.openImport(importUrl, target.id);
       importUrl = '';
@@ -884,9 +910,9 @@ async function navigate(initial = false) {
   if (page === 'chat' && target.kind === 'thread') chatDraft.focus({ preventScroll: true });
   if (page === 'read') {
     const requested = note ? note.anchor.ownerId + '/' + note.anchor.startId
-      : target.kind === 'source' && target.id ? target.id : state.reading.documentId;
+      : (target.kind === 'source' || target.kind === 'library') && target.id ? target.id : state.reading.documentId;
     if (!reader.openReference(requested)) showError('This reading location could not be found.');
-    reader.enter();
+    reader.enter(target.kind === 'library');
   }
   if (note) {
     if (page === 'chat' && note.anchor.ownerId !== state.activeThreadId) {
@@ -1213,7 +1239,7 @@ get('tutor-form').onsubmit = (e) => {
     submit({ type: 'tutor', message, surface: 'home', source: label, ...target });
     return;
   }
-  const context = ui.tutorContext || { surface: page === 'scrapbook' ? 'home' : page, source, referenceId };
+  const context = ui.tutorContext || { surface: page === 'scrapbook' || page === 'library' ? 'home' : page, source, referenceId };
   const sourceLabel = context.label || (page === 'chat' ? thread().title : page === 'read' ? reader.title() : undefined);
   submit({ type: 'tutor', message, source: context.source, surface: context.surface, referenceId: context.referenceId, sourceLabel });
 };

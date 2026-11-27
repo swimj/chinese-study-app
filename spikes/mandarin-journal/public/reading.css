@@ -73,15 +73,15 @@ body[data-view='read'] .page.article {
   margin-inline: auto;
   padding: max(3.75rem, 6vh) clamp(1.5rem, 5vw, 3.5rem) 6rem;
 }
-body:is([data-view='read'], [data-view='chat'], [data-view='practice']) #tutor {
+body:is([data-view='read'], [data-view='library'], [data-view='chat'], [data-view='practice']) #tutor {
   position: fixed;
   inset: auto 1rem max(1rem, env(safe-area-inset-bottom)) auto;
   margin: 0;
 }
-body:is([data-view='read'], [data-view='chat'], [data-view='practice']) .layout:not(.with-tutor) #tutor { width: 7.7rem; }
+body:is([data-view='read'], [data-view='library'], [data-view='chat'], [data-view='practice']) .layout:not(.with-tutor) #tutor { width: 7.7rem; }
 @media (min-width: 861px) {
   body[data-view='read'] .with-tutor .article { right: min(27rem, 35vw); }
-  body:is([data-view='read'], [data-view='chat'], [data-view='practice']) .with-tutor #tutor {
+  body:is([data-view='read'], [data-view='library'], [data-view='chat'], [data-view='practice']) .with-tutor #tutor {
     inset: 0 0 0 auto;
     width: min(27rem, 35vw);
     display: flex;
@@ -89,9 +89,9 @@ body:is([data-view='read'], [data-view='chat'], [data-view='practice']) .layout:
     border-radius: 0;
     border-width: 0 0 0 1px;
   }
-  body:is([data-view='read'], [data-view='chat'], [data-view='practice']) .with-tutor .tutor-fold { flex: 1; min-height: 0; }
-  body:is([data-view='read'], [data-view='chat'], [data-view='practice']) .with-tutor #tutor-body { display: flex; flex-direction: column; }
-  body:is([data-view='read'], [data-view='chat'], [data-view='practice']) .with-tutor .thread { flex: 1; min-height: 0; height: auto; }
+  body:is([data-view='read'], [data-view='library'], [data-view='chat'], [data-view='practice']) .with-tutor .tutor-fold { flex: 1; min-height: 0; }
+  body:is([data-view='read'], [data-view='library'], [data-view='chat'], [data-view='practice']) .with-tutor #tutor-body { display: flex; flex-direction: column; }
+  body:is([data-view='read'], [data-view='library'], [data-view='chat'], [data-view='practice']) .with-tutor .thread { flex: 1; min-height: 0; height: auto; }
 }
 
 /* Entry and resume focus these text nodes so keyboard reading starts at the passage. */

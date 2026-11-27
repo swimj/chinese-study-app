@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { buildScrapbook, wallOffers } from './public/scrapbook.js';
+import { buildScrapbook, libraryReadings, wallOffers } from './public/scrapbook.js';
 import { isReadingFinished } from './public/reading.js';
 
 const readingLabel = (state, id) => state.reading.documents.find((d) => d.id === id)?.title || id;
@@ -118,6 +118,29 @@ test('only a saved last paragraph finishes a reading, including a one-paragraph 
   assert.equal(isReadingFinished(kiosk, 'missing'), false);
   assert.equal(isReadingFinished(encore, undefined), false);
   assert.equal(isReadingFinished(encore, 'e1'), true);
+});
+
+test('Library puts unfinished bookmarks first, then unopened readings, then finished, newest additions first', () => {
+  const state = journal();
+  state.reading.documents.push(
+    { ...encore, id: 'poem' }, { ...kiosk, id: 'essay' },
+    { ...encore, id: 'letter' }, { ...encore, id: 'postcard' },
+  );
+  state.reading.positions = { kiosk: 'p2', essay: 'p1', encore: 'e1', postcard: 'e1' };
+  const entries = libraryReadings(state);
+  assert.deepEqual(entries.map(r => r.id), ['essay', 'kiosk', 'letter', 'poem', 'postcard', 'encore']);
+  assert.deepEqual(entries[0].progress, { at: 1, of: 3 });
+  assert.deepEqual(entries[1].progress, { at: 2, of: 3 });
+  assert.deepEqual(entries.slice(2, 4), ['letter', 'poem'].map(id => ({ id, title: encore.title })));
+  assert.ok(entries.slice(4).every(r => r.finished && !r.progress));
+});
+
+test('Library follows archive and restore, and a missing bookmark leaves the reading available to start', () => {
+  const state = journal({ board: { archivedGroups: ['read:encore'], deletedGroups: ['read:kiosk'] } });
+  assert.deepEqual(libraryReadings(state), []);
+  state.board.archivedGroups = [];
+  state.reading.positions.encore = 'missing';
+  assert.deepEqual(libraryReadings(state), [{ id: encore.id, title: encore.title }]);
 });
 
 test('the wall passes over a recently finished reading and follows an earlier bookmark on reread', () => {

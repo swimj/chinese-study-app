@@ -1,5 +1,5 @@
-/* Conversation and practice share the reader's desk and its folding tutor. */
-body:is([data-view="chat"], [data-view="practice"]) {
+/* The study rooms share the reader's desk and its folding tutor. */
+body:is([data-view="library"], [data-view="chat"], [data-view="practice"]) {
   min-height: 100dvh;
   background: var(--desk-dots) 0 0 / 26px 26px var(--table);
 
@@ -27,11 +27,56 @@ body:is([data-view="chat"], [data-view="practice"]) {
   & .journal > footer { width: min(100%, 44rem); margin-inline: auto; }
 }
 @media (min-width: 861px) {
-  body:is([data-view="chat"], [data-view="practice"]) .journal:has(.with-tutor) {
+  body:is([data-view="library"], [data-view="chat"], [data-view="practice"]) .journal:has(.with-tutor) {
     width: calc(100% - min(27rem, 35vw));
     margin-inline: 0 auto;
   }
 }
+
+.library-index {
+  --margin: clamp(1.4rem, 5vw, 3.3rem);
+  margin-top: .8rem;
+  padding-block: 1.8rem 2rem;
+  background: linear-gradient(#e7b9a9 0 0) calc(var(--margin) - .85rem) top / 1px 100% no-repeat,
+    var(--paper);
+  border: 1px solid #d5dbce;
+  border-radius: 2px;
+  box-shadow: 1px 3px var(--card), 1px 4px #c9cbb9, 2px 7px var(--paper), 2px 8px #cbd3c5, 1px 14px 22px -12px #344c3938;
+}
+.library-index header, .library-index li a, #library-empty {
+  padding-inline: var(--margin) clamp(1rem, 4vw, 2.25rem);
+}
+.library-index header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: .35rem 1.25rem;
+  padding-bottom: 1.1rem;
+  border-bottom: 3px double #b6c6bb;
+}
+.study-page.library .library-index h1 {
+  margin: 0;
+  font-family: 'Wall handwriting', var(--serif);
+  font-size: clamp(1.9rem, 5vw, 3.75rem);
+}
+#library-import { padding-block: .4rem; color: var(--solid); text-decoration: underline; text-underline-offset: .2em; }
+#library-readings { list-style: none; margin: 0; padding: 0; }
+.library-index li a {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: .2rem;
+  padding-block: 1rem;
+  border-bottom: 1px solid #c7d4cc;
+  overflow-wrap: anywhere;
+}
+.library-index li a:hover { text-decoration: none; background: #78947a0c; }
+.library-index li a:hover .library-name { text-decoration: underline; text-underline-offset: .2em; }
+.library-index li a:focus-visible { outline-offset: -3px; }
+.library-name { font: 500 1.55rem/1.45 var(--serif); }
+.library-place, #library-empty { color: var(--quiet); }
+#library-empty { margin: 1.75rem 0; font: 1.2rem/1.5 var(--serif); }
 
 .practice-topline {
   display: flex;
@@ -159,7 +204,7 @@ body:is([data-view="chat"], [data-view="practice"]) {
   margin: .65rem 0 0;
 }
 @media (max-width: 860px) {
-  html:has(body:is([data-view="chat"], [data-view="practice"])) {
+  html:has(body:is([data-view="library"], [data-view="chat"], [data-view="practice"])) {
     scroll-padding-bottom: calc(4.5rem + env(safe-area-inset-bottom));
   }
 }

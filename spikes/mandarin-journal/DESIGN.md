@@ -48,7 +48,7 @@ what's inside them changes.
 | Landmark | Leads to | Today's offer, for example |
 | --- | --- | --- |
 | **Practice** | A practice session | "10 minutes · 2 words waiting for recall" |
-| **Read** | The reader | The reading underway, or bringing in a new one |
+| **Read** | The reader, with a separate door to the Library | The reading underway, or bringing in a new one |
 | **Talk** | The root chat and projects | Pick up a project, or just talk |
 | **Scrapbook** | Everything the learner has kept, as a room | What was added recently |
 
@@ -85,7 +85,7 @@ The learner steps from Home into a room. Rooms can be shaped very
 differently, but they are built from the same materials: the same paper, the
 same tutor, the same way back, and no form chrome.
 
-- **Read** is the most finished room.
+- **The Library** behind Read has a browse view of the learner’s readings and a reader for one piece. The wall keeps one offer and a door to browse. The [reading index](design/library/browse.png) also offers import.
 - **Practice** keeps its focus: it is the one place where Typeform-style
   focus, one thing at a time, is the reference.
 - **The Scrapbook** is what today's Home table becomes: the collection of
@@ -344,3 +344,4 @@ These describe the prototype now, not lasting rules.
 | 2026-11-25 | What the partner explains or recasts counts as shown; practice parses it asynchronously | Justin, design conversation |
 | 2026-11-25 | Desktop V1 direction: the wall (urban plan C), with the small interaction ideas | Justin, canvas review |
 | 2026-11-25 | The wall is Home's surface; the town is the metaphor for drilling into rooms. a small personalization gesture (such as re-pinning) is welcome but not essential | Justin, canvas review |
+| 2026-11-26 | Read carries one offer and a Library door. The Library holds the reading index and reader. | Justin, Library packet |
