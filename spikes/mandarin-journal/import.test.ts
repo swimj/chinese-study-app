@@ -147,13 +147,19 @@ test('owns article snapshots per journal, resuming, annotating, saving and discu
     // Reopen a journal saved before URL imports existed.
     journal.close();
     const db = new DatabaseSync(file);
-    db.exec("UPDATE journal SET body=json_remove(body, '$.reading.imports')");
+    db.prepare(`UPDATE journal SET body=json_set(json_remove(body, '$.reading.imports', '$.reading.bookmarkedAt'),
+      '$.reading.documentId', ?)`).run(seed.id);
     db.close();
     journal = openJournal(file, backend);
+    assert.ok(!Object.hasOwn(journal.get().reading, 'documentId'));
     const request = { id: randomUUID(), type: 'importReading' as const, url: address.href };
     const added = await journal.act(request);
     const doc = added.reading.documents.at(-1)!;
-    assert.equal(added.reading.documentId, doc.id);
+    assert.equal(added.documentId, doc.id);
+    const stored = new DatabaseSync(file, { readOnly: true });
+    try {
+      assert.equal(stored.prepare("SELECT json_type(body, '$.reading.documentId') legacy FROM journal").get()?.legacy, null);
+    } finally { stored.close(); }
     assert.equal(other.get().reading.documents.length, 2);
     const where = { documentId: doc.id, paragraphId: 'p1' };
     await journal.act({ id: randomUUID(), type: 'readingPosition', ...where });

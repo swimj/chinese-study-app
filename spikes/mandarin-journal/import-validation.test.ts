@@ -76,16 +76,17 @@ test('rechecks an earlier gate snapshot without retargeting its notes or duplica
     const legacy = old.documents[2];
     assert.ok('importWarning' in legacy);
     assert.ok('canPaste' in legacy && legacy.canPaste === true);
-    assert.notEqual(old.documentId,gate.id);
+    assert.ok(!Object.hasOwn(old, 'documentId'));
     await journal.act({
       type: 'annotate', id: randomUUID(), documentId: gate.id, paragraphId: 'p1',
       quote: '环境异常', text: 'What does this notice say?',
     });
     candidate = reading;
-    const good=(await journal.act(action())).reading;
-    assert.equal(good.documents.length,4);
+    const good = await journal.act(action());
+    assert.equal(good.reading.documents.length, 4);
+    assert.equal(good.documentId, good.reading.documents.at(-1)?.id);
     assert.notEqual(good.documentId,gate.id);
-    assert.equal((await journal.act(action())).reading.documentId,good.documentId);
+    assert.equal((await journal.act(action())).documentId,good.documentId);
     assert.equal(journal.get().annotationThreads[0].anchor.ownerId, gate.id);
     assert.equal(attempts,2);
   } finally { journal.close(); rmSync(folder, { recursive: true, force: true }); }
@@ -133,32 +134,65 @@ test('a learner can paste plain text after verification and reuse that reading a
       e => e instanceof ImportError && e.status === 400);
     assert.deepEqual(journal.get().reading, before);
     const paste = { ...request(), pastedText: '\r\n河岸\r\n\r\n春雨落下。\n<b>第二段</b>' };
-    const added = (await journal.act(paste)).reading;
-    const doc = added.documents.at(-1)!;
+    const added = await journal.act(paste);
+    const doc = added.reading.documents.at(-1)!;
     assert.equal(doc.title, '河岸');
     assert.equal(doc.sourceUrl, url.href);
     assert.deepEqual(doc.paragraphs, [
       { id: 'p1', text: '河岸' }, { id: 'p2', text: '春雨落下。' }, { id: 'p3', text: '<b>第二段</b>' },
     ]);
     assert.equal(added.documentId, doc.id);
-    assert.deepEqual((await journal.act(paste)).reading, added);
+    assert.deepEqual(await journal.act(paste), added);
     await journal.act({ type: 'annotate', id: randomUUID(), documentId: doc.id, paragraphId: 'p2', quote: '春雨', text: 'Spring rain' });
     journal.close();
     journal = openJournal(path, backend);
-    const reopened = await journal.act(request());
-    assert.equal(reopened.reading.documentId, doc.id);
+    const openUrl = request();
+    const reopened = await journal.act(openUrl);
+    assert.equal(reopened.documentId, doc.id);
     const other = await journal.act({ ...request(), pastedText: '第二版' });
     const second = other.reading.documents.at(-1)!;
     assert.notEqual(second.id, doc.id);
     assert.equal(second.title, '第二版');
-    assert.equal(other.reading.documentId, second.id);
+    assert.equal(other.documentId, second.id);
     const earlier = await journal.act({ ...paste, id: randomUUID() });
     assert.equal(earlier.reading.documents.length, 4);
-    assert.equal(earlier.reading.documentId, doc.id);
+    assert.equal(earlier.documentId, doc.id);
     assert.deepEqual(earlier.reading.documents.find(d => d.id === doc.id), doc);
     assert.equal(earlier.annotationThreads[0].anchor.ownerId, doc.id);
-    assert.equal((await journal.act(request())).reading.documentId, second.id);
+    assert.equal((await journal.act(request())).documentId, second.id);
+    journal.close();
+    journal = openJournal(path, backend);
+    assert.equal((await journal.act(openUrl)).documentId, doc.id);
+    assert.equal((await journal.act(paste)).documentId, doc.id);
     assert.equal(downloads, 1);
+  } finally { journal.close(); rmSync(folder, { recursive: true, force: true }); }
+});
+
+test('old import receipts recover a unique snapshot and leave ambiguous URL imports in the Library', async () => {
+  const folder = mkdtempSync(join(tmpdir(), 'journal-receipt-upgrade-'));
+  const path = join(folder, 'journal.sqlite');
+  const request = () => ({ type: 'importReading' as const, id: randomUUID(), url: url.href });
+  let journal = openJournal(path);
+  try {
+    const paste = { ...request(), pastedText: '第一版' };
+    const first = (await journal.act(paste)).documentId;
+    const unique = request(), ambiguous = request();
+    await journal.act(unique);
+    await journal.act(ambiguous);
+    journal.close();
+
+    // Before imports returned an ID, only the request fingerprints were stored.
+    const db = new DatabaseSync(path);
+    db.exec('DROP TABLE reading_import_receipts');
+    db.close();
+    journal = openJournal(path);
+    assert.equal((await journal.act(unique)).documentId, first);
+    const second = await journal.act({ ...request(), pastedText: '第二版' });
+    assert.notEqual(second.documentId, first);
+    assert.equal((await journal.act(unique)).documentId, first);
+    assert.equal((await journal.act(paste)).documentId, first);
+    await assert.rejects(journal.act(ambiguous), /Open it from the Library/);
+    assert.deepEqual(journal.get().reading, second.reading);
   } finally { journal.close(); rmSync(folder, { recursive: true, force: true }); }
 });
 
@@ -184,6 +218,6 @@ test('pasting preserves a legacy gate and treats even explicitly chosen verifica
     assert.equal(added.annotationThreads[0].anchor.ownerId, gate.id);
     const again = await journal.act({ ...request, id: randomUUID() });
     assert.equal(again.reading.documents.length, 4);
-    assert.equal(again.reading.documentId, doc.id);
+    assert.equal(again.documentId, doc.id);
   } finally { journal.close(); rmSync(folder, { recursive: true, force: true }); }
 });

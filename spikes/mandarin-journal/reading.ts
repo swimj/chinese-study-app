@@ -75,14 +75,14 @@ export type Annotation = {
 };
 
 export type ReadingState = {
-  documentId: string;
+  bookmarkedAt: Record<string, string>;
   positions: Record<string, string>;
   imports: ImportedReading[];
   annotations: Annotation[];
 };
 
 export function initialReading(): ReadingState {
-  return { documentId: readingDocuments[0].id, positions: {}, annotations: [], imports: [] };
+  return { bookmarkedAt: {}, positions: {}, annotations: [], imports: [] };
 }
 
 export function documentsFor(reading: ReadingState) {
@@ -110,12 +110,14 @@ export function resolveReadingReference(referenceId: string, state: ReadingState
   return { document, paragraph, annotation };
 }
 
-export function applyReadingPosition(state: ReadingState, documentId: string, paragraphId: string, bookmarkOnly = false) {
+export function applyReadingPosition(state: ReadingState, documentId: string, paragraphId: string, at: string) {
   const { document, paragraph } = resolveReadingReference(documentId + '/' + paragraphId, state);
   if (!paragraph || document.id !== documentId || paragraph.id !== paragraphId) {
     throw new ReadingConflict('This passage is unavailable.');
   }
-  if (!bookmarkOnly) state.documentId = document.id;
+  // Preserve save order for bookmarks written in the same millisecond.
+  delete state.bookmarkedAt[document.id];
+  state.bookmarkedAt[document.id] = at;
   state.positions[document.id] = paragraph.id;
 }
 

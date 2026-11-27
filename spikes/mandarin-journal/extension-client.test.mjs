@@ -26,7 +26,7 @@ test('pairing accepts a device HTTPS origin and requests only that host', () => 
 test('import sends the reading only to the paired endpoint and opens the returned ID', async t => {
   const fetch = t.mock.method(globalThis, 'fetch', async () => Response.json({ documentId: 'article-exact' }));
   const link = await sendReading(pairing, reading);
-  assert.equal(link, origin + '/?from=extension#read/library/article-exact');
+  assert.equal(link, origin + '/#read/library/article-exact');
   assert.equal(fetch.mock.callCount(), 1);
   const [url, request] = fetch.mock.calls[0].arguments;
   assert.equal(url, origin + '/api/extension/import');

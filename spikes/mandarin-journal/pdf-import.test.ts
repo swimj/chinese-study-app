@@ -35,7 +35,7 @@ test('a PDF and its anchors survive restart, renaming the file, and another PDF 
     const state = await journal.act(request);
     const doc = state.reading.documents.at(-1)!;
     assert.equal(doc.id, 'pdf-' + request.fingerprint);
-    assert.equal(doc.id, state.reading.documentId);
+    assert.equal(doc.id, state.documentId);
     assert.equal(doc.importMethod, 'pdf');
     assert.equal('sourceUrl' in doc, false);
     assert.deepEqual(doc.paragraphs.slice(0, 2), [
@@ -57,7 +57,8 @@ test('a PDF and its anchors survive restart, renaming the file, and another PDF 
     assert.equal(Array.from(saved.detail).length, 221);
 
     const second = await journal.act(pdf(['大家好。'], 'b'.repeat(64)));
-    const secondId = second.reading.documentId;
+    const secondId = second.documentId;
+    assert.ok(secondId);
     assert.notEqual(secondId, doc.id);
     assert.equal(second.reading.documents.at(-1)!.title, doc.title);
     const both = await journal.act({ ...save, id: randomUUID(), source: secondId });
@@ -66,7 +67,7 @@ test('a PDF and its anchors survive restart, renaming the file, and another PDF 
     journal.close();
     journal = openJournal(file, backend);
     const again = await journal.act({ ...request, id: randomUUID(), title: '新文件名' });
-    assert.equal(again.reading.documentId, doc.id);
+    assert.equal(again.documentId, doc.id);
     assert.equal(again.reading.documents.length, state.reading.documents.length + 1);
     assert.deepEqual(again.reading.documents.find(d => d.id === doc.id), doc);
     assert.equal(again.reading.positions[doc.id], last.id);
