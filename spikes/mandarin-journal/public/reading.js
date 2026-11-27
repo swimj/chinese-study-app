@@ -52,7 +52,7 @@ function sourceFor(document, paragraph) {
 }
 
 export function createReading({
-  host, importPanel, submit, canSubmit, getPending, retryPending, discussInChinese, navigate, openAnnotation, refreshAnnotations,
+  host, importPanel, submit, canSubmit, getPending, retryPending, discussInChinese, openImported, openAnnotation, refreshAnnotations,
 }) {
   let state;
   let documentView;
@@ -70,10 +70,11 @@ export function createReading({
   let pasteUrl;
   let extractingPdf = false;
 
-  const back = node('a', 'Home', 'reader-home');
+  const back = node('a', undefined, 'reader-home');
+  const backLabel = node('span', 'Home');
   const arrow = node('span', '←');
   arrow.setAttribute('aria-hidden', 'true');
-  back.prepend(arrow);
+  back.append(arrow, backLabel);
   back.href = '#home';
   const title = node('h1');
   title.lang = 'zh';
@@ -316,15 +317,7 @@ export function createReading({
   }
 
   function update() {
-    if (!state?.reading || !documentView) return;
-    const position = state.reading.positions[documentView.id];
-    resume.hidden = !position || position === documentView.paragraphs[0].id || isReadingFinished(documentView, position);
-    const saved = state.saved.some(item => item.kind === 'Reading' && (
-      item.source === documentView.id || (!importedDocument(documentView) && item.title === documentView.title && !lookup(state, item.source))
-    ));
-    save.textContent = saved ? 'Reading saved' : 'Save reading';
-    save.disabled = busy || saved;
-    discuss.disabled = busy;
+    if (!state?.reading) return;
     const { action, busy: sending, error } = getPending();
     const importing = action?.type === 'importPdf' || action?.type === 'importReading';
     importProgress.hidden = !importing;
@@ -344,6 +337,16 @@ export function createReading({
     accept.disabled = blocked;
     pasteToggle.disabled = blocked;
     pasteSave.disabled = blocked;
+
+    if (!documentView) return;
+    const position = state.reading.positions[documentView.id];
+    resume.hidden = !position || position === documentView.paragraphs[0].id || isReadingFinished(documentView, position);
+    const saved = state.saved.some(item => item.kind === 'Reading' && (
+      item.source === documentView.id || (!importedDocument(documentView) && item.title === documentView.title && !lookup(state, item.source))
+    ));
+    save.textContent = saved ? 'Reading saved' : 'Save reading';
+    save.disabled = busy || saved;
+    discuss.disabled = busy;
   }
 
   function focusPassage(paragraphId) {
@@ -434,7 +437,7 @@ export function createReading({
     render(nextState) {
       state = nextState;
       if (!state.reading) return;
-      if (!documentView) mount(lookup(state, state.reading.documentId).document);
+      if (!documentView && state.reading.documents.length) mount(lookup(state, state.reading.documentId).document);
       applyEntry();
       update();
     },
@@ -497,7 +500,7 @@ export function createReading({
     imported() {
       resetImportFeedback();
       url.value = '';
-      navigate('read', state.reading.documentId);
+      openImported(state.reading.documentId);
     },
     documentId: () => documentView?.id,
     title: () => documentView?.title || 'Reading',
@@ -513,7 +516,9 @@ export function createReading({
       scrollIntent = 0;
       return available;
     },
-    enter() {
+    enter(fromLibrary) {
+      backLabel.textContent = fromLibrary ? 'Library' : 'Home';
+      back.href = fromLibrary ? '#library' : '#home';
       active = true;
       applyEntry();
     },

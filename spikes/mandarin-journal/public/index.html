@@ -41,12 +41,15 @@
                 <strong class="offer">Open practice</strong>
                 <span class="offer-detail"></span>
               </a>
-              <a class="pinned book-page" id="wall-read" href="#read">
-                <span class="sr">Read</span>
-                <strong class="offer">Open the reader</strong>
-                <span class="offer-detail" lang="zh"></span>
-                <span class="bookmark-note"></span>
-              </a>
+              <article class="pinned book-page">
+                <a id="wall-read" href="#read">
+                  <span class="sr">Read</span>
+                  <strong class="offer">Open the reader</strong>
+                  <span class="offer-detail" lang="zh"></span>
+                  <span class="bookmark-note"></span>
+                </a>
+                <a class="wall-secondary library-door" href="#library">Library <span aria-hidden="true">→</span></a>
+              </article>
               <article class="pinned postcard">
                 <a id="wall-talk" href="#chat"><span class="object-label">Talk</span>
                   <strong class="offer">Open Talk</strong></a>
@@ -76,12 +79,17 @@
                 </form>
               </section>
             </div>
-            <dialog class="home-import-panel" id="home-import" aria-labelledby="home-import-title">
-              <div class="home-import-head">
-                <h2 id="home-import-title">Import reading</h2>
-                <button class="home-import-close" id="close-import" type="button" aria-label="Close import">×</button>
-              </div>
-            </dialog>
+          </section>
+          <section data-page="library" hidden class="page study-page library" aria-labelledby="library-title">
+            <a class="room-home" href="#home">← Home</a>
+            <div class="library-index">
+              <header>
+                <h1 id="library-title">Library</h1>
+                <a id="library-import" href="#library/import">Import reading</a>
+              </header>
+              <p id="library-empty" hidden>Your Library is empty.</p>
+              <ul id="library-readings" aria-label="Readings" role="list"></ul>
+            </div>
           </section>
           <section data-page="scrapbook" hidden class="scrapbook" id="scrapbook">
             <h1 class="sr">Your scrapbook</h1>
@@ -205,6 +213,12 @@
       </footer>
       <p class="sr" id="pending" role="status" aria-live="polite"></p>
     </div>
+    <dialog class="home-import-panel" id="home-import" aria-labelledby="home-import-title">
+      <div class="home-import-head">
+        <h2 id="home-import-title">Import reading</h2>
+        <button class="home-import-close" id="close-import" type="button" aria-label="Close import">×</button>
+      </div>
+    </dialog>
     <dialog id="board-actions" class="board-dialog" aria-labelledby="board-action-title" aria-describedby="board-action-description">
       <h2 id="board-action-title"></h2>
       <p id="board-action-description"></p>

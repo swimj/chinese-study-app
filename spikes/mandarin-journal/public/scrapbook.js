@@ -16,6 +16,26 @@ function hiddenGroups(board) {
   return new Set([...(board?.archivedGroups || []), ...(board?.deletedGroups || [])]);
 }
 
+function readingPlace(doc, paragraphId) {
+  if (paragraphId === undefined) return {};
+  if (isReadingFinished(doc, paragraphId)) return { finished: true };
+  const index = doc.paragraphs.findIndex(p => p.id === paragraphId);
+  return index < 0 ? {} : { progress: { at: index + 1, of: doc.paragraphs.length } };
+}
+
+// Documents are the built-ins followed by imports in the order they arrived.
+export function libraryReadings({ reading, board }) {
+  const hidden = hiddenGroups(board);
+  const inProgress = [], notStarted = [], finished = [];
+  for (const doc of reading.documents.toReversed()) {
+    if (hidden.has('read:' + doc.id)) continue;
+    const place = readingPlace(doc, reading.positions[doc.id]);
+    const shelf = place.progress ? inProgress : place.finished ? finished : notStarted;
+    shelf.push({ id: doc.id, title: doc.title, ...place });
+  }
+  return [...inProgress, ...notStarted, ...finished];
+}
+
 function hash(text) {
   let h = 2166136261;
   for (const ch of text) h = Math.imul(h ^ ch.codePointAt(0), 16777619);
@@ -73,12 +93,7 @@ export function buildScrapbook(state, { readingLabel, media }) {
   for (const [id, paragraphId] of Object.entries(state.reading?.positions || {})) {
     const home = readingCluster(id);
     if (!home) continue;
-    if (isReadingFinished(home.doc, paragraphId)) {
-      home.finished = true;
-      continue;
-    }
-    const index = home.doc.paragraphs.findIndex((p) => p.id === paragraphId);
-    if (index >= 0) home.progress = { at: index + 1, of: home.doc.paragraphs.length };
+    Object.assign(home, readingPlace(home.doc, paragraphId));
   }
   for (const message of state.tutor || []) {
     if (message.kind !== 'observation' || message.reference?.kind === 'reflection') continue;

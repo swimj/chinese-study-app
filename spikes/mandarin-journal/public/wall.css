@@ -88,6 +88,15 @@ body[data-view="home"] {
     linear-gradient(#fffdf6 0 0) bottom / 100% calc(100% - 2.59rem) no-repeat;
   filter: drop-shadow(1px 3px 2px #59401e3b);
 }
+.book-page #wall-read { display: block; }
+.book-page .library-door {
+  display: inline-block;
+  margin-top: .85rem;
+  padding-block: .3rem;
+  border-top: 1px solid #c7ccbc;
+  color: var(--green-ink);
+  font: 600 1rem/1.5 var(--sans);
+}
 .postcard { --pin: #dfb756; padding: .68rem; background: #fffcf3; transform: rotate(-1.8deg); }
 .postcard a:first-child {
   display: flex; flex-direction: column; justify-content: flex-end; align-items: flex-start;
@@ -97,7 +106,7 @@ body[data-view="home"] {
 }
 .postcard .object-label { font-size: .66rem; margin-bottom: .2rem; }
 .postcard .offer { font-size: 1.43rem; }
-.postcard a:first-child::after, .shoebox a:first-child::after { content: ''; position: absolute; inset: 0; }
+.book-page a:first-child::after, .postcard a:first-child::after, .shoebox a:first-child::after { content: ''; position: absolute; inset: 0; }
 .pinned .wall-secondary { position: relative; }
 @media (min-width: 761px) {
   body:is([data-view="home"], [data-view="scrapbook"]) #tutor { width: min(27rem, 42vw); }
@@ -134,7 +143,7 @@ body[data-view="home"] {
 .wall .intake-line .primary { border-radius: 3rem; padding-inline: 1.2rem; }
 .room-home { display: inline-block; color: var(--solid); padding: .3rem .65rem; font-size: .95rem; }
 .dock .room-home { background: var(--paper); border-radius: .3rem; }
-body:is([data-view="chat"], [data-view="practice"]) .masthead { display: none; }
+body:is([data-view="library"], [data-view="chat"], [data-view="practice"]) .masthead { display: none; }
 
 @media (hover: hover) and (prefers-reduced-motion: no-preference) {
   .pinned { transition: translate 150ms ease-out; }
