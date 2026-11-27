@@ -441,7 +441,7 @@ export function createReading({
       applyEntry();
       update();
     },
-    openImport(prefill, repairId) {
+    openImport(prefill, repairId, startImport = false) {
       if (!importPanel.open) importPanel.showModal();
       const repair = repairId && lookup(state, repairId)?.document;
       if (repair?.canPaste) openPaste(repair.sourceUrl);
@@ -457,7 +457,8 @@ export function createReading({
             pastedText.value = action.pastedText;
           }
         }
-        (pasteBox.hidden ? url : pastedText).focus();
+        (preview ? previewTitle : pasteBox.hidden ? url : pastedText).focus();
+        if (startImport && pasteBox.hidden && !preview && importError.hidden) importForm.requestSubmit();
       }
     },
     closeImport() {

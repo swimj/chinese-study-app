@@ -15,7 +15,91 @@ export function wordForTurn(state, message) {
   return state.wordIntakes.find(item => item.id === message.wordIntakeId && item.requestId === message.wordRequestId);
 }
 
-export function createCapture({ get, submit, canSubmit, ui, persist, refresh, openReading }) {
+function isReadingLink(text) {
+  return /^https?:\/\/\S+$/i.test(text.trim());
+}
+function offersContext(text) {
+  return /\p{Script=Han}/u.test(text) && !isReadingLink(text);
+}
+
+// The trial changes when a draft is composed. Both slips send the same capture action.
+function wireTrial({ variant, get, ui, persist, send }) {
+  const form = get('word-form');
+  const body = get('word-text');
+  const line = body.closest('.intake-line');
+  const details = get('word-context-toggle');
+  const summary = details.querySelector('summary');
+  const note = get('word-context');
+  const heading = get('word-heading');
+  const back = get('word-back');
+  const next = get('word-next');
+  const skip = get('word-skip');
+  const submit = get('capture-submit');
+  const stepwise = variant === 'stepwise';
+  form.dataset.slip = variant;
+  form.append(submit);
+
+  function render() {
+    const eligible = offersContext(body.value);
+    const takingNote = stepwise && eligible && ui.wordStep === 'context';
+    line.hidden = takingNote;
+    back.hidden = !takingNote;
+    skip.hidden = !takingNote;
+    next.hidden = !stepwise || !eligible || takingNote;
+    submit.hidden = !next.hidden;
+    if (takingNote) {
+      back.textContent = '← ' + body.value.trim();
+      back.ariaLabel = 'Edit original text · ' + body.value.trim();
+    }
+    heading.textContent = takingNote ? 'Where did you meet it?' : 'Jot something down';
+    details.hidden = !eligible || (stepwise && !takingNote);
+    if (stepwise || !eligible) details.open = takingNote;
+    summary.hidden = stepwise;
+    summary.textContent = details.open ? 'Where you met it' : note.value.trim() ? 'Edit context' : 'Add context';
+    submit.textContent = isReadingLink(body.value) ? 'Import reading' : 'Send';
+  }
+  function turn(toContext) {
+    if (toContext) ui.wordStep = 'context';
+    else delete ui.wordStep;
+    persist();
+    render();
+    (toContext ? note : body).focus();
+  }
+  summary.onclick = event => {
+    event.preventDefault();
+    details.open = !details.open;
+    render();
+    if (details.open) note.focus();
+  };
+  back.onclick = () => turn(false);
+  skip.onclick = () => send('');
+  form.onsubmit = event => {
+    event.preventDefault();
+    if (!next.hidden) turn(true);
+    else send(offersContext(body.value) ? note.value.trim() : '');
+  };
+  form.onkeydown = event => {
+    if (event.isComposing || event.keyCode === 229) return;
+    if (event.key === 'Escape') {
+      event.preventDefault();
+      if (event.repeat) return;
+      if (!skip.hidden) send('');
+      else if (details.open) {
+        details.open = false;
+        render();
+        body.focus();
+      } else heading.focus();
+    } else if (event.key === 'Enter' && (event.target === body || event.target === note)
+        && !event.shiftKey && !event.altKey && !event.metaKey && !event.ctrlKey) {
+      event.preventDefault();
+      if (!event.repeat) form.requestSubmit();
+    }
+  };
+  render();
+  return render;
+}
+
+export function createCapture({ get, submit, canSubmit, ui, persist, refresh, openReading, variant }) {
   const form = get('word-form');
   const input = get('word-text');
   const context = get('word-context');
@@ -24,30 +108,36 @@ export function createCapture({ get, submit, canSubmit, ui, persist, refresh, op
   let pollTimer;
   let polling = false;
   let hasPendingWords = false;
+  const trial = variant === 'inline' || variant === 'stepwise';
 
   input.value = ui.wordDraft || '';
   context.value = ui.wordContext || '';
   contextToggle.open = Boolean(context.value);
+  form.onsubmit = event => {
+    event.preventDefault();
+    send(context.value.trim());
+  };
+  const renderSlip = trial && wireTrial({ variant, get, ui, persist, send });
   form.oninput = () => {
+    if (trial) renderSlip();
     ui.wordDraft = input.value;
     ui.wordContext = context.value;
     persist();
   };
-  form.onsubmit = event => {
-    event.preventDefault();
+  function send(source) {
     const text = input.value.trim();
-    const source = context.value.trim();
     if (!text || !canSubmit()) return;
-    // The pending action keeps this exact submission through a reload or retry.
-    // Free the composer immediately so a new (even identical) draft stays independent.
+    // The pending action owns this submission. A new draft stays independent.
     setDraft('', '');
+    if (trial) input.focus();
     submit({ type: 'capture', text, ...(source ? { context: source } : {}) });
-  };
-
+  }
   function setDraft(text, source) {
     input.value = text;
     context.value = source;
     contextToggle.open = Boolean(source);
+    delete ui.wordStep;
+    if (trial) renderSlip();
     ui.wordDraft = text;
     ui.wordContext = source;
     persist();
@@ -134,5 +224,5 @@ export function createCapture({ get, submit, canSubmit, ui, persist, refresh, op
     if (!hasPendingWords) error.hidden = true;
     schedule();
   }
-  return { offerReading, restore, watch };
+  return { offerReading, restore, watch, importOnSend: trial };
 }

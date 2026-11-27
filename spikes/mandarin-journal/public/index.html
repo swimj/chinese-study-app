@@ -63,9 +63,10 @@
               </article>
               <span class="wall-sticker" aria-hidden="true" lang="zh">加油</span>
               <section class="capture" aria-labelledby="word-heading">
-                <h2 id="word-heading">Jot something down</h2>
+                <h2 id="word-heading" tabindex="-1">Jot something down</h2>
                 <p id="word-refresh-error" class="sub" hidden></p>
                 <form id="word-form">
+                  <button type="button" id="word-back" class="slip-back" aria-label="Edit original text" hidden></button>
                   <div class="intake-line">
                     <label for="word-text" class="sr">A word, a link, or a sentence</label>
                     <input id="word-text" maxlength="2048" required placeholder="A word, a link, a sentence…" autocomplete="off" />
@@ -76,6 +77,8 @@
                     <label for="word-context" class="sr">Where you saw or heard it</label>
                     <textarea id="word-context" maxlength="2000" rows="2" placeholder="A sentence, a place, a person…"></textarea>
                   </details>
+                  <button type="submit" id="word-next" hidden>Continue ↵</button>
+                  <button type="button" id="word-skip" class="slip-skip" data-mutation hidden>Skip &amp; send <kbd>Esc</kbd></button>
                 </form>
               </section>
             </div>
