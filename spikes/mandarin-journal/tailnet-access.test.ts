@@ -38,7 +38,7 @@ printf '%s\\n' "$TAILSCALE_TEST_STATUS"
 });
 after(() => rmSync(root, { recursive: true, force: true }));
 
-async function start(t: TestContext, profile: 'live' | 'fixture' | 'copy', cli: string, status: string) {
+async function start(t: TestContext, profile: 'live' | 'fixture' | 'copy', cli: string, status: string, extensionToken?: string) {
   const socket = createServer();
   socket.listen(0, '127.0.0.1');
   await once(socket, 'listening');
@@ -56,6 +56,7 @@ async function start(t: TestContext, profile: 'live' | 'fixture' | 'copy', cli: 
       JOURNAL_PORT: String(port),
       JOURNAL_PROFILE: profile,
       JOURNAL_TAILSCALE_BIN: cli,
+      JOURNAL_EXTENSION_TOKEN: extensionToken,
       TAILSCALE_TEST_STATUS: status,
     },
   });
@@ -83,32 +84,78 @@ async function start(t: TestContext, profile: 'live' | 'fixture' | 'copy', cli: 
   return { port, stdout, stderr };
 }
 
-function send(port: number, host: string, options: { origin?: string; write?: boolean; forwardedHost?: string } = {}) {
-  return new Promise<number>((resolve, reject) => {
-    const { origin, write, forwardedHost } = options;
+function journalRequest(port: number, host: string, path: string, options: {
+  origin?: string; authorization?: string; forwardedHost?: string; payload?: unknown; method?: string;
+} = {}) {
+  return new Promise<{ status: number; text: string }>((resolve, reject) => {
+    const { origin, authorization, forwardedHost, payload } = options;
     const req = request({
       hostname: '127.0.0.1',
       port,
-      method: write ? 'POST' : 'GET',
-      path: write ? '/api/action' : '/',
+      method: options.method ?? (payload === undefined ? 'GET' : 'POST'),
+      path,
       headers: {
         Host: host,
         ...(origin !== undefined ? { Origin: origin } : {}),
         ...(forwardedHost ? { 'X-Forwarded-Host': forwardedHost, 'X-Forwarded-Proto': 'https' } : {}),
-        ...(write ? { 'Content-Type': 'application/json' } : {}),
+        ...(authorization !== undefined ? { Authorization: authorization } : {}),
+        ...(payload !== undefined ? { 'Content-Type': 'application/json' } : {}),
       },
     }, res => {
-      res.on('end', () => resolve(res.statusCode ?? 0));
+      let text = '';
+      res.setEncoding('utf8').on('data', chunk => { text += chunk; });
+      res.on('end', () => resolve({ status: res.statusCode ?? 0, text }));
       res.on('error', reject);
-      res.resume();
     });
     req.setTimeout(3000, () => req.destroy(new Error('Journal request timed out.')));
     req.on('error', reject);
-    req.end(write ? JSON.stringify({ id: randomUUID(), type: 'settings', pictures: 'off' }) : undefined);
+    req.end(JSON.stringify(payload));
   });
 }
 
+async function send(port: number, host: string, options: { origin?: string; write?: boolean; forwardedHost?: string } = {}) {
+  const payload = options.write ? { id: randomUUID(), type: 'settings', pictures: 'off' } : undefined;
+  return (await journalRequest(port, host, options.write ? '/api/action' : '/', { ...options, payload })).status;
+}
+
 const running = (name: string) => JSON.stringify({ BackendState: 'Running', Self: { DNSName: name } });
+
+test('only an authenticated extension can post a rendered reading on an allowed host', async t => {
+  const token = randomUUID();
+  const port = (await start(t, 'live', tailscale, running(tailnetHost), token)).port;
+  const path = '/api/extension/import';
+  const origin = 'chrome-extension://' + 'a'.repeat(32);
+  const authorization = 'Bearer ' + token;
+  const payload = { sourceUrl: 'https://example.org/chapter', title: '新的一天', paragraphs: [{ text: '文章。' }] };
+  const valid = { origin, authorization, payload };
+  const post = (options: Parameters<typeof journalRequest>[3]) => journalRequest(port, tailnetHost, path, options);
+  for (const badToken of [undefined, 'Bearer wrong', token]) {
+    const denied = await post({ ...valid, authorization: badToken });
+    assert.equal(denied.status, 403);
+    assert.match(JSON.parse(denied.text).error, /token/);
+  }
+  for (const otherOrigin of [undefined, 'null', tailnetOrigin, 'https://example.org', origin + '.invalid'])
+    assert.equal((await post({ ...valid, origin: otherOrigin })).status, 403);
+  for (const [method, route] of [
+    ['GET', path], ['GET', '/api/state'], ['GET', '/'], ['POST', '/api/action'], ['POST', '/api/reader-lookup'],
+  ]) assert.equal((await journalRequest(port, tailnetHost, route, {
+    ...valid, method, payload: method === 'GET' ? undefined : payload,
+  })).status, 403, method + ' ' + route);
+  assert.equal((await journalRequest(port, 'other.host', path, valid)).status, 403);
+  assert.equal((await post({ ...valid, payload: { type: 'settings', pictures: 'off' } })).status, 400);
+  assert.equal((await post({ ...valid, payload: { ...payload, paragraphs: [] } })).status, 422);
+  assert.equal((await post({ ...valid, payload: { ...payload, paragraphs: [{ text: '字'.repeat(120001) }] } })).status, 413);
+  const imported = await post(valid);
+  assert.equal(imported.status, 200);
+  const { documentId } = JSON.parse(imported.text);
+  assert.equal(typeof documentId, 'string');
+  assert.deepEqual(JSON.parse(imported.text), { documentId });
+  assert.deepEqual(await post(valid), imported);
+  assert.equal(await send(port, tailnetHost, { origin: tailnetOrigin, write: true }), 200);
+
+  const disabled = await start(t, 'fixture', tailscale, '');
+  assert.equal((await journalRequest(disabled.port, 'localhost:' + disabled.port, path, valid)).status, 403);
+});
 
 test('the live server discovers its HTTPS host and enforces the matching origin', async t => {
   const { port, stdout } = await start(t, 'live', tailscale, running(`${tailnetHost.toUpperCase()}.`));

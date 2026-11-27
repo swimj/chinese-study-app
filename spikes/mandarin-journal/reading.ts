@@ -5,7 +5,7 @@ type ReadingContent = {
   paragraphs: { id: string; text: string; kind?: 'heading' }[];
 };
 
-export type WebReading = ReadingContent & { sourceUrl: string; importMethod?: 'paste' };
+export type WebReading = ReadingContent & { sourceUrl: string; importMethod?: 'paste' | 'extension' };
 type ImportedReading = WebReading | (ReadingContent & { sourceUrl?: never; importMethod: 'pdf' });
 export type ReadingDocument = ImportedReading | (ReadingContent & { sourceUrl?: never; importMethod?: never });
 
@@ -110,12 +110,12 @@ export function resolveReadingReference(referenceId: string, state: ReadingState
   return { document, paragraph, annotation };
 }
 
-export function applyReadingPosition(state: ReadingState, documentId: string, paragraphId: string) {
+export function applyReadingPosition(state: ReadingState, documentId: string, paragraphId: string, bookmarkOnly = false) {
   const { document, paragraph } = resolveReadingReference(documentId + '/' + paragraphId, state);
   if (!paragraph || document.id !== documentId || paragraph.id !== paragraphId) {
     throw new ReadingConflict('This passage is unavailable.');
   }
-  state.documentId = document.id;
+  if (!bookmarkOnly) state.documentId = document.id;
   state.positions[document.id] = paragraph.id;
 }
 

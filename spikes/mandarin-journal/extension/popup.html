@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Mandarin Journal</title>
+  <link rel="stylesheet" href="style.css">
+  <script type="module" src="popup.js"></script>
+</head>
+<body class="popup">
+  <main>
+    <h1>Mandarin Journal</h1>
+    <div id="preview" hidden>
+      <strong id="page-title"></strong>
+      <p id="paragraph-count"></p>
+    </div>
+    <div class="actions">
+      <button id="import" type="button" disabled>Import</button>
+      <button id="options" type="button" class="quiet">Pair Journal</button>
+    </div>
+    <p id="status" role="status">Finding reading text…</p>
+    <a id="reading" target="_blank" rel="noopener" hidden>Open in journal</a>
+  </main>
+</body>
+</html>

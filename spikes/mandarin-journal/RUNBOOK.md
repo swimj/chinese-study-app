@@ -67,6 +67,24 @@ If discovery fails, startup reports loopback-only access. Check Tailscale and
 restart the journal to discover its name again. Copy and fixture profiles use
 loopback only.
 
+## Send a reading from Chrome
+
+1. On the mini, generate a token with `openssl rand -hex 32`. Put the value in
+   `JOURNAL_EXTENSION_TOKEN` in the ignored `spikes/mandarin-journal/.env`
+   (one line, `JOURNAL_EXTENSION_TOKEN=<value>`). Restart the live journal from
+   the primary checkout. Removing the variable and restarting disables extension
+   imports. The existing private Tailscale Serve setup above is sufficient.
+2. On the laptop, open `chrome://extensions`, enable **Developer mode**, choose
+   **Load unpacked**, and select the [extension directory](extension/) from a
+   local copy of the repository. Open the extension’s options. Enter the
+   mini’s full HTTPS Serve address and the same token, choose **Pair Journal**,
+   and allow Chrome access to that address. The token stays in this Chrome
+   profile’s local extension storage.
+3. Open the article and click **Mandarin Journal** in Chrome’s extensions
+   menu. Select text on the page first to import just that passage. Check the
+   title and paragraph count, choose **Import**, then **Open in journal**.
+   Sending the same URL and paragraphs again opens the existing reading.
+
 ## Agents and branches
 
 - **Default:** `npm start` in the branch's checkout. On first start it builds

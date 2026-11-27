@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Pair Mandarin Journal</title>
+  <link rel="stylesheet" href="style.css">
+  <script type="module" src="options.js"></script>
+</head>
+<body class="options">
+  <main>
+    <h1>Pair Mandarin Journal</h1>
+    <form id="pair" autocomplete="off">
+      <label for="origin">Journal address</label>
+      <input id="origin" type="url" placeholder="https://mini.tailnet.ts.net" spellcheck="false" required>
+      <label for="token">Import token</label>
+      <input id="token" type="password" spellcheck="false">
+      <div class="actions">
+        <button id="save" type="submit" disabled>Pair Journal</button>
+        <button id="disconnect" type="button" class="quiet" hidden>Disconnect</button>
+      </div>
+      <p id="status" role="status"></p>
+    </form>
+  </main>
+</body>
+</html>

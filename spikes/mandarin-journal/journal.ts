@@ -6,6 +6,7 @@ import { checkReadingSize, createImportReviewer, legacyImportWarning } from './i
 import { extractArticle, ImportError } from './article.ts';
 import { judgeImport } from './import-judge.ts';
 import { articleUrl, importArticle } from './import-reading.ts';
+import { importRenderedReading, type ExtensionImport } from './extension-import.ts';
 import {
   initialReading,
   documentsFor,
@@ -105,7 +106,7 @@ export const actionSchema = z.discriminatedUnion('type', [
     id, type: z.literal('importPdf'), title: z.string().trim().min(1).max(120),
     fingerprint: z.string().regex(/^[a-f0-9]{64}$/), paragraphs: z.array(z.string()),
   }),
-  z.object({ id, type: z.literal('readingPosition'), documentId: text, paragraphId: text }),
+  z.object({ id, type: z.literal('readingPosition'), documentId: text, paragraphId: text, bookmarkOnly: z.literal(true).optional() }),
   z.object({
     id, type: z.literal('captureReading'), anchor: anchorSchema.extend({ surface: z.literal('read') }),
     note: z.string().trim().min(1).max(1600).optional(),
@@ -1087,7 +1088,8 @@ async function mutate(
       return;
     case 'importReading': {
       const url = articleUrl(a.url);
-      const previous = s.reading.imports.findLast(entry => entry.sourceUrl === url.href);
+      // A browser capture can be a selection. URL-only imports must still open the full article.
+      const previous = s.reading.imports.findLast(entry => entry.sourceUrl === url.href && entry.importMethod !== 'extension');
       let document = previous;
       if (a.pastedText !== undefined) {
         if (a.acceptPreview) throw new ImportError(400, 'Choose either the fetched preview or pasted article text.');
@@ -1128,7 +1130,7 @@ async function mutate(
       return;
     }
     case 'readingPosition':
-      applyReadingPosition(s.reading, a.documentId, a.paragraphId);
+      applyReadingPosition(s.reading, a.documentId, a.paragraphId, a.bookmarkOnly);
       return;
     case 'captureReading': {
       const { anchor } = a;
@@ -1532,6 +1534,11 @@ export function openJournal(path: string, backend: Backend = engine, activity?: 
     const row = db.prepare('SELECT revision,body FROM journal WHERE id=1').get()!;
     return { revision: Number(row.revision), s: upgrade(String(row.body)) };
   }
+  function write(s: State, revision: number) {
+    const result = db.prepare('UPDATE journal SET body=?,revision=revision+1 WHERE id=1 AND revision=?')
+      .run(JSON.stringify(s), revision);
+    if (!result.changes) throw new JournalConflict('Another session updated the journal. Please retry.');
+  }
   function record(outbox: Pick<Outbox, 'events' | 'judgments'>) {
     for (const e of outbox.events) appendEvent(db, e);
     for (const j of outbox.judgments) addJudgment(db, j);
@@ -1928,12 +1935,7 @@ export function openJournal(path: string, backend: Backend = engine, activity?: 
     db.exec('BEGIN IMMEDIATE');
     try {
       queueMedia(s, before);
-      if (
-        !db
-          .prepare('UPDATE journal SET body=?,revision=revision+1 WHERE id=1 AND revision=?')
-          .run(JSON.stringify(s), revision).changes
-      )
-        throw new JournalConflict('Another session updated the journal. Please retry.');
+      write(s, revision);
       db.prepare('INSERT INTO receipts VALUES (?,?)').run(a.id, hash);
       record(outbox);
       if (activity) {
@@ -1966,6 +1968,14 @@ export function openJournal(path: string, backend: Backend = engine, activity?: 
   practice.wake();
   return {
     get: () => publicState(read().s, backend.mode),
+    importFromExtension(input: ExtensionImport) {
+      return enqueue(() => {
+        const { s, revision } = read();
+        const { documentId, created } = importRenderedReading(s.reading.imports, input);
+        if (created) write(s, revision);
+        return { documentId };
+      });
+    },
     /** Whether background word, media, notice or practice work is pending or running. */
     busy() {
       const { s } = read();
