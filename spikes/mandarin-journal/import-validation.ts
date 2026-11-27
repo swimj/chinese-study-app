@@ -74,7 +74,7 @@ export function rejectedImport(verdict: Verdict) {
 }
 
 export function legacyImportWarning(doc: ReadingDocument) {
-  if (!doc.sourceUrl || doc.importMethod === 'paste') return undefined;
+  if (!doc.sourceUrl || doc.importMethod === 'paste' || doc.importMethod === 'extension') return undefined;
   const verdict = inspectReading(doc);
   if (verdict === 'uncertain' || verdict === 'reading') return undefined;
   return verdict === 'verification' ? { importWarning: reasons[verdict], canPaste: true } : { importWarning: reasons[verdict] };

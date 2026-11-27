@@ -73,6 +73,13 @@ function route() {
 function href(page, kind, id) {
   return '#' + page + (kind ? '/' + kind + '/' + encodeURIComponent(id) : '');
 }
+// An extension-opened tab saves this document's bookmark independently of the Home reading.
+const entryUrl = new URL(location.href);
+const entryRoute = route();
+if (entryUrl.searchParams.get('from') === 'extension' && entryRoute.page === 'read' && entryRoute.kind === 'library' && entryRoute.id) {
+  entryUrl.searchParams.delete('from');
+  history.replaceState({ ...history.state, extensionReadingId: entryRoute.id }, '', entryUrl);
+}
 function sourceHref(ref) {
   if (ref.kind === 'annotation') {
     const annotation = state.annotationThreads.find(item => item.id === ref.id);
@@ -927,7 +934,7 @@ async function navigate(initial = false) {
     const requested = note ? note.anchor.ownerId + '/' + note.anchor.startId
       : (target.kind === 'source' || target.kind === 'library') && target.id ? target.id : state.reading.documentId;
     if (!reader.openReference(requested)) showError('This reading location could not be found.');
-    reader.enter(target.kind === 'library');
+    reader.enter(target.kind === 'library', target.kind === 'library' && history.state?.extensionReadingId === target.id);
   }
   if (note) {
     if (page === 'chat' && note.anchor.ownerId !== state.activeThreadId) {

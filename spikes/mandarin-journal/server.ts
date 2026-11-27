@@ -14,6 +14,7 @@ import { actionSchema, engine, JournalConflict, openJournal } from './journal.ts
 import { buildFixture } from './fixture.ts';
 import { resolveStorage } from './storage.ts';
 import { journalRequestOrigins } from './tailnet-access.ts';
+import { extensionAuthorized, extensionImport } from './extension-import.ts';
 import { createLookupService } from './reader-lookup-service.ts';
 import { dictionaryPage } from './reader-catalog-report.ts';
 import { openReaderCatalog } from './reader-catalog.ts';
@@ -102,7 +103,7 @@ class RequestError extends Error {
     this.status = status;
   }
 }
-async function body(req: IncomingMessage) {
+async function body(req: IncomingMessage, renderedImport = false) {
   let size = 0;
   const chunks: Buffer[] = [];
   for await (const part of req.iterator({ destroyOnReturn: false })) {
@@ -122,7 +123,7 @@ async function body(req: IncomingMessage) {
     (value.type === 'importReading' && 'pastedText' in value && typeof value.pastedText === 'string') ||
     (value.type === 'importPdf' && 'paragraphs' in value && Array.isArray(value.paragraphs))
   );
-  if (size > 100_000 && !readingImport) {
+  if (size > 100_000 && !readingImport && !renderedImport) {
     throw new RequestError(413, 'Message too large.');
   }
   return value;
@@ -146,6 +147,18 @@ const server = createServer(async (req, res) => {
   try {
     const origin = requestOrigins.get(req.headers.host ?? '');
     if (!origin) throw new RequestError(403, 'Unexpected request host.');
+    if (req.method === 'POST' && req.url === '/api/extension/import') {
+      if (!extensionAuthorized(req.headers.origin, req.headers.authorization))
+        throw new RequestError(403, 'Extension import denied. Check the pairing token.');
+      if (req.headers['content-type']?.split(';')[0] !== 'application/json')
+        throw new RequestError(415, 'Expected JSON.');
+      const input = extensionImport.safeParse(await body(req, true));
+      if (!input.success) throw new RequestError(400, 'Expected a source URL, a title and reading paragraphs.');
+      await activity.action('Import reading from Chrome', randomUUID(), async () => {
+        json(200, await journal.importFromExtension(input.data));
+      });
+      return;
+    }
     if (req.headers.origin !== undefined && req.headers.origin !== origin)
       throw new RequestError(403, 'Unexpected request origin.');
     if (req.method === 'GET' && req.url?.split('?')[0] === '/operator/dictionary') {

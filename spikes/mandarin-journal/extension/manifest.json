@@ -1,0 +1,17 @@
+{
+  "manifest_version": 3,
+  "name": "Mandarin Journal",
+  "description": "Send a page or selected passage to your Mandarin Journal.",
+  "version": "1.0.0",
+  "minimum_chrome_version": "103",
+  "permissions": ["activeTab", "scripting", "storage"],
+  "optional_host_permissions": ["https://*.ts.net/*"],
+  "action": {
+    "default_title": "Mandarin Journal",
+    "default_popup": "popup.html"
+  },
+  "options_ui": {
+    "page": "options.html",
+    "open_in_tab": true
+  }
+}

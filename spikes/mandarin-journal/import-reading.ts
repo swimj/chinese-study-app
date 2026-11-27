@@ -26,28 +26,32 @@ export function publicDestination(addresses: LookupAddress[]) {
   return addresses.find((a) => a.family === 4) ?? addresses[0];
 }
 
-export function articleUrl(raw: string, base?: URL) {
+export function readingSourceUrl(raw: string, base?: URL) {
   let url: URL;
   try {
     url = new URL(raw, base);
   } catch {
     throw publicOnly();
   }
+  if (url.href.length > 4096 || !['http:', 'https:'].includes(url.protocol) || url.username || url.password) {
+    throw publicOnly();
+  }
+  url.hash = '';
+  return url;
+}
+
+export function articleUrl(raw: string, base?: URL) {
+  const url = readingSourceUrl(raw, base);
   const host = url.hostname
     .replace(/^\[|\]$/g, '')
     .replace(/\.$/, '')
     .toLowerCase();
   if (
-    url.href.length > 4096 ||
-    !['http:', 'https:'].includes(url.protocol) ||
-    url.username ||
-    url.password ||
-    (isIP(host)
+    isIP(host)
       ? !publicAddress(host)
-      : !host.includes('.') || /\.(localhost|local|internal|onion)$/.test(host))
+      : !host.includes('.') || /\.(localhost|local|internal|onion)$/.test(host)
   )
     throw publicOnly();
-  url.hash = '';
   return url;
 }
 

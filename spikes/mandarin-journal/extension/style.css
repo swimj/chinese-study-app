@@ -1,0 +1,82 @@
+:root {
+  color-scheme: light dark;
+  font: 100%/1.45 'Instrument Sans', 'Helvetica Neue', Arial, sans-serif;
+}
+body {
+  margin: 0;
+}
+main {
+  box-sizing: border-box;
+  padding: 1rem;
+}
+.popup {
+  width: 19rem;
+}
+.options main {
+  max-width: 34rem;
+  margin: 1rem auto;
+}
+h1 {
+  font-size: 1.2rem;
+  margin: 0 0 1rem;
+}
+label {
+  display: block;
+  font-weight: 600;
+  margin-bottom: .25rem;
+}
+button, input {
+  box-sizing: border-box;
+  font: inherit;
+  padding: .45rem .65rem;
+}
+button {
+  background: #285d57;
+  border: 1px solid transparent;
+  border-radius: .35rem;
+  color: white;
+  cursor: pointer;
+  font-weight: 600;
+}
+button:disabled {
+  cursor: default;
+  opacity: .55;
+}
+button.quiet {
+  color: CanvasText;
+  background: transparent;
+  border-color: GrayText;
+}
+input {
+  width: 100%;
+  margin-bottom: .9rem;
+}
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: .5rem;
+}
+:focus-visible {
+  outline: 2px solid Highlight;
+  outline-offset: 2px;
+}
+#status {
+  overflow-wrap: anywhere;
+  margin: .8rem 0 0;
+}
+#status:empty {
+  margin: 0;
+}
+#reading {
+  display: inline-block;
+  margin-top: .65rem;
+}
+[hidden] {
+  display: none !important;
+}
+#preview {
+  overflow-wrap: anywhere;
+}
+#paragraph-count {
+  margin: .35rem 0 .9rem;
+}

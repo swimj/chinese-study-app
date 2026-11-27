@@ -60,6 +60,7 @@ export function createReading({
   let active = false;
   let entered = false;
   let reference = '';
+  let bookmarkOnly = false;
   let busy = true;
   const pendingPositions = new Map();
   let positionTimer;
@@ -362,12 +363,12 @@ export function createReading({
     if (!state?.reading || !active || entered) return;
     entered = true;
     const reading = state.reading;
-    const source = lookup(state, reference) || lookup(state, reading.documentId);
+    const source = lookup(state, reference) || (!bookmarkOnly && lookup(state, reading.documentId));
     if (!source) return;
     mount(source.document);
     update();
     refreshAnnotations();
-    const position = pendingPositions.get(documentView.id) || reading.positions[documentView.id];
+    const position = pendingPositions.get(documentView.id)?.paragraphId || reading.positions[documentView.id];
     const firstParagraphId = documentView.paragraphs[0].id;
     const paragraphId = source.paragraph?.id || position || firstParagraphId;
     currentParagraphId = paragraphId;
@@ -381,13 +382,14 @@ export function createReading({
 
   function flushPosition() {
     if (!canSubmit()) return;
-    for (const [documentId, paragraphId] of pendingPositions) {
+    for (const [documentId, position] of pendingPositions) {
+      const { paragraphId, bookmarkOnly } = position;
       // Opening a one-paragraph piece already places the reader at its end.
       // Keep that bookmark pending until they leave the piece.
       if (active && documentView.id === documentId && documentView.paragraphs.length === 1) continue;
       pendingPositions.delete(documentId);
-      if (state.reading.documentId === documentId && state.reading.positions[documentId] === paragraphId) continue;
-      submit({ type: 'readingPosition', documentId, paragraphId });
+      if ((bookmarkOnly || state.reading.documentId === documentId) && state.reading.positions[documentId] === paragraphId) continue;
+      submit({ type: 'readingPosition', documentId, paragraphId, ...(bookmarkOnly && { bookmarkOnly: true }) });
       break;
     }
   }
@@ -395,7 +397,7 @@ export function createReading({
   function queuePosition(paragraphId, delay) {
     window.clearTimeout(positionTimer);
     pendingPositions.delete(documentView.id);
-    pendingPositions.set(documentView.id, paragraphId);
+    pendingPositions.set(documentView.id, { paragraphId, bookmarkOnly });
     positionTimer = window.setTimeout(() => {
       positionTimer = undefined;
       flushPosition();
@@ -437,7 +439,6 @@ export function createReading({
     render(nextState) {
       state = nextState;
       if (!state.reading) return;
-      if (!documentView && state.reading.documents.length) mount(lookup(state, state.reading.documentId).document);
       applyEntry();
       update();
     },
@@ -517,7 +518,8 @@ export function createReading({
       scrollIntent = 0;
       return available;
     },
-    enter(fromLibrary) {
+    enter(fromLibrary, onlySaveBookmark = false) {
+      bookmarkOnly = onlySaveBookmark;
       backLabel.textContent = fromLibrary ? 'Library' : 'Home';
       back.href = fromLibrary ? '#library' : '#home';
       active = true;
