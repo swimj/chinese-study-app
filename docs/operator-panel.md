@@ -256,6 +256,14 @@ served content, then the rationale. The operator can draft a correction from
 current content, request an advisory second opinion with a question, or close
 the review with an optional note. Teaching and unresolved assessments also accept
 an empty note; their retained finding remains visible independently of that note.
+
+For an eligible **No change proposed** case, **More → Retire exercise…** drafts a
+proposal to retire the unchanged, active exercise without a replacement. On
+eligible unresolved-sense or inventory-gap cases, **Retire exercise…** appears
+directly among the case actions. Drafting does not change live content; review
+the proposal before using **Approve and apply**. See
+[retirement eligibility and effects](implementation/vocabulary-content-improvement.md#explicit-retirement-proposals).
+
 A retired source is explicitly identified as unavailable for reassessment. Closing
 the case does not reactivate it or settle its sense mapping. **Done** advances at the same queue position,
 or to the preceding item when closing the last entry.
