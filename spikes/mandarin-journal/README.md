@@ -21,7 +21,9 @@ Which journal opens is separate from the tutor mode. `npm start` opens this chec
 
 ## Home
 
-Home is a cork wall with four entrances. Practice is a ticket, Read a dog-eared page, Talk a postcard, and Scrapbook a shoebox. The ticket opens the current session, the page resumes an unfinished reading at the quoted paragraph, and the postcard opens the named conversation. **Just talk** starts a casual conversation. Select the piece on the shoebox label to find it on the table. When no reading has a bookmark in progress, **Bring a reading** opens reading import. The notepad on the wall accepts a word, a link, or a sentence. The [delivery slices](design/delivery.md) record the release scope.
+Home is a cork wall with four entrances. Practice is a ticket, Read a dog-eared page, Talk a postcard, and Scrapbook a shoebox. The ticket opens the current session and the postcard opens the named conversation. **Just talk** starts a casual conversation. Select the piece on the shoebox label to find it on the table. The notepad on the wall accepts a word, a link, or a sentence. The [delivery slices](design/delivery.md) record the release scope.
+
+Read resumes the most recently bookmarked unfinished reading at the quoted paragraph. With no unfinished bookmark, it offers the most recent visible import. If neither is available, **Bring a reading** opens reading import. A bare `#read` link makes the same choice. Each tab keeps its reading’s ID in the URL, and each reading keeps its own bookmark.
 
 Choose **Library** on the dog-eared page to pick another reading. The Library lists built-in and imported readings with their bookmarks. Readings in progress come first, followed by those you haven’t started and those you’ve finished. Newer additions come first within each group. Open a title to read from your bookmark or the beginning. **← Library** returns to the list. **Import reading** works here even when the Library is empty.
 

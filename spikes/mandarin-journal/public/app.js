@@ -3,7 +3,7 @@ import { createTurnProgress } from './turn-progress.js';
 import { createCapture, replyTarget, wordForTurn } from './capture.js';
 import { createAnnotations } from './annotations.js';
 import { createReading, readingLabel, referenceForSource } from './reading.js';
-import { createScrapbook, libraryReadings, wallOffers } from './scrapbook.js';
+import { createScrapbook, libraryReadings, readingOffer, wallOffers } from './scrapbook.js';
 import { compose } from './media-policy.js';
 import { createTeaching } from './teaching.js';
 
@@ -66,19 +66,12 @@ function link(title, href, cls) {
 }
 function route() {
   const [page, kind, value] = location.hash.slice(1).split('/');
-  let id = '';
-  try { id = decodeURIComponent(value || ''); } catch { /* Invalid bookmark. */ }
+  let id;
+  try { id = decodeURIComponent(value || ''); } catch { /* Malformed IDs stay distinct from an omitted ID. */ }
   return { page: Object.hasOwn(labels, page) ? page : 'home', kind, id };
 }
 function href(page, kind, id) {
   return '#' + page + (kind ? '/' + kind + '/' + encodeURIComponent(id) : '');
-}
-// An extension-opened tab saves this document's bookmark independently of the Home reading.
-const entryUrl = new URL(location.href);
-const entryRoute = route();
-if (entryUrl.searchParams.get('from') === 'extension' && entryRoute.page === 'read' && entryRoute.kind === 'library' && entryRoute.id) {
-  entryUrl.searchParams.delete('from');
-  history.replaceState({ ...history.state, extensionReadingId: entryRoute.id }, '', entryUrl);
 }
 function sourceHref(ref) {
   if (ref.kind === 'annotation') {
@@ -854,11 +847,39 @@ function focusTarget(el) {
 }
 async function navigate(initial = false) {
   const previous = page;
+  if (previous === 'read' && !ui.pending && !loadFailed) showError('');
   if (get('board-actions').open) get('board-actions').close();
   if (location.hash === '#read/import' || location.hash === '#read/import/') {
     history.replaceState(null, '', '#home/import');
   }
-  const target = route();
+  let target = route();
+  if (state && target.page === 'read') {
+    // Another tab may have bookmarked a reading or imported a source since this tab loaded.
+    const documentLink = target.kind === 'source' || target.kind === 'library';
+    const bare = !target.kind || (documentLink && target.id === '');
+    const missing = (documentLink && !readingLabel(state, target.id)) ||
+      (target.kind === 'annotation' && !state.annotationThreads.some(note => note.id === target.id));
+    if (!initial && (bare || missing)) {
+      const hash = location.hash;
+      const before = state;
+      try {
+        const fresh = await responseJson(await fetch('/api/state', { cache: 'no-store' }));
+        if (location.hash !== hash) return;
+        if (state !== before) return navigate();
+        state = fresh;
+        renderState();
+      } catch (err) {
+        if (location.hash !== hash) return;
+        showError(err.message);
+      }
+    }
+    if (bare) {
+      const offer = readingOffer(state);
+      const kind = target.kind === 'library' ? 'library' : 'source';
+      history.replaceState(null, '', offer ? href('read', kind, offer.documentId) : '#home/import');
+      target = route();
+    }
+  }
   const importing = (target.page === 'home' || target.page === 'library') && target.kind === 'import';
   if (importDialog.open && !importing) {
     reader.closeImport();
@@ -919,6 +940,7 @@ async function navigate(initial = false) {
   }
   const note = target.kind === 'annotation' && state.annotationThreads.find(t => t.id === target.id && t.anchor.surface === page);
   if (target.kind === 'annotation' && !note) {
+    if (page === 'read') reader.enter('', false);
     showError('This annotation could not be found.');
     return;
   }
@@ -932,9 +954,8 @@ async function navigate(initial = false) {
   if (page === 'chat' && target.kind === 'thread') chatDraft.focus({ preventScroll: true });
   if (page === 'read') {
     const requested = note ? note.anchor.ownerId + '/' + note.anchor.startId
-      : (target.kind === 'source' || target.kind === 'library') && target.id ? target.id : state.reading.documentId;
-    if (!reader.openReference(requested)) showError('This reading location could not be found.');
-    reader.enter(target.kind === 'library', target.kind === 'library' && history.state?.extensionReadingId === target.id);
+      : (target.kind === 'source' || target.kind === 'library') ? target.id : '';
+    if (!reader.enter(requested, target.kind === 'library')) showError('This reading location could not be found.');
   }
   if (note) {
     if (page === 'chat' && note.anchor.ownerId !== state.activeThreadId) {
@@ -1096,8 +1117,9 @@ async function runAction(action) {
   markBusy(true);
   showError('');
   try {
-    const updated = await sendAction(action);
+    const { documentId, ...updated } = await sendAction(action);
     const follow = (action.type === 'chat' || action.type === 'tutor') && followsConversation(action.type);
+    if (isImport && !documentId) throw new Error('The journal did not return a reading link.');
     state = updated;
     if (action.type === 'capture' && state.captureResult?.id !== action.id) {
       throw new Error('The journal did not return a result for this input.');
@@ -1108,7 +1130,7 @@ async function runAction(action) {
     persist();
     renderState();
     if (follow) followConversation(action.type);
-    if (currentImport()) reader.imported();
+    if (currentImport()) reader.imported(documentId);
     if (action.type === 'capture') {
       const result = state.captureResult;
       const atCapture = page === 'home' && location.hash === startingHash && !importDialog.open

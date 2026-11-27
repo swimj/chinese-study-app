@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { buildScrapbook, libraryReadings, wallOffers } from './public/scrapbook.js';
+import { applyReadingPosition, documentsFor, initialReading } from './reading.ts';
 import { isReadingFinished } from './public/reading.js';
 
 const readingLabel = (state, id) => state.reading.documents.find((d) => d.id === id)?.title || id;
@@ -20,7 +21,7 @@ function journal(overrides = {}) {
       { id: 'r1-takeaway-0', anchor: { surface: 'chat', ownerId: 'birds', quote: '等着鸟来喂' }, messages: [{ role: 'assistant', text: 'Try 等着鸟来吃鸟食.' }] },
       { id: 'n1', anchor: { surface: 'read', ownerId: 'kiosk', quote: '等什么人' }, messages: [{ role: 'user', text: 'Why 什么人?' }, { role: 'assistant', text: 'It stays open.' }] },
     ],
-    reading: { documentId: 'kiosk', positions: { kiosk: 'p2' }, documents: [kiosk, encore] },
+    reading: { positions: { kiosk: 'p2' }, documents: [kiosk, encore] },
     saved: [
       { id: 'w1', kind: 'Word', title: '透透气', source: '图书馆太闷了', word: { pinyin: 'tòu tou qì', meaning: 'Get some air.' } },
       { id: 'w2', kind: 'Word', title: '报备', source: '', word: { pinyin: 'bàobèi', meaning: 'Notify.' } },
@@ -74,7 +75,7 @@ test('material clusters by what it is about, takeaways once, words where they ap
 test('a fresh journal still offers its readings and nothing else', () => {
   const clusters = buildScrapbook(journal({
     threads: [{ id: 'first', title: 'Conversation' }], activeThreadId: 'first', chat: [],
-    reflections: [], annotationThreads: [], saved: [], reading: { documentId: 'kiosk', positions: {}, documents: [kiosk, encore] },
+    reflections: [], annotationThreads: [], saved: [], reading: { positions: {}, documents: [kiosk, encore] },
   }), { readingLabel });
   assert.deepEqual(clusters.map((c) => c.key), ['read:kiosk', 'read:encore']);
   assert.ok(clusters.every((c) => !c.scraps.length));
@@ -145,7 +146,6 @@ test('Library follows archive and restore, and a missing bookmark leaves the rea
 
 test('the wall passes over a recently finished reading and follows an earlier bookmark on reread', () => {
   const state = journal();
-  state.reading.documentId = 'encore';
   state.reading.positions.encore = 'e1';
   assert.equal(offers(state).reading.title, kiosk.title);
 
@@ -160,6 +160,38 @@ test('the wall passes over a recently finished reading and follows an earlier bo
   assert.ok(!reread.finished);
   assert.deepEqual(reread.progress, { at: 1, of: 3 });
   assert.equal(offers(state).reading.href, '#read/source/kiosk%2Fp1');
+});
+
+test('Read offers the latest unfinished bookmark, then the latest visible import', () => {
+  const state = journal();
+  const article = { ...kiosk, id: 'article', sourceUrl: 'https://example.org/river' };
+  const pdf = { ...kiosk, id: 'pdf', importMethod: 'pdf' };
+  state.reading.documents.push(article, pdf);
+  state.reading.positions = { kiosk: 'p1', article: 'p2', pdf: 'p3' };
+  state.reading.bookmarkedAt = { kiosk: '2026-11-27T12:00:00Z', article: '2026-11-26T12:00:00Z', pdf: '2026-11-28T12:00:00Z' };
+  assert.equal(offers(state).reading.documentId, kiosk.id);
+  state.board = { archivedGroups: ['read:kiosk'] };
+  assert.equal(offers(state).reading.documentId, article.id);
+  state.reading.positions.article = 'p3';
+  assert.equal(offers(state).reading.href, '#read/source/pdf');
+  state.board.deletedGroups = ['read:pdf'];
+  assert.equal(offers(state).reading.documentId, article.id);
+  state.board.deletedGroups.push('read:article');
+  assert.equal(offers(state).reading, undefined);
+});
+
+test('moving an earlier bookmark makes it the Read offer, including back-to-back saves', () => {
+  const stored = initialReading();
+  const documents = documentsFor(stored);
+  const [first, second] = documents;
+  const state = journal({ reading: { ...stored, documents } });
+  const at = '2026-11-27T12:00:00.000Z';
+  applyReadingPosition(stored, first.id, first.paragraphs[0].id, at);
+  applyReadingPosition(stored, second.id, second.paragraphs[0].id, at);
+  assert.equal(offers(state).reading.documentId, second.id);
+  applyReadingPosition(stored, first.id, first.paragraphs[1].id, at);
+  assert.equal(offers(state).reading.documentId, first.id);
+  assert.equal(stored.positions[second.id], second.paragraphs[0].id);
 });
 
 test('wall skips hidden pieces and invalid bookmarks and can open on a fresh journal', () => {

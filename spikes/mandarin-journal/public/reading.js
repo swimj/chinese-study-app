@@ -42,7 +42,7 @@ export function referenceForSource(state, source) {
   return state?.reading?.documents.find((entry) => source.includes(entry.title))?.id || '';
 }
 
-function importedDocument(document) {
+export function importedDocument(document) {
   return Boolean(document.sourceUrl) || document.importMethod === 'pdf';
 }
 
@@ -58,9 +58,6 @@ export function createReading({
   let documentView;
   let rows = new Map();
   let active = false;
-  let entered = false;
-  let reference = '';
-  let bookmarkOnly = false;
   let busy = true;
   const pendingPositions = new Map();
   let positionTimer;
@@ -359,37 +356,45 @@ export function createReading({
     prose.scrollIntoView({ block: 'start' });
   }
 
-  function applyEntry() {
-    if (!state?.reading || !active || entered) return;
-    entered = true;
-    const reading = state.reading;
-    const source = lookup(state, reference) || (!bookmarkOnly && lookup(state, reading.documentId));
-    if (!source) return;
+  function enter(reference, fromLibrary) {
+    active = true;
+    scrollIntent = 0;
+    backLabel.textContent = fromLibrary ? 'Library' : 'Home';
+    back.href = fromLibrary ? '#library' : '#home';
+    const source = lookup(state, reference);
+    scroller.hidden = progress.hidden = !source;
+    if (!source) {
+      documentView = undefined;
+      passage.replaceChildren();
+      flushPosition();
+      return false;
+    }
     mount(source.document);
     update();
     refreshAnnotations();
-    const position = pendingPositions.get(documentView.id)?.paragraphId || reading.positions[documentView.id];
+    const bookmark = pendingPositions.get(documentView.id) || state.reading.positions[documentView.id];
     const firstParagraphId = documentView.paragraphs[0].id;
-    const paragraphId = source.paragraph?.id || position || firstParagraphId;
+    const position = rows.has(bookmark) ? bookmark : firstParagraphId;
+    const paragraphId = source.paragraph?.id || position;
     currentParagraphId = paragraphId;
     scroller.scrollTop = 0;
     if (source.paragraph || paragraphId !== firstParagraphId) focusPassage(paragraphId);
     else title.focus({ preventScroll: true });
     updateProgress();
     if (source.annotation) openAnnotation(source.annotation.id);
-    queuePosition(position || firstParagraphId, 0);
+    queuePosition(position, 0);
+    return true;
   }
 
   function flushPosition() {
     if (!canSubmit()) return;
-    for (const [documentId, position] of pendingPositions) {
-      const { paragraphId, bookmarkOnly } = position;
+    for (const [documentId, paragraphId] of pendingPositions) {
       // Opening a one-paragraph piece already places the reader at its end.
       // Keep that bookmark pending until they leave the piece.
-      if (active && documentView.id === documentId && documentView.paragraphs.length === 1) continue;
+      if (active && documentView?.id === documentId && documentView.paragraphs.length === 1) continue;
       pendingPositions.delete(documentId);
-      if ((bookmarkOnly || state.reading.documentId === documentId) && state.reading.positions[documentId] === paragraphId) continue;
-      submit({ type: 'readingPosition', documentId, paragraphId, ...(bookmarkOnly && { bookmarkOnly: true }) });
+      if (state.reading.positions[documentId] === paragraphId) continue;
+      submit({ type: 'readingPosition', documentId, paragraphId });
       break;
     }
   }
@@ -397,7 +402,7 @@ export function createReading({
   function queuePosition(paragraphId, delay) {
     window.clearTimeout(positionTimer);
     pendingPositions.delete(documentView.id);
-    pendingPositions.set(documentView.id, { paragraphId, bookmarkOnly });
+    pendingPositions.set(documentView.id, paragraphId);
     positionTimer = window.setTimeout(() => {
       positionTimer = undefined;
       flushPosition();
@@ -439,7 +444,6 @@ export function createReading({
     render(nextState) {
       state = nextState;
       if (!state.reading) return;
-      applyEntry();
       update();
     },
     openImport(prefill, repairId, startImport = false) {
@@ -499,10 +503,10 @@ export function createReading({
         previewTitle.focus();
       }
     },
-    imported() {
+    imported(documentId) {
       resetImportFeedback();
       url.value = '';
-      openImported(state.reading.documentId);
+      openImported(documentId);
     },
     documentId: () => documentView?.id,
     title: () => documentView?.title || 'Reading',
@@ -511,24 +515,9 @@ export function createReading({
       const current = documentView && lookup(state, documentView.id + '/' + currentParagraphId);
       return current ? sourceFor(current.document, current.paragraph).slice(0, 12000) : 'Reading';
     },
-    openReference(ref) {
-      const available = !state || Boolean(lookup(state, ref));
-      reference = available ? ref : '';
-      entered = false;
-      scrollIntent = 0;
-      return available;
-    },
-    enter(fromLibrary, onlySaveBookmark = false) {
-      bookmarkOnly = onlySaveBookmark;
-      backLabel.textContent = fromLibrary ? 'Library' : 'Home';
-      back.href = fromLibrary ? '#library' : '#home';
-      active = true;
-      applyEntry();
-    },
+    enter,
     leave() {
       active = false;
-      entered = false;
-      reference = '';
       scrollIntent = 0;
       window.clearTimeout(positionTimer);
       positionTimer = undefined;

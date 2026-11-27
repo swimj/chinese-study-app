@@ -24,7 +24,7 @@ test('Chrome returns the exact saved snapshot on concurrent imports, retries and
     const otherUrl = await journal.importFromExtension({ ...page, sourceUrl: 'https://example.org/another' });
     assert.notEqual(otherUrl.documentId, first.documentId);
     const reading = journal.get().reading;
-    assert.equal(reading.documentId, initial.documentId);
+    assert.ok(!Object.hasOwn(reading, 'documentId'));
     assert.deepEqual(reading.positions, initial.positions);
     assert.equal(reading.documents.length, initial.documents.length + 3);
     const doc = reading.documents.find(d => d.id === first.documentId)!;
@@ -35,13 +35,12 @@ test('Chrome returns the exact saved snapshot on concurrent imports, retries and
     ]);
     // An extension-opened tab keeps progress without choosing a reading for another tab.
     await journal.act({ id: randomUUID(), type: 'readingPosition', documentId: first.documentId, paragraphId: 'p2', bookmarkOnly: true });
-    assert.equal(journal.get().reading.documentId, initial.documentId);
     await journal.act({ id: randomUUID(), type: 'readingPosition', documentId: changed.documentId, paragraphId: 'p1' });
     journal.close();
     journal = openJournal(path);
     assert.deepEqual(await journal.importFromExtension({ ...page, sourceUrl: 'https://example.org/river#end', title: '新标题' }), first);
     const after = journal.get().reading;
-    assert.equal(after.documentId, changed.documentId);
+    assert.equal(after.positions[changed.documentId], 'p1');
     assert.equal(after.positions[first.documentId], 'p2');
     assert.deepEqual(after.documents, reading.documents);
   } finally {
@@ -54,13 +53,13 @@ test('Chrome reuses matching older imports and validates the source and body bef
   const journal = openJournal(':memory:');
   try {
     const pasted = await journal.act({ id: randomUUID(), type: 'importReading', url: page.sourceUrl, pastedText: '风吹过来。' });
-    const original = pasted.reading.documentId;
+    const original = pasted.documentId;
     const input = { ...page, paragraphs: [{ text: ' 风吹过来。 ' }] };
     assert.deepEqual(await journal.importFromExtension(input), { documentId: original });
     const { documentId: selection } = await journal.importFromExtension({ ...input, paragraphs: [{ text: '风吹' }] });
     assert.notEqual(selection, original);
     const reopened = await journal.act({ id: randomUUID(), type: 'importReading', url: page.sourceUrl });
-    assert.equal(reopened.reading.documentId, original);
+    assert.equal(reopened.documentId, original);
     for (const sourceUrl of ['javascript:alert(0)', 'file:///tmp/article', 'https://me:secret@example.org/book']) {
       await assert.rejects(journal.importFromExtension({ ...input, sourceUrl }), { status: 422 });
     }

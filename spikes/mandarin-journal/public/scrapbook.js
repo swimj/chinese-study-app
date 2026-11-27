@@ -1,7 +1,7 @@
 // Home as a scrapbook: the learner's material, clustered by what it is about.
 // Everything here is derived from journal state; nothing is invented or stored.
 
-import { isReadingFinished } from './reading.js';
+import { importedDocument, isReadingFinished } from './reading.js';
 
 const hanzi = /[㐀-鿿]/;
 const LOOSE = 'loose';
@@ -24,12 +24,15 @@ function readingPlace(doc, paragraphId) {
 }
 
 // Documents are the built-ins followed by imports in the order they arrived.
-export function libraryReadings({ reading, board }) {
+function visibleDocuments({ reading, board }) {
   const hidden = hiddenGroups(board);
+  return reading.documents.filter(doc => !hidden.has('read:' + doc.id));
+}
+
+export function libraryReadings(state) {
   const inProgress = [], notStarted = [], finished = [];
-  for (const doc of reading.documents.toReversed()) {
-    if (hidden.has('read:' + doc.id)) continue;
-    const place = readingPlace(doc, reading.positions[doc.id]);
+  for (const doc of visibleDocuments(state).reverse()) {
+    const place = readingPlace(doc, state.reading.positions[doc.id]);
     const shelf = place.progress ? inProgress : place.finished ? finished : notStarted;
     shelf.push({ id: doc.id, title: doc.title, ...place });
   }
@@ -183,6 +186,28 @@ export function buildScrapbook(state, { readingLabel, media }) {
     .sort((a, b) => (a.kind === LOOSE) - (b.kind === LOOSE) || b.recency - a.recency);
 }
 
+// Old bookmarks have no timestamp. For those, preserve the wall's reverse key order.
+export function readingOffer(state) {
+  const { reading } = state;
+  const visible = visibleDocuments(state);
+  const documents = new Map(visible.map(doc => [doc.id, doc]));
+  const dated = Object.entries(reading.bookmarkedAt ?? {}).reverse().sort((a, b) => b[1].localeCompare(a[1]));
+  const bookmarks = new Set([...dated.map(([id]) => id), ...Object.keys(reading.positions).reverse()]);
+  for (const id of bookmarks) {
+    const doc = documents.get(id);
+    const progress = doc && readingPlace(doc, reading.positions[id]).progress;
+    if (!progress) continue;
+    const paragraph = doc.paragraphs[progress.at - 1];
+    return {
+      documentId: id, title: doc.title, excerpt: paragraph.text,
+      bookmark: '← left off at ¶ ' + progress.at + ' of ' + progress.of,
+      href: '#read/source/' + encodeURIComponent(id + '/' + paragraph.id),
+    };
+  }
+  const latest = visible.findLast(importedDocument);
+  if (latest) return { documentId: latest.id, title: latest.title, href: '#read/source/' + encodeURIComponent(latest.id) };
+}
+
 // The wall and the room use the same filtered collection, including archive and deletion.
 export function wallOffers(state, clusters) {
   const { card, result, session, done } = state.practice;
@@ -194,21 +219,6 @@ export function wallOffers(state, clusters) {
   const practiceTime = remaining > 0 ? '≈ ' + remaining + ' min' : '';
 
   const visible = new Map(clusters.map(group => [group.key, group]));
-  const { positions, documentId } = state.reading;
-  let reading;
-  for (const id of new Set([documentId, ...Object.keys(positions).reverse()])) {
-    const group = visible.get('read:' + id);
-    if (!group?.progress) continue;
-    const { at, of } = group.progress;
-    const paragraph = group.doc.paragraphs[at - 1];
-    reading = {
-      title: group.title, excerpt: paragraph.text,
-      bookmark: '← left off at ¶ ' + at + ' of ' + of,
-      href: '#read/source/' + encodeURIComponent(id + '/' + paragraph.id),
-    };
-    break;
-  }
-
   const conversation = state.threads.find(t => t.id === state.activeThreadId && visible.has('chat:' + t.id)
     && (t.hasTurns || state.chat.length)) || state.threads.findLast(t => t.hasTurns && visible.has('chat:' + t.id));
   const pieces = new Map(clusters.flatMap(group => group.scraps.map(piece => [pieceKey(piece), piece])));
@@ -222,7 +232,7 @@ export function wallOffers(state, clusters) {
     title: offeredPiece.title || offeredPiece.quote || offeredPiece.text || offeredPiece.item.caption,
     href: '#scrapbook/piece/' + encodeURIComponent(pieceKey(offeredPiece)),
   };
-  return { practice, practiceTime, reading, conversation, piece, pieceCount: pieces.size };
+  return { practice, practiceTime, reading: readingOffer(state), conversation, piece, pieceCount: pieces.size };
 }
 
 function pieceKey(piece) {

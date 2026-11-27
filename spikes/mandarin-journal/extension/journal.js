@@ -63,7 +63,6 @@ export async function sendReading(pairing, reading, deadline = 15_000) {
     throw new Error('The Journal did not return a reading link. Check your Library before retrying.');
   }
   const reader = new URL('/', pairing.origin);
-  reader.searchParams.set('from', 'extension');
   reader.hash = 'read/library/' + encodeURIComponent(result.documentId);
   return reader.href;
 }

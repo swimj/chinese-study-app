@@ -18,7 +18,7 @@ function board({ loose = 16, media = [], pictures = 'normal', extraNotes = [] } 
     chat: [],
     reflections: [],
     annotationThreads: [note('kn', 'kiosk'), note('en', 'encore'), ...extraNotes],
-    reading: { documentId: 'kiosk', positions: {}, documents: [kiosk, encore, river] },
+    reading: { positions: {}, documents: [kiosk, encore, river] },
     saved: Array.from({ length: loose }, (_, i) => ({ id: 'l' + i, kind: 'Note', title: 'note ' + i, detail: 'x', source: '' })),
     tutor: [],
     activity: [],

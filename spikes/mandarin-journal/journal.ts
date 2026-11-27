@@ -106,6 +106,7 @@ export const actionSchema = z.discriminatedUnion('type', [
     id, type: z.literal('importPdf'), title: z.string().trim().min(1).max(120),
     fingerprint: z.string().regex(/^[a-f0-9]{64}$/), paragraphs: z.array(z.string()),
   }),
+  // Keep the legacy flag in the fingerprint when an older tab retries a bookmark.
   z.object({ id, type: z.literal('readingPosition'), documentId: text, paragraphId: text, bookmarkOnly: z.literal(true).optional() }),
   z.object({
     id, type: z.literal('captureReading'), anchor: anchorSchema.extend({ surface: z.literal('read') }),
@@ -285,7 +286,7 @@ function publicState(s: State, mode: Backend['mode'], now = new Date()) {
     attempts: s.attempts,
     activity: s.activity,
     reading: {
-      documentId: s.reading.documentId,
+      bookmarkedAt: s.reading.bookmarkedAt,
       positions: s.reading.positions,
       annotations: readingNotes(annotationThreads),
       documents: documentsFor(s.reading).map(doc => {
@@ -1048,6 +1049,12 @@ function recalled(card: QueuedCard, answer: string) {
   return [card.answer, ...(card.accepted ?? [])].some((form) => normalized(form) === typed);
 }
 
+function matchesPaste(doc: ReadingState['imports'][number], pasted: ReturnType<typeof extractArticle>) {
+  return doc.title === pasted.title && doc.paragraphs.length === pasted.paragraphs.length &&
+    doc.paragraphs.every((p, i) => p.text === pasted.paragraphs[i].text && p.kind === pasted.paragraphs[i].kind) &&
+    !legacyImportWarning(doc);
+}
+
 async function mutate(
   s: State,
   a: Action,
@@ -1056,8 +1063,12 @@ async function mutate(
   outbox: Outbox,
   onChatText?: (text: string) => void,
 ) {
-  s.notice = '';
   const now = new Date().toISOString();
+  if (a.type === 'readingPosition') {
+    applyReadingPosition(s.reading, a.documentId, a.paragraphId, now);
+    return;
+  }
+  s.notice = '';
   switch (a.type) {
     case 'capture':
       if (isReadingLink(a.text)) return;
@@ -1096,10 +1107,7 @@ async function mutate(
         if (!a.pastedText.trim()) throw new ImportError(422, 'Paste the article text before importing.');
         const pasted = extractArticle(a.pastedText, 'text/plain', url);
         document = s.reading.imports.findLast(entry =>
-          entry.sourceUrl === url.href && entry.title === pasted.title &&
-          entry.paragraphs.length === pasted.paragraphs.length &&
-          entry.paragraphs.every((p, i) => p.text === pasted.paragraphs[i].text && p.kind === pasted.paragraphs[i].kind) &&
-          !legacyImportWarning(entry)
+          entry.sourceUrl === url.href && matchesPaste(entry, pasted)
         );
         if (!document) {
           document = { ...pasted, importMethod: 'paste', id: previous ? randomUUID() : pasted.id };
@@ -1111,8 +1119,7 @@ async function mutate(
         if (previous) document = { ...document, id: randomUUID() };
         s.reading.imports.push(document);
       }
-      s.reading.documentId = document.id;
-      return;
+      return { documentId: document.id };
     }
     case 'importPdf': {
       const paragraphs = a.paragraphs.map(p => p.trim()).filter(Boolean);
@@ -1126,12 +1133,8 @@ async function mutate(
           paragraphs: paragraphs.map((text, i) => ({ id: 'p' + (i + 1), text })),
         });
       }
-      s.reading.documentId = documentId;
-      return;
+      return { documentId };
     }
-    case 'readingPosition':
-      applyReadingPosition(s.reading, a.documentId, a.paragraphId, a.bookmarkOnly);
-      return;
     case 'captureReading': {
       const { anchor } = a;
       resolveAnchor(s, anchor);
@@ -1410,6 +1413,8 @@ function upgrade(body: string): State {
   parsed.tutor.forEach((message, index) => {
     if (message.kind === 'observation' && message.reference?.kind !== 'reflection') message.id ??= 'legacy-observation-' + index;
   });
+  if ('documentId' in parsed.reading) delete parsed.reading.documentId;
+  parsed.reading.bookmarkedAt ??= {};
   parsed.reading.imports ??= [];
   if (!parsed.annotationThreads) {
     parsed.annotationThreads = parsed.reading.annotations.map((note) => ({
@@ -1528,7 +1533,8 @@ export function openJournal(path: string, backend: Backend = engine, activity?: 
   const db = activity?.db ?? new DatabaseSync(path);
   db.exec(`PRAGMA busy_timeout=5000;
     CREATE TABLE IF NOT EXISTS journal(id INTEGER PRIMARY KEY CHECK (id=1),revision INTEGER NOT NULL,body TEXT NOT NULL);
-    CREATE TABLE IF NOT EXISTS receipts(id TEXT PRIMARY KEY, fingerprint TEXT NOT NULL);`);
+    CREATE TABLE IF NOT EXISTS receipts(id TEXT PRIMARY KEY, fingerprint TEXT NOT NULL);
+    CREATE TABLE IF NOT EXISTS reading_import_receipts(action_id TEXT PRIMARY KEY REFERENCES receipts(id), document_id TEXT NOT NULL);`);
   db.prepare('INSERT OR IGNORE INTO journal VALUES (1,0,?)').run(JSON.stringify(initial()));
   function read() {
     const row = db.prepare('SELECT revision,body FROM journal WHERE id=1').get()!;
@@ -1912,11 +1918,11 @@ export function openJournal(path: string, backend: Backend = engine, activity?: 
     const hash = createHash('sha256').update(JSON.stringify(a)).digest('hex');
     const old = db.prepare('SELECT fingerprint FROM receipts WHERE id=?').get(a.id);
     const { s, revision } = read();
-    // Intake IDs are immutable. Reconstruct the presentation result on receipt
-    // replay, even after another action or a background worker has run.
-    const result = (): ReturnType<typeof publicState> & { captureResult?: CaptureResult } => {
+    const result = (documentId?: string): ReturnType<typeof publicState> & { captureResult?: CaptureResult; documentId?: string } => {
       const state = publicState(s, backend.mode);
+      if (documentId) return { ...state, documentId };
       if (a.type !== 'capture') return state;
+      // Immutable intake IDs also identify the capture result on a receipt replay.
       const captureResult: CaptureResult = isReadingLink(a.text)
         ? { id: a.id, kind: 'reading', url: a.text }
         : { id: a.id, kind: s.wordIntakes.some(item => item.id === a.id) ? 'word' : 'tutor' };
@@ -1926,17 +1932,34 @@ export function openJournal(path: string, backend: Backend = engine, activity?: 
       if (old.fingerprint !== hash)
         throw new JournalConflict('This action ID already identifies a different request.');
       activityOutcome('Receipt replay');
+      if (a.type === 'importPdf') return result('pdf-' + a.fingerprint);
+      if (a.type === 'importReading') {
+        const receipt = db.prepare('SELECT document_id FROM reading_import_receipts WHERE action_id=?').get(a.id);
+        if (receipt) return result(String(receipt.document_id));
+        // Earlier receipts only kept a fingerprint. Recover the link when it identifies one snapshot.
+        const url = articleUrl(a.url);
+        const pasted = a.pastedText !== undefined ? extractArticle(a.pastedText, 'text/plain', url) : undefined;
+        const matches = s.reading.imports.filter(doc => doc.sourceUrl === url.href &&
+          (pasted ? matchesPaste(doc, pasted) : doc.importMethod !== 'extension'));
+        if (matches.length !== 1)
+          throw new JournalConflict('This import was saved before the journal kept its reading link. Open it from the Library.');
+        db.prepare('INSERT OR IGNORE INTO reading_import_receipts VALUES (?,?)').run(a.id, matches[0].id);
+        return result(matches[0].id);
+      }
       return result();
     }
     const before = anchorIds(s);
     const priorSlots = new Set(openSlots(s.practice));
     const outbox: Outbox = { events: [], judgments: [], priority: () => priorityOf(db), admitted: () => admittedOf(db) };
-    await mutate(s, a, backend, reviewImport, outbox, onChatText);
+    const imported = await mutate(s, a, backend, reviewImport, outbox, onChatText);
     db.exec('BEGIN IMMEDIATE');
     try {
       queueMedia(s, before);
       write(s, revision);
       db.prepare('INSERT INTO receipts VALUES (?,?)').run(a.id, hash);
+      if (a.type === 'importReading' && imported) {
+        db.prepare('INSERT INTO reading_import_receipts VALUES (?,?)').run(a.id, imported.documentId);
+      }
       record(outbox);
       if (activity) {
         const intake = s.wordIntakes.find(item => item.requestId === a.id);
@@ -1960,7 +1983,7 @@ export function openJournal(path: string, backend: Backend = engine, activity?: 
     if (s.mediaJobs.some((job) => job.status === 'pending')) wakeMedia();
     if (outbox.events.length) notices.wake();
     if (needsCard(s.practice)) practice.wake();
-    return result();
+    return result(imported?.documentId);
   }
   wakeWords();
   wakeMedia();
