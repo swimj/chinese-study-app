@@ -130,7 +130,6 @@ const annotations = createAnnotations({
 });
 const capture = createCapture({
   get, submit, ui, persist,
-  variant: new URLSearchParams(location.search).get('slip'),
   openReading(url) { importUrl = url; location.hash = 'home/import'; },
   canSubmit: () => Boolean(state && !busy && !ui.pending),
   refresh: async () => {
@@ -859,7 +858,7 @@ async function navigate(initial = false) {
   get('tutor-point').hidden = page !== 'scrapbook';
   if (page !== 'scrapbook') scrapbook.stopPicking();
   setTutor(Boolean(ui.tutorOpen), false, false);
-  if (initial && page === 'home' && !target.kind && !ui.tutorOpen && !get('word-back').hidden
+  if (initial && page === 'home' && !target.kind && !ui.tutorOpen && !get('word-context').hidden
       && document.activeElement === document.body) get('word-context').focus();
   renderTutorContext();
   get('saved-link').setAttribute('aria-current', page === 'saved' ? 'page' : 'false');
@@ -888,9 +887,9 @@ async function navigate(initial = false) {
   if (importing) {
     if (!importDialog.open) {
       if (page === 'library') importReturnFocus = get('library-import');
-      else importReturnFocus = importUrl ? get(get('word-back').hidden ? 'word-text' : 'word-context') : get('wall-read');
+      else importReturnFocus = importUrl ? capture.activeField() : get('wall-read');
       importDialog.append(notice);
-      reader.openImport(importUrl, target.id, Boolean(importUrl) && capture.importOnSend);
+      reader.openImport(importUrl, target.id, Boolean(importUrl));
       importUrl = '';
     }
   }

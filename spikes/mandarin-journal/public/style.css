@@ -779,10 +779,6 @@ footer {
   min-width: 0;
 }
 .intake-line button { min-height: 2.75rem; }
-.word-context { color: var(--quiet); font-size: .92rem; }
-.word-context { margin-top: .45rem; }
-.word-context summary { width: fit-content; cursor: pointer; }
-.word-context textarea { margin-top: .5rem; }
 .word-choices { margin-block: .6rem; gap: .4rem; }
 .word-choices button, .secondary { padding: .35rem .75rem; border: 1px solid var(--line); border-radius: 4px; }
 .word-choices button { background: var(--tint); }

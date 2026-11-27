@@ -22,126 +22,96 @@ function offersContext(text) {
   return /\p{Script=Han}/u.test(text) && !isReadingLink(text);
 }
 
-// The trial changes when a draft is composed. Both slips send the same capture action.
-function wireTrial({ variant, get, ui, persist, send }) {
+export function createCapture({ get, submit, canSubmit, ui, persist, refresh, openReading }) {
   const form = get('word-form');
-  const body = get('word-text');
-  const line = body.closest('.intake-line');
-  const details = get('word-context-toggle');
-  const summary = details.querySelector('summary');
-  const note = get('word-context');
+  const input = get('word-text');
+  const context = get('word-context');
   const heading = get('word-heading');
   const back = get('word-back');
   const next = get('word-next');
-  const skip = get('word-skip');
-  const submit = get('capture-submit');
-  const stepwise = variant === 'stepwise';
-  form.dataset.slip = variant;
-  form.append(submit);
+  const send = get('capture-submit');
+  const sendLabel = get('capture-submit-label');
+  const error = get('word-refresh-error');
+  let pollTimer;
+  let polling = false;
+  let hasPendingWords = false;
 
-  function render() {
-    const eligible = offersContext(body.value);
-    const takingNote = stepwise && eligible && ui.wordStep === 'context';
-    line.hidden = takingNote;
+  input.value = ui.wordDraft || '';
+  context.value = ui.wordContext || '';
+  function renderComposer() {
+    const eligible = offersContext(input.value);
+    const takingNote = eligible && ui.wordStep === 'context';
+    input.hidden = takingNote;
+    context.hidden = !takingNote;
     back.hidden = !takingNote;
-    skip.hidden = !takingNote;
-    next.hidden = !stepwise || !eligible || takingNote;
-    submit.hidden = !next.hidden;
+    const needsContextStep = eligible && !takingNote;
+    next.hidden = !needsContextStep;
+    send.hidden = needsContextStep;
+    heading.textContent = takingNote ? 'Any context you want to add?' : 'Jot something down';
     if (takingNote) {
-      back.textContent = '← ' + body.value.trim();
-      back.ariaLabel = 'Edit original text · ' + body.value.trim();
+      back.textContent = '← ' + input.value.trim();
+      back.ariaLabel = 'Edit original text · ' + input.value.trim();
     }
-    heading.textContent = takingNote ? 'Where did you meet it?' : 'Jot something down';
-    details.hidden = !eligible || (stepwise && !takingNote);
-    if (stepwise || !eligible) details.open = takingNote;
-    summary.hidden = stepwise;
-    summary.textContent = details.open ? 'Where you met it' : note.value.trim() ? 'Edit context' : 'Add context';
-    submit.textContent = isReadingLink(body.value) ? 'Import reading' : 'Send';
+    sendLabel.textContent = isReadingLink(input.value) ? 'Import reading' : 'Send';
   }
-  function turn(toContext) {
-    if (toContext) ui.wordStep = 'context';
-    else delete ui.wordStep;
+  function activeField() {
+    return context.hidden ? input : context;
+  }
+  function editOriginal() {
+    delete ui.wordStep;
     persist();
-    render();
-    (toContext ? note : body).focus();
+    renderComposer();
+    input.focus();
   }
-  summary.onclick = event => {
-    event.preventDefault();
-    details.open = !details.open;
-    render();
-    if (details.open) note.focus();
+  back.onclick = editOriginal;
+  form.oninput = () => {
+    ui.wordDraft = input.value;
+    ui.wordContext = context.value;
+    persist();
+    renderComposer();
   };
-  back.onclick = () => turn(false);
-  skip.onclick = () => send('');
   form.onsubmit = event => {
     event.preventDefault();
-    if (!next.hidden) turn(true);
-    else send(offersContext(body.value) ? note.value.trim() : '');
+    const text = input.value.trim();
+    if (!text) return;
+    if (context.hidden && offersContext(text)) {
+      ui.wordStep = 'context';
+      persist();
+      renderComposer();
+      context.focus();
+      return;
+    }
+    if (!canSubmit()) return;
+    const source = context.hidden ? '' : context.value.trim();
+    // The pending action owns this submission. A new draft stays independent.
+    setDraft('', '');
+    input.focus();
+    submit({ type: 'capture', text, ...(source ? { context: source } : {}) });
   };
   form.onkeydown = event => {
     if (event.isComposing || event.keyCode === 229) return;
     if (event.key === 'Escape') {
       event.preventDefault();
       if (event.repeat) return;
-      if (!skip.hidden) send('');
-      else if (details.open) {
-        details.open = false;
-        render();
-        body.focus();
-      } else heading.focus();
-    } else if (event.key === 'Enter' && (event.target === body || event.target === note)
+      if (!context.hidden) editOriginal();
+      else heading.focus();
+    } else if (event.key === 'Enter' && (event.target === input || event.target === context)
         && !event.shiftKey && !event.altKey && !event.metaKey && !event.ctrlKey) {
       event.preventDefault();
       if (!event.repeat) form.requestSubmit();
     }
   };
-  render();
-  return render;
-}
-
-export function createCapture({ get, submit, canSubmit, ui, persist, refresh, openReading, variant }) {
-  const form = get('word-form');
-  const input = get('word-text');
-  const context = get('word-context');
-  const contextToggle = get('word-context-toggle');
-  const error = get('word-refresh-error');
-  let pollTimer;
-  let polling = false;
-  let hasPendingWords = false;
-  const trial = variant === 'inline' || variant === 'stepwise';
-
-  input.value = ui.wordDraft || '';
-  context.value = ui.wordContext || '';
-  contextToggle.open = Boolean(context.value);
-  form.onsubmit = event => {
-    event.preventDefault();
-    send(context.value.trim());
-  };
-  const renderSlip = trial && wireTrial({ variant, get, ui, persist, send });
-  form.oninput = () => {
-    if (trial) renderSlip();
-    ui.wordDraft = input.value;
-    ui.wordContext = context.value;
-    persist();
-  };
-  function send(source) {
-    const text = input.value.trim();
-    if (!text || !canSubmit()) return;
-    // The pending action owns this submission. A new draft stays independent.
-    setDraft('', '');
-    if (trial) input.focus();
-    submit({ type: 'capture', text, ...(source ? { context: source } : {}) });
-  }
   function setDraft(text, source) {
     input.value = text;
     context.value = source;
-    contextToggle.open = Boolean(source);
-    delete ui.wordStep;
-    if (trial) renderSlip();
     ui.wordDraft = text;
     ui.wordContext = source;
+    if (source && offersContext(text)) ui.wordStep = 'context';
+    else delete ui.wordStep;
     persist();
+    renderComposer();
   }
+  renderComposer();
 
   // A late URL handoff or rejected submission can arrive after the learner
   // has moved on. Keep it reachable at home without replacing their new draft.
@@ -170,8 +140,8 @@ export function createCapture({ get, submit, canSubmit, ui, persist, refresh, op
         if (reading) openReading(item.text);
         else {
           if (input.value || context.value) remember({ type: 'draft', text: input.value, context: context.value });
-          setDraft(item.text, item.context);
-          input.focus();
+          setDraft(item.text, item.context || '');
+          activeField().focus();
         }
         persist();
         renderHandoffs();
@@ -192,8 +162,11 @@ export function createCapture({ get, submit, canSubmit, ui, persist, refresh, op
   }
   function restore(action) {
     const source = action.context || '';
-    if (!input.value && !context.value) setDraft(action.text, source);
-    else if (action.text !== input.value || source !== context.value) {
+    if (!input.value && !context.value) {
+      const focused = form.matches(':focus-within');
+      setDraft(action.text, source);
+      if (focused) activeField().focus();
+    } else if (action.text !== input.value || source !== context.value) {
       remember({ type: 'draft', text: action.text, context: source });
       persist();
       renderHandoffs();
@@ -224,5 +197,5 @@ export function createCapture({ get, submit, canSubmit, ui, persist, refresh, op
     if (!hasPendingWords) error.hidden = true;
     schedule();
   }
-  return { offerReading, restore, watch, importOnSend: trial };
+  return { activeField, offerReading, restore, watch };
 }

@@ -66,19 +66,15 @@
                 <h2 id="word-heading" tabindex="-1">Jot something down</h2>
                 <p id="word-refresh-error" class="sub" hidden></p>
                 <form id="word-form">
-                  <button type="button" id="word-back" class="slip-back" aria-label="Edit original text" hidden></button>
-                  <div class="intake-line">
-                    <label for="word-text" class="sr">A word, a link, or a sentence</label>
-                    <input id="word-text" maxlength="2048" required placeholder="A word, a link, a sentence…" autocomplete="off" />
-                    <button class="primary" id="capture-submit" data-mutation>Send</button>
+                  <textarea id="word-text" aria-label="A word, a link, or a sentence" maxlength="2048"
+                    rows="2" required placeholder="A word, a link, a sentence…"></textarea>
+                  <textarea id="word-context" aria-labelledby="word-heading" aria-describedby="word-back"
+                    maxlength="2000" rows="2" placeholder="Optional" hidden></textarea>
+                  <div class="capture-actions">
+                    <button type="button" id="word-back" hidden></button>
+                    <button type="submit" id="word-next" class="capture-action" hidden>Continue <span aria-hidden="true">↵</span></button>
+                    <button type="submit" id="capture-submit" class="capture-action" data-mutation><span id="capture-submit-label">Send</span> <span aria-hidden="true">↵</span></button>
                   </div>
-                  <details id="word-context-toggle" class="word-context">
-                    <summary>Where you met it</summary>
-                    <label for="word-context" class="sr">Where you saw or heard it</label>
-                    <textarea id="word-context" maxlength="2000" rows="2" placeholder="A sentence, a place, a person…"></textarea>
-                  </details>
-                  <button type="submit" id="word-next" hidden>Continue ↵</button>
-                  <button type="button" id="word-skip" class="slip-skip" data-mutation hidden>Skip &amp; send <kbd>Esc</kbd></button>
                 </form>
               </section>
             </div>
