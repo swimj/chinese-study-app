@@ -99,6 +99,13 @@ body:is([data-view='read'], [data-view='library'], [data-view='chat'], [data-vie
 [data-page='read'] h1 {
   overflow-wrap: anywhere;
 }
+.reader-sheet .folio a {
+  overflow-wrap: anywhere;
+  text-transform: none;
+  letter-spacing: normal;
+  text-decoration: underline;
+  text-underline-offset: .22em;
+}
 
 .reader-resume {
   color: var(--quiet);

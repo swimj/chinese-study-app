@@ -46,6 +46,24 @@ export function importedDocument(document) {
   return Boolean(document.sourceUrl) || document.importMethod === 'pdf';
 }
 
+export function renderReadingFolio(folio, { kind, sourceUrl }) {
+  folio.replaceChildren(kind);
+  if (!sourceUrl) return;
+  let url;
+  try {
+    url = new URL(sourceUrl);
+  } catch {
+    return;
+  }
+  if (url.protocol !== 'http:' && url.protocol !== 'https:') return;
+  const source = folio.ownerDocument.createElement('a');
+  source.textContent = url.hostname;
+  source.href = url.href;
+  source.target = '_blank';
+  source.rel = 'noopener noreferrer';
+  folio.append(' · ', source);
+}
+
 function sourceFor(document, paragraph) {
   const paragraphs = paragraph ? [paragraph] : document.paragraphs;
   return [document.title, ...paragraphs.map((entry) => entry.text)].join('\n');
@@ -77,7 +95,7 @@ export function createReading({
   const title = node('h1');
   title.lang = 'zh';
   title.tabIndex = -1;
-  const kind = node('p', '', 'small folio');
+  const folio = node('p', '', 'small folio');
   const pdfFile = node('input');
   pdfFile.type = 'file';
   pdfFile.accept = 'application/pdf,.pdf';
@@ -270,7 +288,7 @@ export function createReading({
   scroller.setAttribute('role', 'region');
   scroller.setAttribute('aria-label', 'Reading passage');
   const sheet = node('article', undefined, 'reader-sheet');
-  sheet.append(kind, title, importWarning, pasteHistorical, passage, tools);
+  sheet.append(folio, title, importWarning, pasteHistorical, passage, tools);
   scroller.append(sheet);
   const returnControl = node('div', undefined, 'reader-return');
   returnControl.append(back, progress);
@@ -306,7 +324,7 @@ export function createReading({
     currentParagraphId = nextDocument.paragraphs[0].id;
     rows = new Map();
     title.textContent = nextDocument.title;
-    kind.textContent = nextDocument.kind;
+    renderReadingFolio(folio, nextDocument);
     importWarning.textContent = nextDocument.importWarning || '';
     importWarning.hidden = !nextDocument.importWarning;
     pasteHistorical.hidden = !nextDocument.canPaste;
