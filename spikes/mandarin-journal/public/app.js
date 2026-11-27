@@ -107,6 +107,7 @@ tutorDraft.oninput = () => {
   if (!ui.tutorDraft && !ui.tutorContext && !ui.tutorReply) ui.tutorReply = defaultReply();
   ui.tutorDraft = tutorDraft.value;
   persist();
+  renderTutorContext();
 };
 chatDraft.oninput = () => {
   if (!state) return;
@@ -287,9 +288,17 @@ function activeReply() {
   return ui.tutorReply || (!tutorDraft.value.trim() && defaultReply());
 }
 function renderTutorContext() {
-  const target = ui.tutorContext || activeReply();
-  get('tutor-context').hidden = !target;
-  get('tutor-context-label').textContent = target ? 'About ' + target.label : '';
+  const source = ui.tutorContext;
+  get('tutor-context').hidden = !source;
+  get('tutor-context-label').textContent = source ? 'About ' + source.label : '';
+
+  const reply = !source && activeReply();
+  const prompt = reply ? 'Reply about ' + reply.label : 'Message tutor';
+  tutorDraft.placeholder = prompt + '…';
+  get('tutor-draft-label').textContent = prompt;
+  const clear = get('clear-reply');
+  clear.hidden = !reply;
+  if (reply) clear.title = clear.ariaLabel = 'Stop replying about ' + reply.label;
 }
 function primeTutor(context) {
   delete ui.tutorReply;
@@ -309,16 +318,19 @@ function chooseReply(reply) {
   renderTutorContext();
   setTutor(true, true);
 }
-get('clear-context').onclick = () => {
+function clearTutorTarget() {
   scrapbook.clearAsked();
   delete ui.tutorContext;
-  const reply = ui.tutorReply || defaultReply();
-  if (reply) ui.dismissedQuestion = reply.captureQuestionId || reply.wordReplyTo.requestId;
   delete ui.tutorReply;
+  // Clearing an older reply must also leave the latest question unselected.
+  const reply = defaultReply();
+  if (reply) ui.dismissedQuestion = reply.captureQuestionId || reply.wordReplyTo.requestId;
   persist();
   renderTutorContext();
   tutorDraft.focus();
-};
+}
+get('clear-context').onclick = clearTutorTarget;
+get('clear-reply').onclick = clearTutorTarget;
 function showError(message) {
   get('error-message').textContent = message;
   get('notice').hidden = !message;
@@ -339,7 +351,7 @@ function markBusy(value) {
   get('pending').textContent = chatting ? 'Waiting for a reply…' : '';
   renderPending();
   for (const el of document.querySelectorAll(
-    '#chat-form button, #tutor-form button, #thread-form button[type="submit"], #thread-form button:not([type]), #practice-body form button, [data-mutation]',
+    '#chat-form button, #tutor-form button[type="submit"], #thread-form button[type="submit"], #thread-form button:not([type]), #practice-body form button, [data-mutation]',
   )) el.disabled = waiting;
   const lastSnapshot = state && threadReflections().at(-1);
   get('reflect').disabled = waiting || !state?.chat.length;
@@ -858,6 +870,8 @@ async function navigate(initial = false) {
   get('tutor-point').hidden = page !== 'scrapbook';
   if (page !== 'scrapbook') scrapbook.stopPicking();
   setTutor(Boolean(ui.tutorOpen), false, false);
+  if (initial && page === 'home' && !target.kind && !ui.tutorOpen && !get('word-context').hidden
+      && document.activeElement === document.body) get('word-context').focus();
   renderTutorContext();
   get('saved-link').setAttribute('aria-current', page === 'saved' ? 'page' : 'false');
   persist();
@@ -884,9 +898,10 @@ async function navigate(initial = false) {
   }
   if (importing) {
     if (!importDialog.open) {
-      importReturnFocus = page === 'library' ? get('library-import') : importUrl ? get('word-text') : get('wall-read');
+      if (page === 'library') importReturnFocus = get('library-import');
+      else importReturnFocus = importUrl ? capture.activeField() : get('wall-read');
       importDialog.append(notice);
-      reader.openImport(importUrl, target.id);
+      reader.openImport(importUrl, target.id, Boolean(importUrl));
       importUrl = '';
     }
   }
@@ -1066,6 +1081,7 @@ async function runAction(action) {
     if (action.wordReplyTo || action.captureQuestionId) delete ui.tutorReply;
   }
   ui.pending = action;
+  if (action.type === 'tutor') renderTutorContext();
   pendingError = '';
   // A retry may follow a partially streamed answer.
   if (isRetry && action.type === 'chat') delete get('chat-turn').dataset.action;

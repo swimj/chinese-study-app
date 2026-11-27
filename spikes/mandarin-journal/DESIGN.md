@@ -52,8 +52,13 @@ what's inside them changes.
 | **Talk** | The root chat and projects | Pick up a project, or just talk |
 | **Scrapbook** | Everything the learner has kept, as a room | What was added recently |
 
-Plus the **capture bar**: the companion loop's way in. It can evolve beyond a
-bar, but its job keeps it close to an entry field.
+The **capture composer** is a level note card with a padded heading and room
+to write. Enter on text containing Han characters opens one optional context
+line locally. Enter sends both together, or just the original text when the
+line is blank. Esc returns to the first step and keeps the note. A standalone
+web link starts reading import directly. Other text goes straight to the tutor.
+[Composer on the wall](design/capture-composer.png) ·
+[Optional context step](design/capture-composer-context.png)
 
 Rules for the landing page:
 - **Nothing goes on Home that doesn't lead somewhere.** The one exception is

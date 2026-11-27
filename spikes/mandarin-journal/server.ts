@@ -203,7 +203,7 @@ const server = createServer(async (req, res) => {
       });
       return;
     }
-    const route = req.url || '';
+    const route = req.url?.split('?')[0] || '';
     const local = files.get(route);
     const asset = local ? [join(dir, 'public', local[0]), local[1]] : pdfAssets.get(route);
     if (req.method === 'GET' && asset) {
